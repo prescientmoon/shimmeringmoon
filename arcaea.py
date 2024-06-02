@@ -58,29 +58,58 @@ def closest_string(target, strings, f=lambda x: x):
 # }}}
 # {{{ Shell helpers
 def run(command):
-    result = subprocess.run(command, shell=True, text=True, stdout=subprocess.PIPE)
-    return result.stdout
+    result = subprocess.run(command, shell=True, text=True, capture_output=True)
+    return str(result.stdout)
 
 
-def tesseract(path, mode, extra=""):
-    return run(f"tesseract {path} - --psm {mode} {extra}")
+def tesseract(path, mode, extra="", num=False):
+    if num and extra == "":
+        extra = "-c tessedit_char_whitelist=0123456789"
+    output = run(f"tesseract {path} - --psm {mode} {extra}")
+    return output
 
 
-def crop(in_path, out_path, x, y, w, h):
-    return run(
-        f"convert '{in_path}' -crop '{w}x{h}+{x}+{y}' -colorspace Gray -auto-level -edge 1 '{out_path}'"
-    )
+def crop(in_path, out_path, x, y, w, h, hard_to_read=True, debug=False):
+    bt = 10  # black threshold
+    sw = w  # small width
+    sh = h  # small height
+    br = 0.1  # blur radius
+
+    # We only downscale large images
+    if w >= 100 and h >= 100:
+        sw = w / 3
+        sh = h / 3
+        br = 5
+        # this can lead to weird results
+        if hard_to_read:
+            bt = 100
+
+    # Only apply more stuff when we are unsure
+    if hard_to_read:
+        bonus_opts = f"-blur '{br}x5' -resize '{sw}x{sh}' -edge 0.5 -black-threshold {bt} -negate"
+    else:
+        bonus_opts = ""
+
+    command = f"convert '{in_path}' -crop '{w}x{h}+{x}+{y}' -colorspace Gray -auto-level {bonus_opts} '{out_path}'"
+    if debug:
+        print(command)
+    return run(command)
 
 
-def tesseract_region(path, region, extra="", mode=13, debug=False):
+def tesseract_region(
+    path, region, extra="", hard_to_read=True, mode=7, debug=False, num=False
+):
     with tempfile.TemporaryDirectory() as temp_dir:
-        if debug:
-            print(temp_dir)
         out_path = temp_dir + "/out.png"
-        crop(path, out_path, *region)
+        if debug:
+            print(out_path)
+        crop(path, out_path, *region, debug=debug, hard_to_read=hard_to_read)
         if debug:
             input("Press enter to continue")
-        return tesseract(out_path, mode, extra).strip()
+        output = tesseract(out_path, mode, extra, num=num).strip()
+        if num:
+            output = int(output)
+    return output
 
 
 # }}}
@@ -90,8 +119,6 @@ db_path = data_dir + "/db.sqlite"
 if not os.path.exists(db_path):
     run(f"cat ./schema.sql | sqlite3 {db_path}")
 conn = sqlite3.connect(db_path)
-
-tesseract_nums_only = "-c tessedit_char_whitelist=0123456789"
 
 
 # {{{ Chart helpers
@@ -124,6 +151,10 @@ chart_whitelist = unique_characters([chart["title"] for chart in all_charts])
 chart_whitelist = chart_whitelist.replace('"', '\\"')
 tesseract_song_name = f'-c tessedit_char_whitelist="{chart_whitelist}"'
 
+all_difficulties = ["PAST", "PRESENT", "FUTURE", "ETERNAL", "BEYOND"]
+difficulty_whitelist = unique_characters(all_difficulties)
+tesseract_difficulty = f"-c tessedit_char_whitelist={difficulty_whitelist}"
+
 
 def find_chart_by_name(name, difficulty, artist):
     closest, distance = closest_string(name, all_charts, lambda chart: chart["title"])
@@ -131,6 +162,7 @@ def find_chart_by_name(name, difficulty, artist):
     if (
         artist is not None and closest["title"] == "Quon"
     ):  # AAAAAAAAAA, why are there two quons
+        print(artist)
         chosen_artist, _ = closest_string(
             artist, filtered, lambda chart: chart["artist"]
         )
@@ -188,6 +220,7 @@ def print_scores(scores):
         difficulty = chart["difficulty"]
         level = chart["level"]
         note_count = chart["note_count"]
+        chart_constant = chart["chart_constant"]
 
         play_rating = compute_play_rating(chart, score)
         grade = compute_grade(score)
@@ -200,7 +233,7 @@ def print_scores(scores):
         data.append(
             [
                 title,
-                f"{difficulty} {level}",
+                f"{difficulty} {level} ({chart_constant})",
                 f"{score} ({grade})",
                 f"{play_rating} {pm_string}",
                 score_id,
@@ -235,25 +268,31 @@ def get_user_id(discord_id):
 
 # {{{ Score parsing
 def parse_score_image(image):
-    topleft_text = tesseract_region(image, [0, 0, 320, 75])
+    print(image)
+    topleft_text = tesseract_region(image, [0, 15, 320, 60], mode=13)
     is_song_select = levenshtein_distance(
         topleft_text, "Select a Song"
     ) < levenshtein_distance(topleft_text, "Result")
 
     if is_song_select:
-        name = tesseract_region(image, [10, 360, 1100, 80], tesseract_song_name)
-        score = int(tesseract_region(image, [0, 260, 320, 60], tesseract_nums_only))
-        return (name, score, "FTR", None, None)
+        name = tesseract_region(image, [10, 355, 1100, 100], tesseract_song_name)
+        artist = tesseract_region(image, [10, 445, 800, 50])
+        score = tesseract_region(image, [0, 260, 320, 60], num=True)
+        return (name, score, "FTR", artist, None)
     else:
         name = tesseract_region(image, [300, 320, 1200, 110], tesseract_song_name)
-        score = int(tesseract_region(image, [850, 675, 470, 120], tesseract_nums_only))
-        max_recall = int(
-            tesseract_region(image, [380, 590, 130, 50], tesseract_nums_only)
+        artist = tesseract_region(image, [300, 420, 1200, 40])
+        score = tesseract_region(image, [850, 675, 470, 120], num=True)
+        max_recall = tesseract_region(
+            image, [380, 590, 130, 40], num=True, hard_to_read=False, mode=13
         )
-        difficulty = tesseract_region(image, [150, 540, 200, 40])
-        difficulty, _ = closest_string(
-            difficulty, ["PAST", "PRESENT", "FUTURE", "ETERNAL", "BEYOND"]
+        difficulty = tesseract_region(
+            image,
+            [150, 540, 200, 50],
+            mode=7,
+            extra=tesseract_difficulty,
         )
+        difficulty, _ = closest_string(difficulty, all_difficulties)
         difficulty = {
             "PAST": "PST",
             "PRESENT": "PRS",
@@ -261,7 +300,7 @@ def parse_score_image(image):
             "ETERNAL": "ETR",
             "BEYOND": "BYD",
         }[difficulty]
-        return (name, score, difficulty, None, max_recall)
+        return (name, score, difficulty, artist, max_recall)
 
 
 # }}}
@@ -278,7 +317,13 @@ def add_scores(discord_id, input_files):
         name, score, difficulty, artist, max_recall = parse_score_image(input_file)
         chart, distance = find_chart_by_name(name, difficulty, artist)
 
-        if distance < 8:
+        print(max_recall)
+
+        budget = 8
+        if len(name) > 10:
+            budget = 15
+
+        if distance < budget:
             # {{{ Happy path
             # print(f"chart title distance {distance} (parsed: {name})")
             score_id = conn.execute(
