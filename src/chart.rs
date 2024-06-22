@@ -1,7 +1,8 @@
-use sqlx::prelude::FromRow;
+use sqlx::{prelude::FromRow, SqlitePool};
 
-use crate::context::{Error, UserContext};
+use crate::context::Error;
 
+// {{{ Difficuly
 #[derive(Debug, Clone, Copy, sqlx::Type)]
 pub enum Difficulty {
 	PST,
@@ -12,12 +13,32 @@ pub enum Difficulty {
 }
 
 impl Difficulty {
+	pub const DIFFICULTIES: [Difficulty; 5] =
+		[Self::PST, Self::PRS, Self::FTR, Self::ETR, Self::BYD];
+
+	pub const DIFFICULTY_STRINGS: [&'static str; 5] = ["PST", "PRS", "FTR", "ETR", "BYD"];
+
 	#[inline]
 	pub fn to_index(self) -> usize {
 		self as usize
 	}
 }
 
+impl TryFrom<String> for Difficulty {
+	type Error = String;
+
+	fn try_from(value: String) -> Result<Self, Self::Error> {
+		for (i, s) in Self::DIFFICULTY_STRINGS.iter().enumerate() {
+			if value == **s {
+				return Ok(Self::DIFFICULTIES[i]);
+			}
+		}
+
+		Err(format!("Cannot convert {} to difficulty", value))
+	}
+}
+// }}}
+// {{{ Song
 #[derive(Debug, Clone, FromRow)]
 pub struct Song {
 	pub id: u32,
@@ -25,28 +46,38 @@ pub struct Song {
 	pub ocr_alias: Option<String>,
 	pub artist: Option<String>,
 }
-
-#[derive(Debug, Clone, Copy, FromRow)]
+// }}}
+// {{{ Chart
+#[derive(Debug, Clone, FromRow)]
 pub struct Chart {
 	pub id: u32,
 	pub song_id: u32,
 
 	pub difficulty: Difficulty,
-	pub level: u32,
+	pub level: String, // TODO: this could become an enum
 
 	pub note_count: u32,
 	pub chart_constant: u32,
 }
-
+// }}}
+// {{{ Cache
 #[derive(Debug, Clone)]
 pub struct CachedSong {
-	song: Song,
+	pub song: Song,
 	charts: [Option<Chart>; 5],
 }
 
 impl CachedSong {
+	#[inline]
 	pub fn new(song: Song, charts: [Option<Chart>; 5]) -> Self {
 		Self { song, charts }
+	}
+
+	#[inline]
+	pub fn lookup(&self, difficulty: Difficulty) -> Option<&Chart> {
+		self.charts
+			.get(difficulty.to_index())
+			.and_then(|c| c.as_ref())
 	}
 }
 
@@ -56,28 +87,48 @@ pub struct SongCache {
 }
 
 impl SongCache {
-	pub async fn new(ctx: &UserContext) -> Result<Self, Error> {
+	#[inline]
+	pub fn lookup(&self, id: u32) -> Option<&CachedSong> {
+		self.songs.get(id as usize).and_then(|i| i.as_ref())
+	}
+
+	// {{{ Populate cache
+	pub async fn new(pool: &SqlitePool) -> Result<Self, Error> {
 		let mut result = Self::default();
 
-		let songs: Vec<Song> = sqlx::query_as("SELECT * FROM songs")
-			.fetch_all(&ctx.db)
-			.await?;
+		let songs = sqlx::query!("SELECT * FROM songs").fetch_all(pool).await?;
 
 		for song in songs {
+			let song = Song {
+				id: song.id as u32,
+				title: song.title,
+				ocr_alias: song.ocr_alias,
+				artist: song.artist,
+			};
+
 			let song_id = song.id as usize;
 
 			if song_id >= result.songs.len() {
-				result.songs.resize(song_id, None);
+				result.songs.resize(song_id + 1, None);
 			}
 
-			let charts: Vec<Chart> = sqlx::query_as("SELECT * FROM charts WHERE song_id=?")
-				.bind(song.id)
-				.fetch_all(&ctx.db)
+			let charts = sqlx::query!("SELECT * FROM charts WHERE song_id=?", song.id)
+				.fetch_all(pool)
 				.await?;
 
-			let mut chart_cache = [None; 5];
+			let mut chart_cache: [Option<_>; 5] = Default::default();
 			for chart in charts {
-				chart_cache[chart.difficulty.to_index()] = Some(chart);
+				let chart = Chart {
+					id: chart.id as u32,
+					song_id: chart.song_id as u32,
+					difficulty: Difficulty::try_from(chart.difficulty)?,
+					level: chart.level,
+					chart_constant: chart.chart_constant as u32,
+					note_count: chart.note_count as u32,
+				};
+
+				let index = chart.difficulty.to_index();
+				chart_cache[index] = Some(chart);
 			}
 
 			result.songs[song_id] = Some(CachedSong::new(song, chart_cache));
@@ -85,4 +136,6 @@ impl SongCache {
 
 		Ok(result)
 	}
+	// }}}
 }
+// }}}

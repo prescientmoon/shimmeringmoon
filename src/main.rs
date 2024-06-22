@@ -4,15 +4,14 @@
 mod chart;
 mod commands;
 mod context;
+mod jacket;
 mod score;
 mod user;
 
-use chart::SongCache;
 use context::{Error, UserContext};
 use poise::serenity_prelude as serenity;
-use score::score_to_zeta_score;
 use sqlx::sqlite::SqlitePoolOptions;
-use std::{env::var, sync::Arc, time::Duration};
+use std::{env::var, path::PathBuf, str::FromStr, sync::Arc, time::Duration};
 
 // {{{ Error handler
 async fn on_error(error: poise::FrameworkError<'_, UserContext, Error>) {
@@ -40,9 +39,6 @@ async fn main() {
 		.await
 		.unwrap();
 
-	println!("{:?}", score_to_zeta_score(9966677, 1303));
-	println!("{:?}", score_to_zeta_score(9970525, 1303));
-
 	// {{{ Poise options
 	let options = poise::FrameworkOptions {
 		commands: vec![commands::help(), commands::score()],
@@ -64,8 +60,7 @@ async fn main() {
 			Box::pin(async move {
 				println!("Logged in as {}", _ready.user.name);
 				poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-				let mut ctx = UserContext::new(pool);
-				ctx.song_cache = SongCache::new(&ctx).await?;
+				let ctx = UserContext::new(PathBuf::from_str(&data_dir)?, pool).await?;
 				Ok(ctx)
 			})
 		})

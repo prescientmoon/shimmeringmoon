@@ -27,6 +27,7 @@
               ])
               rust-analyzer-nightly
               ruff
+              imagemagick
 
               clang
               llvmPackages.clang

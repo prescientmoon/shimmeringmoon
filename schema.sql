@@ -1,13 +1,13 @@
 # {{{ users
 create table IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY,
+    id INTEGER NOT NULL PRIMARY KEY,
     discord_id TEXT UNIQUE NOT NULL,
     nickname TEXT UNIQUE
 );
 # }}}
 # {{{ songs
 CREATE TABLE IF NOT EXISTS songs (
-    id INTEGER PRIMARY KEY,
+    id INTEGER NOT NULL PRIMARY KEY,
     title TEXT NOT NULL,
     ocr_alias TEXT,
     artist TEXT,
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS songs (
 # }}}
 # {{{ charts
 CREATE TABLE IF NOT EXISTS charts (
-    id INTEGER PRIMARY KEY,
+    id INTEGER NOT NULL PRIMARY KEY,
     song_id INTEGER NOT NULL,
 
     difficulty TEXT NOT NULL CHECK (difficulty IN ('PST','PRS','FTR','ETR','BYD')),
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS charts (
 # }}}
 # {{{ plays
 CREATE TABLE IF NOT EXISTS plays (
-    id INTEGER PRIMARY KEY,
+    id INTEGER NOT NULL PRIMARY KEY,
     chart_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     discord_attachment_id TEXT,

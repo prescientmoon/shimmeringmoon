@@ -1,13 +1,15 @@
 #![allow(dead_code)]
-use std::{io::Cursor, sync::OnceLock, time::Instant};
+use std::{fmt::Display, io::Cursor, sync::OnceLock};
 
-use image::DynamicImage;
+use image::{DynamicImage, GenericImageView};
 use num::Rational64;
+use poise::serenity_prelude::{Attachment, AttachmentId, CreateAttachment, CreateEmbed};
 use tesseract::{PageSegMode, Tesseract};
 
 use crate::{
-	chart::{Chart, Difficulty},
+	chart::{CachedSong, Chart, Difficulty, Song},
 	context::{Error, UserContext},
+	jacket::Jacket,
 	user::User,
 };
 
@@ -125,9 +127,9 @@ impl RelativeRect {
 				let p = (aspect_ratio - low_ratio) / (high_ratio - low_ratio);
 				return Some(Self::new(
 					lerp(p, low.x, high.x),
-					lerp(p, low.y, high.y) - 0.005,
+					lerp(p, low.y, high.y),
 					lerp(p, low.width, high.width),
-					lerp(p, low.height, high.height) + 2. * 0.005,
+					lerp(p, low.height, high.height),
 					dimensions,
 				));
 			}
@@ -138,6 +140,34 @@ impl RelativeRect {
 }
 // }}}
 // {{{ Data points
+fn process_datapoints(rects: &mut Vec<RelativeRect>) {
+	rects.sort_by_key(|r| (r.dimensions.aspect_ratio() * 1000.0).floor() as u32);
+
+	// Filter datapoints that are close together
+	let mut i = 0;
+	while i < rects.len() - 1 {
+		let low = rects[i];
+		let high = rects[i + 1];
+
+		if (low.dimensions.aspect_ratio() - high.dimensions.aspect_ratio()).abs() < 0.001 {
+			// TODO: we could interpolate here but oh well
+			rects.remove(i + 1);
+		}
+
+		i += 1;
+	}
+}
+
+fn widen_by(rects: &mut Vec<RelativeRect>, x: f32, y: f32) {
+	for rect in rects {
+		rect.x -= x;
+		rect.y -= y;
+		rect.width += 2. * x;
+		rect.height += 2. * y;
+	}
+}
+
+// {{{ Score
 fn score_rects() -> &'static [RelativeRect] {
 	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
 	CELL.get_or_init(|| {
@@ -152,74 +182,138 @@ fn score_rects() -> &'static [RelativeRect] {
 			AbsoluteRect::new(1069, 868, 636, 112, ImageDimensions::new(2732, 2048)).to_relative(),
 			AbsoluteRect::new(1125, 510, 534, 93, ImageDimensions::new(2778, 1284)).to_relative(),
 		];
-		rects.sort_by_key(|r| (r.dimensions.aspect_ratio() * 1000.0).floor() as u32);
-
-		// Filter datapoints that are close together
-		let mut i = 0;
-		while i < rects.len() - 1 {
-			let low = rects[i];
-			let high = rects[i + 1];
-
-			if (low.dimensions.aspect_ratio() - high.dimensions.aspect_ratio()).abs() < 0.001 {
-				// TODO: we could interpolate here but oh well
-				rects.remove(i + 1);
-			}
-
-			i += 1;
-		}
-
-		rects
-	})
-}
-
-fn difficulty_rects() -> &'static [RelativeRect] {
-	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
-	CELL.get_or_init(|| {
-		let mut rects: Vec<RelativeRect> = vec![
-			AbsoluteRect::new(642, 287, 284, 51, ImageDimensions::new(1560, 720)).to_relative(),
-			AbsoluteRect::new(651, 285, 305, 55, ImageDimensions::new(1600, 720)).to_relative(),
-			AbsoluteRect::new(748, 485, 503, 82, ImageDimensions::new(2000, 1200)).to_relative(),
-			AbsoluteRect::new(841, 683, 500, 92, ImageDimensions::new(2160, 1620)).to_relative(),
-			AbsoluteRect::new(851, 707, 532, 91, ImageDimensions::new(2224, 1668)).to_relative(),
-			AbsoluteRect::new(1037, 462, 476, 89, ImageDimensions::new(2532, 1170)).to_relative(),
-			AbsoluteRect::new(973, 653, 620, 105, ImageDimensions::new(2560, 1600)).to_relative(),
-			AbsoluteRect::new(1069, 868, 636, 112, ImageDimensions::new(2732, 2048)).to_relative(),
-			AbsoluteRect::new(1125, 510, 534, 93, ImageDimensions::new(2778, 1284)).to_relative(),
-		];
-		rects.sort_by_key(|r| (r.dimensions.aspect_ratio() * 1000.0).floor() as u32);
+		process_datapoints(&mut rects);
+		widen_by(&mut rects, 0.0, 0.005);
 		rects
 	})
 }
 // }}}
-// {{{ Plays
-/// Returns the zeta score and the number of shinies
-pub fn score_to_zeta_score(score: u32, note_count: u32) -> (u32, u32) {
-	// Smallest possible difference between (zeta-)scores
-	let increment = Rational64::new_raw(5000000, note_count as i64).reduced();
-	let zeta_increment = Rational64::new_raw(2000000, note_count as i64).reduced();
+// {{{ Difficulty
+fn difficulty_rects() -> &'static [RelativeRect] {
+	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
+	CELL.get_or_init(|| {
+		let mut rects: Vec<RelativeRect> = vec![
+			AbsoluteRect::new(232, 203, 104, 23, ImageDimensions::new(1560, 720)).to_relative(),
+			AbsoluteRect::new(252, 204, 99, 21, ImageDimensions::new(1600, 720)).to_relative(),
+			AbsoluteRect::new(146, 356, 155, 34, ImageDimensions::new(2000, 1200)).to_relative(),
+			AbsoluteRect::new(155, 546, 167, 38, ImageDimensions::new(2160, 1620)).to_relative(),
+			AbsoluteRect::new(163, 562, 175, 38, ImageDimensions::new(2224, 1668)).to_relative(),
+			AbsoluteRect::new(378, 332, 161, 34, ImageDimensions::new(2532, 1170)).to_relative(),
+			AbsoluteRect::new(183, 487, 197, 44, ImageDimensions::new(2560, 1600)).to_relative(),
+			AbsoluteRect::new(198, 692, 219, 46, ImageDimensions::new(2732, 2048)).to_relative(),
+			AbsoluteRect::new(414, 364, 177, 38, ImageDimensions::new(2778, 1284)).to_relative(),
+		];
+		process_datapoints(&mut rects);
+		rects
+	})
+}
+// }}}
+// {{{ Jacket
+fn jacket_rects() -> &'static [RelativeRect] {
+	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
+	CELL.get_or_init(|| {
+		let mut rects: Vec<RelativeRect> = vec![
+			AbsoluteRect::new(171, 268, 375, 376, ImageDimensions::new(1560, 720)).to_relative(),
+			AbsoluteRect::new(190, 267, 376, 377, ImageDimensions::new(1600, 720)).to_relative(),
+			AbsoluteRect::new(46, 456, 590, 585, ImageDimensions::new(2000, 1200)).to_relative(),
+			AbsoluteRect::new(51, 655, 633, 632, ImageDimensions::new(2160, 1620)).to_relative(),
+			AbsoluteRect::new(53, 675, 654, 653, ImageDimensions::new(2224, 1668)).to_relative(),
+			AbsoluteRect::new(274, 434, 614, 611, ImageDimensions::new(2532, 1170)).to_relative(),
+			AbsoluteRect::new(58, 617, 753, 750, ImageDimensions::new(2560, 1600)).to_relative(),
+			AbsoluteRect::new(65, 829, 799, 800, ImageDimensions::new(2732, 2048)).to_relative(),
+			AbsoluteRect::new(300, 497, 670, 670, ImageDimensions::new(2778, 1284)).to_relative(),
+		];
+		process_datapoints(&mut rects);
+		rects
+	})
+}
+// }}}
+// }}}
+// {{{ Score
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Score(pub u32);
 
-	let score = Rational64::from_integer(score as i64);
-	let score_units = (score / increment).floor();
+impl Score {
+	// {{{ Score => ζ-Score
+	/// Returns the zeta score and the number of shinies
+	pub fn to_zeta(self, note_count: u32) -> (Score, u32) {
+		// Smallest possible difference between (zeta-)scores
+		let increment = Rational64::new_raw(5000000, note_count as i64).reduced();
+		let zeta_increment = Rational64::new_raw(2000000, note_count as i64).reduced();
 
-	let non_shiny_score = (score_units * increment).floor();
-	let shinies = score - non_shiny_score;
+		let score = Rational64::from_integer(self.0 as i64);
+		let score_units = (score / increment).floor();
 
-	let zeta_score_units = Rational64::from_integer(2) * score_units + shinies;
-	let zeta_score = (zeta_increment * zeta_score_units).floor().to_integer() as u32;
+		let non_shiny_score = (score_units * increment).floor();
+		let shinies = score - non_shiny_score;
 
-	(zeta_score, shinies.to_integer() as u32)
+		let zeta_score_units = Rational64::from_integer(2) * score_units + shinies;
+		let zeta_score = Score((zeta_increment * zeta_score_units).floor().to_integer() as u32);
+
+		(zeta_score, shinies.to_integer() as u32)
+	}
+	// }}}
+	// {{{ Score => Play rating
+	#[inline]
+	pub fn play_rating(self, chart_constant: u32) -> i32 {
+		chart_constant as i32
+			+ if self.0 >= 10000000 {
+				200
+			} else if self.0 >= 9800000 {
+				100 + (self.0 as i32 - 9_800_000) / 20_000
+			} else {
+				(self.0 as i32 - 9_500_000) / 10_000
+			}
+	}
+	// }}}
+	// {{{ Score => grade
+	#[inline]
+	// TODO: Perhaps make an enum for this
+	pub fn grade(self) -> &'static str {
+		let score = self.0;
+		if score > 9900000 {
+			"EX+"
+		} else if score > 9800000 {
+			"EX"
+		} else if score > 9500000 {
+			"AA"
+		} else if score > 9200000 {
+			"A"
+		} else if score > 8900000 {
+			"B"
+		} else if score > 8600000 {
+			"C"
+		} else {
+			"D"
+		}
+	}
+	// }}}
 }
 
+impl Display for Score {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let score = self.0;
+		write!(
+			f,
+			"{}'{}'{}",
+			score / 1000000,
+			(score / 1000) % 1000,
+			score % 1000
+		)
+	}
+}
+// }}}
+// {{{ Plays
 // {{{ Create play
 #[derive(Debug, Clone)]
 pub struct CreatePlay {
 	chart_id: u32,
 	user_id: u32,
-	discord_attachment_id: Option<String>,
+	discord_attachment_id: Option<AttachmentId>,
 
 	// Actual score data
-	score: u32,
-	zeta_score: Option<u32>,
+	score: Score,
+	zeta_score: Score,
 
 	// Optional score details
 	max_recall: Option<u32>,
@@ -232,13 +326,13 @@ pub struct CreatePlay {
 
 impl CreatePlay {
 	#[inline]
-	pub fn new(score: u32, chart: Chart, user: User) -> Self {
+	pub fn new(score: Score, chart: &Chart, user: &User) -> Self {
 		Self {
 			chart_id: chart.id,
 			user_id: user.id,
 			discord_attachment_id: None,
 			score,
-			zeta_score: Some(score_to_zeta_score(score, chart.note_count).0),
+			zeta_score: score.to_zeta(chart.note_count as u32).0,
 			max_recall: None,
 			far_notes: None,
 			// TODO: populate these
@@ -247,52 +341,121 @@ impl CreatePlay {
 		}
 	}
 
+	#[inline]
+	pub fn with_attachment(mut self, attachment: &Attachment) -> Self {
+		self.discord_attachment_id = Some(attachment.id);
+		self
+	}
+
+	// {{{ Save
 	pub async fn save(self, ctx: &UserContext) -> Result<Play, Error> {
-		let play = sqlx::query_as!(
-			Play,
+		let attachment_id = self.discord_attachment_id.map(|i| i.get() as i64);
+		let play = sqlx::query!(
 			"
-            INSERT INTO plays(
-               user_id,chart_id,discord_attachment_id,
-               score,zeta_score,max_recall,far_notes
-            )
-            VALUES(?,?,?,?,?,?,?)
-            RETURNING *
+                INSERT INTO plays(
+                user_id,chart_id,discord_attachment_id,
+                score,zeta_score,max_recall,far_notes
+                )
+                VALUES(?,?,?,?,?,?,?)
+                RETURNING id, created_at
             ",
 			self.user_id,
 			self.chart_id,
-			self.discord_attachment_id,
-			self.score,
-			self.zeta_score,
+			attachment_id,
+			self.score.0,
+			self.zeta_score.0,
 			self.max_recall,
 			self.far_notes
 		)
 		.fetch_one(&ctx.db)
 		.await?;
 
-		Ok(play)
+		Ok(Play {
+			id: play.id as u32,
+			created_at: play.created_at,
+			chart_id: self.chart_id,
+			user_id: self.user_id,
+			discord_attachment_id: self.discord_attachment_id,
+			score: self.score,
+			zeta_score: self.zeta_score,
+			max_recall: self.max_recall,
+			far_notes: self.far_notes,
+			creation_ptt: self.creation_ptt,
+			creation_zeta_ptt: self.creation_zeta_ptt,
+		})
 	}
+	// }}}
 }
 // }}}
 // {{{ Play
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Play {
-	id: i64,
-	chart_id: i64,
-	user_id: i64,
-	discord_attachment_id: Option<String>,
+	id: u32,
+	chart_id: u32,
+	user_id: u32,
+	discord_attachment_id: Option<AttachmentId>,
 
 	// Actual score data
-	score: i64,
-	zeta_score: Option<i64>,
+	score: Score,
+	zeta_score: Score,
 
 	// Optional score details
-	max_recall: Option<i64>,
-	far_notes: Option<i64>,
+	max_recall: Option<u32>,
+	far_notes: Option<u32>,
 
 	// Creation data
 	created_at: chrono::NaiveDateTime,
-	creation_ptt: Option<i64>,
-	creation_zeta_ptt: Option<i64>,
+	creation_ptt: Option<u32>,
+	creation_zeta_ptt: Option<u32>,
+}
+
+impl Play {
+	// {{{ Play to embed
+	pub async fn to_embed(
+		&self,
+		song: &Song,
+		chart: &Chart,
+		jacket: &Jacket,
+	) -> Result<(CreateEmbed, CreateAttachment), Error> {
+		let (_, shiny_count) = self.score.to_zeta(chart.note_count);
+
+		let attachement_name = format!("{:?}-{:?}.png", song.id, self.score.0);
+		let icon_attachement = CreateAttachment::file(
+			&tokio::fs::File::open(&jacket.path).await?,
+			&attachement_name,
+		)
+		.await?;
+
+		let embed = CreateEmbed::default()
+			.title(&song.title)
+			.thumbnail(format!("attachment://{}", &attachement_name))
+			.field("Score", format!("{} (+?)", self.score), true)
+			.field(
+				"Rating",
+				format!(
+					"{:.2} (+?)",
+					(self.score.play_rating(chart.chart_constant)) as f32 / 100.
+				),
+				true,
+			)
+			.field("Grade", self.score.grade(), true)
+			.field("ζ-Score", format!("{} (+?)", self.zeta_score), true)
+			.field(
+				"ζ-Rating",
+				format!(
+					"{:.2} (+?)",
+					(self.zeta_score.play_rating(chart.chart_constant)) as f32 / 100.
+				),
+				true,
+			)
+			.field("ζ-Grade", self.zeta_score.grade(), true)
+			.field("Status", "?", true)
+			.field("Max recall", "?", true)
+			.field("Breakdown", format!("{}/?/?/?", shiny_count), true);
+
+		Ok((embed, icon_attachement))
+	}
+	// }}}
 }
 // }}}
 // {{{ Tests
@@ -305,31 +468,19 @@ mod score_tests {
 		// note counts
 		for note_count in 200..=2000 {
 			for shiny_count in 0..=note_count {
-				let score = 10000000 + shiny_count;
+				let score = Score(10000000 + shiny_count);
 				let zeta_score_units = 4 * (note_count - shiny_count) + 5 * shiny_count;
+				let (zeta_score, computed_shiny_count) = score.to_zeta(note_count);
 				let expected_zeta_score = Rational64::from_integer(zeta_score_units as i64)
 					* Rational64::new_raw(2000000, note_count as i64).reduced();
-				let (zeta_score, computed_shiny_count) = score_to_zeta_score(score, note_count);
-				assert_eq!(zeta_score, expected_zeta_score.to_integer() as u32);
+
+				assert_eq!(zeta_score, Score(expected_zeta_score.to_integer() as u32));
 				assert_eq!(computed_shiny_count, shiny_count);
 			}
 		}
 	}
 }
 // }}}
-// }}}
-// {{{ Ocr types
-#[derive(Debug, Clone, Copy)]
-pub struct ScoreReadout {
-	pub score: u32,
-	pub difficulty: Difficulty,
-}
-
-impl ScoreReadout {
-	pub fn new(score: u32, difficulty: Difficulty) -> Self {
-		Self { score, difficulty }
-	}
-}
 // }}}
 // {{{ Run OCR
 /// Caches a byte vector in order to prevent reallocation
@@ -352,18 +503,19 @@ impl ImageCropper {
 		Ok(())
 	}
 
-	pub fn read_score(&mut self, image: &DynamicImage) -> Result<ScoreReadout, Error> {
-		let rect =
+	// {{{ Read score
+	pub fn read_score(&mut self, image: &DynamicImage) -> Result<Score, Error> {
+		self.crop_image_to_bytes(
+			&image,
 			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), score_rects())
 				.ok_or_else(|| "Could not find score area in picture")?
-				.to_absolute();
-		self.crop_image_to_bytes(&image, rect)?;
+				.to_absolute(),
+		)?;
 
 		let mut t = Tesseract::new(None, Some("eng"))?
 			// .set_variable("classify_bln_numeric_mode", "1'")?
 			.set_variable("tessedit_char_whitelist", "0123456789'")?
 			.set_image_from_mem(&self.bytes)?;
-
 		t.set_page_seg_mode(PageSegMode::PsmRawLine);
 		t = t.recognize()?;
 
@@ -378,8 +530,72 @@ impl ImageCropper {
 			.filter(|char| *char != ' ' && *char != '\'')
 			.collect();
 
-		let int = u32::from_str_radix(&text, 10)?;
-		Ok(ScoreReadout::new(int, Difficulty::FTR))
+		let score = u32::from_str_radix(&text, 10)?;
+		Ok(Score(score))
 	}
+	// }}}
+	// {{{ Read difficulty
+	pub fn read_difficulty(&mut self, image: &DynamicImage) -> Result<Difficulty, Error> {
+		self.crop_image_to_bytes(
+			&image,
+			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), difficulty_rects())
+				.ok_or_else(|| "Could not find difficulty area in picture")?
+				.to_absolute(),
+		)?;
+
+		let mut t = Tesseract::new(None, Some("eng"))?.set_image_from_mem(&self.bytes)?;
+		t.set_page_seg_mode(PageSegMode::PsmRawLine);
+		t = t.recognize()?;
+
+		if t.mean_text_conf() < 10 {
+			Err("Difficulty text is not readable.")?;
+		}
+
+		let text: &str = &t.get_text()?;
+		let text = text.trim();
+
+		let difficulty = Difficulty::DIFFICULTIES
+			.iter()
+			.zip(Difficulty::DIFFICULTY_STRINGS)
+			.min_by_key(|(_, difficulty_string)| {
+				edit_distance::edit_distance(difficulty_string, text)
+			})
+			.map(|(difficulty, _)| *difficulty)
+			.ok_or_else(|| format!("Unrecognised difficulty '{}'", text))?;
+
+		Ok(difficulty)
+	}
+	// }}}
+	// {{{ Read jacket
+	pub fn read_jacket<'a>(
+		&mut self,
+		ctx: &'a UserContext,
+		image: &DynamicImage,
+	) -> Result<(&'a Jacket, &'a CachedSong), Error> {
+		let rect =
+			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), jacket_rects())
+				.ok_or_else(|| "Could not find jacket area in picture")?
+				.to_absolute();
+
+		let cropped = image.view(rect.x, rect.y, rect.width, rect.height);
+		let (distance, jacket) = ctx
+			.jacket_cache
+			.recognise(&*cropped)
+			.ok_or_else(|| "Could not recognise jacket")?;
+
+		if distance > 100.0 {
+			// Save image to be sent to discord
+			self.crop_image_to_bytes(&image, rect)?;
+			Err("No known jacket looks like this")?;
+		}
+
+		let song = ctx
+			.song_cache
+			.lookup(jacket.song_id)
+			.ok_or_else(|| format!("Could not find song with id {}", jacket.song_id))?;
+
+		Ok((jacket, song))
+	}
+	// }}}
 }
 // }}}
