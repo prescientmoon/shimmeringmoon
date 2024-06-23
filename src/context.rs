@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+	path::PathBuf,
+	sync::{Arc, Mutex},
+};
 
 use sqlx::SqlitePool;
 
@@ -12,19 +15,19 @@ pub type Context<'a> = poise::Context<'a, UserContext, Error>;
 pub struct UserContext {
 	pub data_dir: PathBuf,
 	pub db: SqlitePool,
-	pub song_cache: SongCache,
+	pub song_cache: Arc<Mutex<SongCache>>,
 	pub jacket_cache: JacketCache,
 }
 
 impl UserContext {
 	#[inline]
 	pub async fn new(data_dir: PathBuf, db: SqlitePool) -> Result<Self, Error> {
-		let song_cache = SongCache::new(&db).await?;
-		let jacket_cache = JacketCache::new(&data_dir)?;
+		let song_cache = SongCache::new(&data_dir, &db).await?;
+		let jacket_cache = JacketCache::new(&song_cache)?;
 		Ok(Self {
 			data_dir,
 			db,
-			song_cache,
+			song_cache: Arc::new(Mutex::new(song_cache)),
 			jacket_cache,
 		})
 	}

@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS songs (
 CREATE TABLE IF NOT EXISTS charts (
     id INTEGER NOT NULL PRIMARY KEY,
     song_id INTEGER NOT NULL,
+    jacket TEXT,
 
     difficulty TEXT NOT NULL CHECK (difficulty IN ('PST','PRS','FTR','ETR','BYD')),
     level TEXT NOT NULL,

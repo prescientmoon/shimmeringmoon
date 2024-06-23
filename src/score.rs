@@ -1,5 +1,9 @@
 #![allow(dead_code)]
-use std::{fmt::Display, io::Cursor, sync::OnceLock};
+use std::{
+	fmt::Display,
+	io::Cursor,
+	sync::{Mutex, OnceLock},
+};
 
 use image::{DynamicImage, GenericImageView};
 use num::Rational64;
@@ -7,9 +11,8 @@ use poise::serenity_prelude::{Attachment, AttachmentId, CreateAttachment, Create
 use tesseract::{PageSegMode, Tesseract};
 
 use crate::{
-	chart::{CachedSong, Chart, Difficulty, Song},
+	chart::{CachedSong, Chart, Difficulty, Song, SongCache},
 	context::{Error, UserContext},
-	jacket::Jacket,
 	user::User,
 };
 
@@ -140,6 +143,7 @@ impl RelativeRect {
 }
 // }}}
 // {{{ Data points
+// {{{ Processing
 fn process_datapoints(rects: &mut Vec<RelativeRect>) {
 	rects.sort_by_key(|r| (r.dimensions.aspect_ratio() * 1000.0).floor() as u32);
 
@@ -166,7 +170,7 @@ fn widen_by(rects: &mut Vec<RelativeRect>, x: f32, y: f32) {
 		rect.height += 2. * y;
 	}
 }
-
+// }}}
 // {{{ Score
 fn score_rects() -> &'static [RelativeRect] {
 	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
@@ -183,7 +187,7 @@ fn score_rects() -> &'static [RelativeRect] {
 			AbsoluteRect::new(1125, 510, 534, 93, ImageDimensions::new(2778, 1284)).to_relative(),
 		];
 		process_datapoints(&mut rects);
-		widen_by(&mut rects, 0.0, 0.005);
+		widen_by(&mut rects, 0.0, 0.01);
 		rects
 	})
 }
@@ -208,8 +212,29 @@ fn difficulty_rects() -> &'static [RelativeRect] {
 	})
 }
 // }}}
+// {{{ Chart title
+fn title_rects() -> &'static [RelativeRect] {
+	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
+	CELL.get_or_init(|| {
+		let mut rects: Vec<RelativeRect> = vec![
+			AbsoluteRect::new(227, 74, 900, 61, ImageDimensions::new(1560, 720)).to_relative(),
+			AbsoluteRect::new(413, 72, 696, 58, ImageDimensions::new(1600, 720)).to_relative(),
+			AbsoluteRect::new(484, 148, 1046, 96, ImageDimensions::new(2000, 1200)).to_relative(),
+			AbsoluteRect::new(438, 324, 1244, 104, ImageDimensions::new(2160, 1620)).to_relative(),
+			AbsoluteRect::new(216, 336, 1366, 96, ImageDimensions::new(2224, 1668)).to_relative(),
+			AbsoluteRect::new(634, 116, 1252, 102, ImageDimensions::new(2532, 1170)).to_relative(),
+			AbsoluteRect::new(586, 222, 1320, 118, ImageDimensions::new(2560, 1600)).to_relative(),
+			AbsoluteRect::new(348, 417, 1716, 120, ImageDimensions::new(2732, 2048)).to_relative(),
+			AbsoluteRect::new(760, 128, 1270, 118, ImageDimensions::new(2778, 1284)).to_relative(),
+		];
+		process_datapoints(&mut rects);
+		widen_by(&mut rects, 0.1, 0.0);
+		rects
+	})
+}
+// }}}
 // {{{ Jacket
-fn jacket_rects() -> &'static [RelativeRect] {
+pub fn jacket_rects() -> &'static [RelativeRect] {
 	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
 	CELL.get_or_init(|| {
 		let mut rects: Vec<RelativeRect> = vec![
@@ -238,8 +263,8 @@ impl Score {
 	/// Returns the zeta score and the number of shinies
 	pub fn to_zeta(self, note_count: u32) -> (Score, u32) {
 		// Smallest possible difference between (zeta-)scores
-		let increment = Rational64::new_raw(5000000, note_count as i64).reduced();
-		let zeta_increment = Rational64::new_raw(2000000, note_count as i64).reduced();
+		let increment = Rational64::new_raw(5_000_000, note_count as i64).reduced();
+		let zeta_increment = Rational64::new_raw(2_000_000, note_count as i64).reduced();
 
 		let score = Rational64::from_integer(self.0 as i64);
 		let score_units = (score / increment).floor();
@@ -257,12 +282,12 @@ impl Score {
 	#[inline]
 	pub fn play_rating(self, chart_constant: u32) -> i32 {
 		chart_constant as i32
-			+ if self.0 >= 10000000 {
+			+ if self.0 >= 10_000_000 {
 				200
-			} else if self.0 >= 9800000 {
-				100 + (self.0 as i32 - 9_800_000) / 20_000
+			} else if self.0 >= 9_800_000 {
+				100 + (self.0 as i32 - 9_800_000) / 2_000
 			} else {
-				(self.0 as i32 - 9_500_000) / 10_000
+				(self.0 as i32 - 9_500_000) / 3_000
 			}
 	}
 	// }}}
@@ -295,7 +320,7 @@ impl Display for Score {
 		let score = self.0;
 		write!(
 			f,
-			"{}'{}'{}",
+			"{}'{:0>3}'{:0>3}",
 			score / 1000000,
 			(score / 1000) % 1000,
 			score % 1000
@@ -415,20 +440,23 @@ impl Play {
 		&self,
 		song: &Song,
 		chart: &Chart,
-		jacket: &Jacket,
-	) -> Result<(CreateEmbed, CreateAttachment), Error> {
+	) -> Result<(CreateEmbed, Option<CreateAttachment>), Error> {
 		let (_, shiny_count) = self.score.to_zeta(chart.note_count);
 
 		let attachement_name = format!("{:?}-{:?}.png", song.id, self.score.0);
-		let icon_attachement = CreateAttachment::file(
-			&tokio::fs::File::open(&jacket.path).await?,
-			&attachement_name,
-		)
-		.await?;
+		let icon_attachement = match &chart.jacket {
+			Some(path) => Some(
+				CreateAttachment::file(&tokio::fs::File::open(path).await?, &attachement_name)
+					.await?,
+			),
+			None => None,
+		};
 
-		let embed = CreateEmbed::default()
-			.title(&song.title)
-			.thumbnail(format!("attachment://{}", &attachement_name))
+		let mut embed = CreateEmbed::default()
+			.title(format!(
+				"{} [{:?} {}]",
+				&song.title, chart.difficulty, chart.level
+			))
 			.field("Score", format!("{} (+?)", self.score), true)
 			.field(
 				"Rating",
@@ -452,6 +480,10 @@ impl Play {
 			.field("Status", "?", true)
 			.field("Max recall", "?", true)
 			.field("Breakdown", format!("{}/?/?/?", shiny_count), true);
+
+		if icon_attachement.is_some() {
+			embed = embed.thumbnail(format!("attachment://{}", &attachement_name));
+		}
 
 		Ok((embed, icon_attachement))
 	}
@@ -491,7 +523,7 @@ pub struct ImageCropper {
 }
 
 impl ImageCropper {
-	fn crop_image_to_bytes(
+	pub fn crop_image_to_bytes(
 		&mut self,
 		image: &DynamicImage,
 		rect: AbsoluteRect,
@@ -512,15 +544,48 @@ impl ImageCropper {
 				.to_absolute(),
 		)?;
 
+		let mut results = vec![];
+		for mode in [
+			PageSegMode::PsmSingleWord,
+			PageSegMode::PsmRawLine,
+			PageSegMode::PsmSingleLine,
+		] {
+			let result = self.read_score_with_mode(image, mode)?;
+			results.push(result.0);
+			// OCR sometimes loses digits
+			if result.0 < 1_000_000 {
+				continue;
+			} else {
+				return Ok(result);
+			}
+		}
+
+		Err(format!(
+			"Cannot read score, no matter the mode. Attempts: {:?}",
+			results
+		))?;
+		unreachable!()
+	}
+
+	pub fn read_score_with_mode(
+		&mut self,
+		image: &DynamicImage,
+		mode: PageSegMode,
+	) -> Result<Score, Error> {
 		let mut t = Tesseract::new(None, Some("eng"))?
 			// .set_variable("classify_bln_numeric_mode", "1'")?
 			.set_variable("tessedit_char_whitelist", "0123456789'")?
 			.set_image_from_mem(&self.bytes)?;
-		t.set_page_seg_mode(PageSegMode::PsmRawLine);
+		t.set_page_seg_mode(mode);
 		t = t.recognize()?;
+		let conf = t.mean_text_conf();
 
-		if t.mean_text_conf() < 10 {
-			Err("Score text is not readable.")?;
+		if conf < 10 && conf != 0 {
+			Err(format!(
+				"Score text is not readable (confidence = {}, text = {}).",
+				conf,
+				t.get_text()?.trim()
+			))?;
 		}
 
 		let text: String = t
@@ -566,35 +631,103 @@ impl ImageCropper {
 		Ok(difficulty)
 	}
 	// }}}
+	// {{{ Read song
+	pub fn read_song(
+		&mut self,
+		image: &DynamicImage,
+		cache: &Mutex<SongCache>,
+	) -> Result<CachedSong, Error> {
+		self.crop_image_to_bytes(
+			&image,
+			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), title_rects())
+				.ok_or_else(|| "Could not find title area in picture")?
+				.to_absolute(),
+		)?;
+
+		let mut t = Tesseract::new(None, Some("eng"))?
+			.set_variable(
+				"tessedit_char_whitelist",
+				"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ",
+			)?
+			.set_image_from_mem(&self.bytes)?;
+		t.set_page_seg_mode(PageSegMode::PsmSingleLine);
+		t = t.recognize()?;
+
+		// if t.mean_text_conf() < 10 {
+		// 	Err("Difficulty text is not readable.")?;
+		// }
+
+		let raw_text: &str = &t.get_text()?;
+		let raw_text = raw_text.trim(); // not quite raw 🤔
+		let mut text = raw_text;
+
+		println!("Raw text: {}, confidence: {}", text, t.mean_text_conf());
+
+		let lock = cache.lock().map_err(|_| "Poisoned song cache")?;
+		let cached_song = loop {
+			let (closest, distance) = lock
+				.songs()
+				.map(|item| {
+					(
+						item,
+						edit_distance::edit_distance(
+							&item.song.title.to_lowercase(),
+							&text.to_lowercase(),
+						),
+					)
+				})
+				.min_by_key(|(_, d)| *d)
+				.ok_or_else(|| "Empty song cache")?;
+
+			if distance > closest.song.title.len() / 3 {
+				if text.len() == 1 {
+					Err(format!(
+						"Could not find match for chart name '{}'",
+						raw_text
+					))?;
+				} else {
+					text = &text[..text.len() - 1];
+				}
+			} else {
+				break closest;
+			};
+		};
+
+		// NOTE: this will reallocate a few strings, but it is what it is
+		Ok(cached_song.clone())
+	}
+	// }}}
 	// {{{ Read jacket
 	pub fn read_jacket<'a>(
 		&mut self,
-		ctx: &'a UserContext,
+		ctx: &UserContext,
 		image: &DynamicImage,
-	) -> Result<(&'a Jacket, &'a CachedSong), Error> {
+	) -> Result<CachedSong, Error> {
 		let rect =
 			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), jacket_rects())
 				.ok_or_else(|| "Could not find jacket area in picture")?
 				.to_absolute();
 
 		let cropped = image.view(rect.x, rect.y, rect.width, rect.height);
-		let (distance, jacket) = ctx
+		let (distance, song_id) = ctx
 			.jacket_cache
 			.recognise(&*cropped)
 			.ok_or_else(|| "Could not recognise jacket")?;
 
 		if distance > 100.0 {
-			// Save image to be sent to discord
-			self.crop_image_to_bytes(&image, rect)?;
 			Err("No known jacket looks like this")?;
 		}
 
 		let song = ctx
 			.song_cache
-			.lookup(jacket.song_id)
-			.ok_or_else(|| format!("Could not find song with id {}", jacket.song_id))?;
+			.lock()
+			.map_err(|_| "Poisoned song cache")?
+			.lookup(*song_id)
+			.ok_or_else(|| format!("Could not find song with id {}", song_id))?
+			// NOTE: this will reallocate a few strings, but it is what it is
+			.clone();
 
-		Ok((jacket, song))
+		Ok(song)
 	}
 	// }}}
 }

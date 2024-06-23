@@ -1,12 +1,15 @@
 use std::fmt::Display;
 
 use crate::context::{Context, Error};
-use crate::score::{CreatePlay, ImageCropper};
+use crate::score::{jacket_rects, CreatePlay, ImageCropper, ImageDimensions, RelativeRect};
 use crate::user::User;
 use image::imageops::FilterType;
+use image::ImageFormat;
 use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage};
 use poise::{serenity_prelude as serenity, CreateReply};
+use tokio::fs::create_dir_all;
 
+// {{{ Help
 /// Show this help menu
 #[poise::command(prefix_command, track_edits, slash_command)]
 pub async fn help(
@@ -26,7 +29,8 @@ pub async fn help(
 	.await?;
 	Ok(())
 }
-
+// }}}
+// {{{ Score
 /// Score management
 #[poise::command(
 	prefix_command,
@@ -37,7 +41,8 @@ pub async fn help(
 pub async fn score(_ctx: Context<'_>) -> Result<(), Error> {
 	Ok(())
 }
-
+// }}}
+// {{{ Score magic
 // {{{ Send error embed with image
 async fn error_with_image(
 	ctx: Context<'_>,
@@ -77,96 +82,40 @@ pub async fn magic(
 		}
 	};
 
+	println!("Handling command from user {:?}", user.discord_id);
+
 	if files.len() == 0 {
 		ctx.reply("No images found attached to message").await?;
 	} else {
 		let mut embeds: Vec<CreateEmbed> = vec![];
-		let mut attachements: Vec<CreateAttachment> = vec![];
+		let mut attachments: Vec<CreateAttachment> = vec![];
 		let handle = ctx
 			.reply(format!("Processed 0/{} scores", files.len()))
 			.await?;
 
 		for (i, file) in files.iter().enumerate() {
 			if let Some(_) = file.dimensions() {
+				// {{{ Image pre-processing
 				// Download image and guess it's format
 				let bytes = file.download().await?;
 				let format = image::guess_format(&bytes)?;
 
-				// Image pre-processing
 				let image = image::load_from_memory_with_format(&bytes, format)?.resize(
 					1024,
 					1024,
 					FilterType::Nearest,
 				);
-
-				// // {{{ Table experiment
-				// let table_format = FormatBuilder::new()
-				// 	.separators(
-				// 		&[LinePosition::Title],
-				// 		LineSeparator::new('─', '┬', '┌', '┐'),
-				// 	)
-				// 	.padding(1, 1)
-				// 	.build();
-				// let mut table = Table::new();
-				// table.set_format(table_format);
-				// table.set_titles(row!["Chart", "Level", "Score", "Rating"]);
-				// table.add_row(row!["Quon", "BYD 10", "10000807", "12.3 (-132)"]);
-				// table.add_row(row!["Monochrome princess", "FTR 9+", " 9380807", "10.2"]);
-				// table.add_row(row!["Grievous lady", "FTR 11", " 9286787", "11.2"]);
-				// table.add_row(row!["Fracture ray", "FTR 11", " 8990891", "11.0"]);
-				// table.add_row(row!["Shades of Light", "FTR 9+", "10000976", " 9.3 (-13)"]);
-				// ctx.say(format!("```\n{}\n```", table.to_string())).await?;
-				// // }}}
-				// // {{{ Embed experiment
-				// let icon_attachement = CreateAttachment::file(
-				// 	&tokio::fs::File::open("./data/jackets/grievous.png").await?,
-				// 	"grievous.png",
-				// )
-				// .await?;
-				// let msg = CreateMessage::default().embed(
-				// 	CreateEmbed::default()
-				// 		.title("Grievous lady [FTR 11]")
-				// 		.thumbnail("attachment://grievous.png")
-				// 		.field("Score", "998302 (+8973)", true)
-				// 		.field("Rating", "12.2 (+.6)", true)
-				// 		.field("Grade", "EX+", true)
-				// 		.field("ζ-Score", "982108 (+347)", true)
-				// 		.field("ζ-Rating", "11.5 (+.45)", true)
-				// 		.field("ζ-Grade", "EX", true)
-				// 		.field("Status", "FR (-243F)", true)
-				// 		.field("Max recall", "308/1073", true)
-				// 		.field("Breakdown", "894/342/243/23", true),
-				// );
-				//
-				// ctx.channel_id()
-				// 	.send_files(ctx.http(), [icon_attachement], msg)
-				// 	.await?;
-				// // }}}
-
+				// }}}
+				// {{{ Detection
 				// Create cropper and run OCR
 				let mut cropper = ImageCropper::default();
 
-				let (jacket, cached_song) = match cropper.read_jacket(ctx.data(), &image) {
-					// {{{ Jacket recognition error handling
-					Err(err) => {
-						error_with_image(
-							ctx,
-							&cropper.bytes,
-							&file.filename,
-							"Error while detecting jacket",
-							err,
-						)
-						.await?;
+				let song_by_jacket = cropper.read_jacket(ctx.data(), &image);
 
-						continue;
-					}
-					// }}}
-					Ok(j) => j,
-				};
+				// This makes OCR more likely to work
+				let mut ocr_image = image.grayscale().blur(1.);
 
-				let mut image = image.grayscale().blur(1.);
-
-				let difficulty = match cropper.read_difficulty(&image) {
+				let difficulty = match cropper.read_difficulty(&ocr_image) {
 					// {{{ OCR error handling
 					Err(err) => {
 						error_with_image(
@@ -184,9 +133,9 @@ pub async fn magic(
 					Ok(d) => d,
 				};
 
-				image.invert();
+				ocr_image.invert();
 
-				let score = match cropper.read_score(&image) {
+				let score = match cropper.read_score(&ocr_image) {
 					// {{{ OCR error handling
 					Err(err) => {
 						error_with_image(
@@ -204,6 +153,136 @@ pub async fn magic(
 					Ok(score) => score,
 				};
 
+				println!("Score: {}", score.0);
+
+				let song_by_name = cropper.read_song(&ocr_image, &ctx.data().song_cache);
+				let cached_song = match (song_by_jacket, song_by_name) {
+					// {{{ Both errors
+					(Err(err_jacket), Err(err_name)) => {
+						error_with_image(
+							ctx,
+							&cropper.bytes,
+							&file.filename,
+							"Hey! I could not read the score in the provided picture.",
+							&format!(
+                                "This can mean one of three things:
+1) The image you provided is not that of an Arcaea score
+2) The image you provided contains a newly added chart that is not in my database yet
+3) The image you provided contains character art that covers the chart name. When this happens, I try to make use of the jacket art in order to determine the chart. It is possible that I've never seen the jacket art for this particular song on this particular difficulty. Contact `@prescientmoon` on discord in order to resolve the issue for you & future users playing this chart!
+
+Nerdy info:
+```
+Jacket error: {}
+Title error: {}
+```" ,
+								err_jacket, err_name
+							),
+						)
+						.await?;
+						continue;
+					}
+					// }}}
+					// {{{ Only jacket succeeded
+					(Ok(by_jacket), Err(err_name)) => {
+						println!("Could not read name with error: {}", err_name);
+						by_jacket
+					}
+					// }}}
+					// {{{ Only name succeeded
+					(Err(err_jacket), Ok(mut by_name)) => {
+						println!("Could not recognise jacket with error: {}", err_jacket);
+
+						// {{{ Find image rect
+						let rect = RelativeRect::from_aspect_ratio(
+							ImageDimensions::from_image(&image),
+							jacket_rects(),
+						)
+						.ok_or_else(|| "Could not find jacket area in picture")?
+						.to_absolute();
+						// }}}
+						// {{{ Find chart
+						let chart = by_name.lookup(difficulty).ok_or_else(|| {
+							format!(
+								"Cannot find difficulty {:?} for chart {:?}",
+								difficulty, by_name.song.title
+							)
+						})?;
+						// }}}
+						// {{{ Build path
+						let filename = format!("{}-{}", by_name.song.id, chart.id);
+						let jacket = format!("user/{}", filename);
+
+						let jacket_dir = ctx.data().data_dir.join("jackets/user");
+						create_dir_all(&jacket_dir).await?;
+						let jacket_path = jacket_dir.join(format!("{}.png", filename));
+						// }}}
+						// {{{ Save image to disk
+						image
+							.crop_imm(rect.x, rect.y, rect.width, rect.height)
+							.save_with_format(&jacket_path, ImageFormat::Png)?;
+						// }}}
+						// {{{ Update jacket in db
+						sqlx::query!(
+							"UPDATE charts SET jacket=? WHERE song_id=? AND difficulty=?",
+							jacket,
+							chart.song_id,
+							chart.difficulty,
+						)
+						.execute(&ctx.data().db)
+						.await?;
+						// }}}
+						// {{{ Aquire and use song cache lock
+						{
+							let mut song_cache = ctx
+								.data()
+								.song_cache
+								.lock()
+								.map_err(|_| "Poisoned song cache")?;
+
+							let chart = song_cache
+								.lookup_mut(by_name.song.id)
+								.ok_or_else(|| {
+									format!("Could not find song for id {}", by_name.song.id)
+								})?
+								.lookup_mut(difficulty)
+								.ok_or_else(|| {
+									format!(
+										"Could not find difficulty {:?} for song {}",
+										difficulty, by_name.song.title
+									)
+								})?;
+
+							if chart.jacket.is_none() {
+								if let Some(chart) = by_name.lookup_mut(difficulty) {
+									chart.jacket = Some(jacket_path.clone());
+								};
+								chart.jacket = Some(jacket_path);
+							} else {
+								println!(
+									"Jacket not detected for chart {} [{:?}]",
+									by_name.song.id, difficulty
+								)
+							};
+						}
+						// }}}
+
+						by_name
+					}
+					// }}}
+					// {{{ Both succeeded
+					(Ok(by_jacket), Ok(by_name)) => {
+						if by_name.song.id != by_jacket.song.id {
+							println!(
+								"Got diverging choices between '{:?}' and '{:?}'",
+								by_jacket.song.id, by_name.song.id
+							);
+						};
+
+						by_jacket
+					} // }}}
+				};
+
+				// {{{ Build play
 				let song = &cached_song.song;
 				let chart = cached_song.lookup(difficulty).ok_or_else(|| {
 					format!(
@@ -216,10 +295,15 @@ pub async fn magic(
 					.with_attachment(file)
 					.save(&ctx.data())
 					.await?;
-
-				let (embed, attachement) = play.to_embed(&song, &chart, &jacket).await?;
+				// }}}
+				// }}}
+				// {{{ Deliver embed
+				let (embed, attachment) = play.to_embed(&song, &chart).await?;
 				embeds.push(embed);
-				attachements.push(attachement);
+				if let Some(attachment) = attachment {
+					attachments.push(attachment);
+				}
+			// }}}
 			} else {
 				ctx.reply("One of the attached files is not an image!")
 					.await?;
@@ -240,9 +324,10 @@ pub async fn magic(
 		let msg = CreateMessage::new().embeds(embeds);
 
 		ctx.channel_id()
-			.send_files(ctx.http(), attachements, msg)
+			.send_files(ctx.http(), attachments, msg)
 			.await?;
 	}
 
 	Ok(())
 }
+// }}}

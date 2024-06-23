@@ -1,10 +1,10 @@
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 use image::{GenericImageView, Rgba};
 use kd_tree::{KdMap, KdPoint};
 use num::Integer;
 
-use crate::context::Error;
+use crate::{chart::SongCache, context::Error};
 
 /// How many sub-segments to split each side into
 const SPLIT_FACTOR: u32 = 5;
@@ -13,12 +13,6 @@ const IMAGE_VEC_DIM: usize = (SPLIT_FACTOR * SPLIT_FACTOR * 3) as usize;
 #[derive(Debug, Clone)]
 pub struct ImageVec {
 	pub colors: [f32; IMAGE_VEC_DIM],
-}
-
-#[derive(Debug, Clone)]
-pub struct Jacket {
-	pub song_id: u32,
-	pub path: PathBuf,
 }
 
 impl ImageVec {
@@ -76,29 +70,28 @@ impl KdPoint for ImageVec {
 }
 
 pub struct JacketCache {
-	tree: KdMap<ImageVec, Jacket>,
+	// TODO: make this private
+	pub tree: KdMap<ImageVec, u32>,
 }
 
 impl JacketCache {
 	// {{{ Generate tree
-	pub fn new(data_dir: &PathBuf) -> Result<Self, Error> {
-		let jacket_csv_path = data_dir.join("jackets.csv");
-		let mut reader = csv::Reader::from_path(jacket_csv_path)?;
-
+	// This is a bit inefficient (using a hash set), but only runs once
+	pub fn new(song_cache: &SongCache) -> Result<Self, Error> {
 		let mut entries = vec![];
+		let mut jackets: HashSet<(&PathBuf, u32)> = HashSet::new();
 
-		for record in reader.records() {
-			let record = record?;
-			let filename = &record[0];
-			let song_id = u32::from_str_radix(&record[1], 10)?;
-			let image_path = data_dir.join(format!("jackets/{}.png", filename));
-			let image = image::io::Reader::open(&image_path)?.decode()?;
-			let jacket = Jacket {
-				song_id,
-				path: image_path,
-			};
+		for item in song_cache.songs() {
+			for chart in item.charts() {
+				if let Some(jacket) = &chart.jacket {
+					jackets.insert((jacket, item.song.id));
+				}
+			}
+		}
 
-			entries.push((ImageVec::from_image(&image), jacket))
+		for (path, song_id) in jackets {
+			let image = image::io::Reader::open(path)?.decode()?;
+			entries.push((ImageVec::from_image(&image), song_id))
 		}
 
 		let result = Self {
@@ -113,7 +106,7 @@ impl JacketCache {
 	pub fn recognise(
 		&self,
 		image: &impl GenericImageView<Pixel = Rgba<u8>>,
-	) -> Option<(f32, &Jacket)> {
+	) -> Option<(f32, &u32)> {
 		self.tree
 			.nearest(&ImageVec::from_image(image))
 			.map(|p| (p.squared_distance.sqrt(), &p.item.1))

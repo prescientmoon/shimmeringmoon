@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use sqlx::{prelude::FromRow, SqlitePool};
 
 use crate::context::Error;
@@ -46,6 +48,13 @@ pub struct Song {
 	pub ocr_alias: Option<String>,
 	pub artist: Option<String>,
 }
+
+impl Song {
+	#[inline]
+	pub fn ocr_string(&self) -> &str {
+		(&self.ocr_alias).as_ref().unwrap_or(&self.title)
+	}
+}
 // }}}
 // {{{ Chart
 #[derive(Debug, Clone, FromRow)]
@@ -58,9 +67,11 @@ pub struct Chart {
 
 	pub note_count: u32,
 	pub chart_constant: u32,
+
+	pub jacket: Option<PathBuf>,
 }
 // }}}
-// {{{ Cache
+// {{{ Cached song
 #[derive(Debug, Clone)]
 pub struct CachedSong {
 	pub song: Song,
@@ -79,8 +90,21 @@ impl CachedSong {
 			.get(difficulty.to_index())
 			.and_then(|c| c.as_ref())
 	}
-}
 
+	#[inline]
+	pub fn lookup_mut(&mut self, difficulty: Difficulty) -> Option<&mut Chart> {
+		self.charts
+			.get_mut(difficulty.to_index())
+			.and_then(|c| c.as_mut())
+	}
+
+	#[inline]
+	pub fn charts(&self) -> impl Iterator<Item = &Chart> {
+		self.charts.iter().filter_map(|i| i.as_ref())
+	}
+}
+// }}}
+// {{{ Song cache
 #[derive(Debug, Clone, Default)]
 pub struct SongCache {
 	songs: Vec<Option<CachedSong>>,
@@ -92,8 +116,18 @@ impl SongCache {
 		self.songs.get(id as usize).and_then(|i| i.as_ref())
 	}
 
+	#[inline]
+	pub fn lookup_mut(&mut self, id: u32) -> Option<&mut CachedSong> {
+		self.songs.get_mut(id as usize).and_then(|i| i.as_mut())
+	}
+
+	#[inline]
+	pub fn songs(&self) -> impl Iterator<Item = &CachedSong> {
+		self.songs.iter().filter_map(|i| i.as_ref())
+	}
+
 	// {{{ Populate cache
-	pub async fn new(pool: &SqlitePool) -> Result<Self, Error> {
+	pub async fn new(data_dir: &PathBuf, pool: &SqlitePool) -> Result<Self, Error> {
 		let mut result = Self::default();
 
 		let songs = sqlx::query!("SELECT * FROM songs").fetch_all(pool).await?;
@@ -125,6 +159,9 @@ impl SongCache {
 					level: chart.level,
 					chart_constant: chart.chart_constant as u32,
 					note_count: chart.note_count as u32,
+					jacket: chart
+						.jacket
+						.map(|jacket| data_dir.join("jackets").join(format!("{}.png", jacket))),
 				};
 
 				let index = chart.difficulty.to_index();

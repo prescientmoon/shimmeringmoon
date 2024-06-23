@@ -14,54 +14,79 @@ conn = sqlite3.connect(db_path)
 
 
 # {{{ Import songs
-def import_charts_from_csv(input_file):
-    with open(input_file, mode="r") as file:
-        chart_count = 0
-        songs = dict()
+def import_charts_from_csv():
+    chart_count = 0
+    songs = dict()
 
+    with open(data_dir + "/charts.csv", mode="r") as file:
         for row in csv.reader(file):
             if len(row) > 0:
                 chart_count += 1
                 [title, difficulty, level, cc, _, note_count, _, _, _] = row
                 if songs.get(title) is None:
-                    songs[title] = []
-                songs[title].append((difficulty, level, cc, note_count))
+                    songs[title] = {"charts": [], "shorthand": None}
+                songs[title]["charts"].append([difficulty, level, cc, note_count, None])
 
-        for title, charts in songs.items():
-            artist = None
+    with open(data_dir + "/jackets.csv", mode="r") as file:
+        for row in csv.reader(file):
+            if len(row) > 0:
+                [title, jacket, difficulty] = row
+                if difficulty.strip() != "":
+                    changed = 0
 
-            if title.startswith("Quon"):
-                artist = title[6:-1]
-                title = "Quon"
+                    for i in range(len(songs[title]["charts"])):
+                        if songs[title]["charts"][i][0] == difficulty:
+                            songs[title]["charts"][i][4] = jacket
+                            changed += 1
 
-            row = conn.execute(
+                    if changed == 0:
+                        raise f"Nothing changed for chart {title} [{difficulty}]"
+                else:
+                    for i in range(len(songs[title]["charts"])):
+                        songs[title]["charts"][i][4] = jacket
+
+    with open(data_dir + "/shorthands.csv", mode="r") as file:
+        for row in csv.reader(file):
+            if len(row) > 0:
+                [title, shorthand] = row
+                songs[title]["shorthand"] = shorthand
+
+    for title, entry in songs.items():
+        artist = None
+
+        if title.startswith("Quon"):
+            artist = title[6:-1]
+            title = "Quon"
+
+        row = conn.execute(
+            """
+                INSERT INTO songs(title,artist,ocr_alias)
+                VALUES (?,?,?)
+                RETURNING id
+            """,
+            (title, artist, entry.get("shorthand")),
+        ).fetchone()
+        song_id = row[0]
+
+        for difficulty, level, cc, note_count, jacket in entry["charts"]:
+            conn.execute(
                 """
-                    INSERT INTO songs(title,artist)
-                    VALUES (?,?)
-                    RETURNING id
-                """,
-                (title, artist),
-            ).fetchone()
-            song_id = row[0]
-
-            for difficulty, level, cc, note_count in charts:
-                conn.execute(
-                    """
-                        INSERT INTO charts(song_id, difficulty, level, note_count, chart_constant)
-                        VALUES(?,?,?,?,?)
+                        INSERT INTO charts(song_id, difficulty, level, note_count, chart_constant, jacket)
+                        VALUES(?,?,?,?,?, ?)
                     """,
-                    (
-                        song_id,
-                        difficulty,
-                        level,
-                        int(note_count.replace(",", "").replace(".", "")),
-                        int(float(cc) * 100),
-                    ),
-                )
+                (
+                    song_id,
+                    difficulty,
+                    level,
+                    int(note_count.replace(",", "").replace(".", "")),
+                    int(float(cc) * 100),
+                    jacket,
+                ),
+            )
 
-        conn.commit()
+    conn.commit()
 
-        print(f"Imported {chart_count} charts and {len(songs)} songs")
+    print(f"Imported {chart_count} charts and {len(songs)} songs")
 
 
 # }}}
@@ -70,4 +95,4 @@ command = sys.argv[1]
 subcommand = sys.argv[2]
 
 if command == "import" and subcommand == "charts":
-    import_charts_from_csv(sys.argv[3])
+    import_charts_from_csv()
