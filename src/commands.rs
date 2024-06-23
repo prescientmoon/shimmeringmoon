@@ -166,9 +166,9 @@ pub async fn magic(
 							"Hey! I could not read the score in the provided picture.",
 							&format!(
                                 "This can mean one of three things:
-1) The image you provided is not that of an Arcaea score
-2) The image you provided contains a newly added chart that is not in my database yet
-3) The image you provided contains character art that covers the chart name. When this happens, I try to make use of the jacket art in order to determine the chart. It is possible that I've never seen the jacket art for this particular song on this particular difficulty. Contact `@prescientmoon` on discord in order to resolve the issue for you & future users playing this chart!
+1. The image you provided is not that of an Arcaea score
+2. The image you provided contains a newly added chart that is not in my database yet
+3. The image you provided contains character art that covers the chart name. When this happens, I try to make use of the jacket art in order to determine the chart. It is possible that I've never seen the jacket art for this particular song on this particular difficulty. Contact `@prescientmoon` on discord in order to resolve the issue for you & future users playing this chart!
 
 Nerdy info:
 ```

@@ -1,5 +1,6 @@
 #![warn(clippy::str_to_string)]
 #![feature(iter_map_windows)]
+#![feature(let_chains)]
 
 mod chart;
 mod commands;

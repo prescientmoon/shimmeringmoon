@@ -54,9 +54,12 @@ def import_charts_from_csv():
     for title, entry in songs.items():
         artist = None
 
-        if title.startswith("Quon"):
-            artist = title[6:-1]
-            title = "Quon"
+        # Problematic titles that can belong to multiple artists
+        for possibility in ["Quon", "Gensis"]:
+            if title.startswith(possibility):
+                artist = title[len(possibility) + 2 : -1]
+                title = possibility
+                break
 
         row = conn.execute(
             """
@@ -95,4 +98,7 @@ command = sys.argv[1]
 subcommand = sys.argv[2]
 
 if command == "import" and subcommand == "charts":
+    import_charts_from_csv()
+&song_title
+if command == "export" and subcommand == "jackets":
     import_charts_from_csv()

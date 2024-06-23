@@ -5,6 +5,7 @@ use std::{
 	sync::{Mutex, OnceLock},
 };
 
+use edit_distance::edit_distance;
 use image::{DynamicImage, GenericImageView};
 use num::Rational64;
 use poise::serenity_prelude::{Attachment, AttachmentId, CreateAttachment, CreateEmbed};
@@ -100,6 +101,15 @@ impl RelativeRect {
 		}
 	}
 
+	/// Clamps the values apropriately
+	#[inline]
+	pub fn fix(&mut self) {
+		self.x = self.x.max(0.);
+		self.y = self.y.max(0.);
+		self.width = self.width.min(1. - self.x);
+		self.height = self.height.min(1. - self.y);
+	}
+
 	#[inline]
 	pub fn to_absolute(&self) -> AbsoluteRect {
 		AbsoluteRect::new(
@@ -168,6 +178,7 @@ fn widen_by(rects: &mut Vec<RelativeRect>, x: f32, y: f32) {
 		rect.y -= y;
 		rect.width += 2. * x;
 		rect.height += 2. * y;
+		rect.fix();
 	}
 }
 // }}}
@@ -228,7 +239,7 @@ fn title_rects() -> &'static [RelativeRect] {
 			AbsoluteRect::new(760, 128, 1270, 118, ImageDimensions::new(2778, 1284)).to_relative(),
 		];
 		process_datapoints(&mut rects);
-		widen_by(&mut rects, 0.1, 0.0);
+		widen_by(&mut rects, 0.3, 0.0);
 		rects
 	})
 }
@@ -550,7 +561,7 @@ impl ImageCropper {
 			PageSegMode::PsmRawLine,
 			PageSegMode::PsmSingleLine,
 		] {
-			let result = self.read_score_with_mode(image, mode)?;
+			let result = self.read_score_with_mode(mode)?;
 			results.push(result.0);
 			// OCR sometimes loses digits
 			if result.0 < 1_000_000 {
@@ -567,26 +578,23 @@ impl ImageCropper {
 		unreachable!()
 	}
 
-	pub fn read_score_with_mode(
-		&mut self,
-		image: &DynamicImage,
-		mode: PageSegMode,
-	) -> Result<Score, Error> {
+	fn read_score_with_mode(&mut self, mode: PageSegMode) -> Result<Score, Error> {
 		let mut t = Tesseract::new(None, Some("eng"))?
 			// .set_variable("classify_bln_numeric_mode", "1'")?
 			.set_variable("tessedit_char_whitelist", "0123456789'")?
 			.set_image_from_mem(&self.bytes)?;
 		t.set_page_seg_mode(mode);
 		t = t.recognize()?;
-		let conf = t.mean_text_conf();
 
-		if conf < 10 && conf != 0 {
-			Err(format!(
-				"Score text is not readable (confidence = {}, text = {}).",
-				conf,
-				t.get_text()?.trim()
-			))?;
-		}
+		// Disabled, as this was super unreliable
+		// let conf = t.mean_text_conf();
+		// if conf < 10 && conf != 0 {
+		// 	Err(format!(
+		// 		"Score text is not readable (confidence = {}, text = {}).",
+		// 		conf,
+		// 		t.get_text()?.trim()
+		// 	))?;
+		// }
 
 		let text: String = t
 			.get_text()?
@@ -622,9 +630,7 @@ impl ImageCropper {
 		let difficulty = Difficulty::DIFFICULTIES
 			.iter()
 			.zip(Difficulty::DIFFICULTY_STRINGS)
-			.min_by_key(|(_, difficulty_string)| {
-				edit_distance::edit_distance(difficulty_string, text)
-			})
+			.min_by_key(|(_, difficulty_string)| edit_distance(difficulty_string, text))
 			.map(|(difficulty, _)| *difficulty)
 			.ok_or_else(|| format!("Unrecognised difficulty '{}'", text))?;
 
@@ -647,39 +653,49 @@ impl ImageCropper {
 		let mut t = Tesseract::new(None, Some("eng"))?
 			.set_variable(
 				"tessedit_char_whitelist",
-				"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ",
+				"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789,.()- ",
 			)?
 			.set_image_from_mem(&self.bytes)?;
 		t.set_page_seg_mode(PageSegMode::PsmSingleLine);
 		t = t.recognize()?;
 
-		// if t.mean_text_conf() < 10 {
-		// 	Err("Difficulty text is not readable.")?;
-		// }
-
 		let raw_text: &str = &t.get_text()?;
 		let raw_text = raw_text.trim(); // not quite raw 🤔
-		let mut text = raw_text;
+		let mut text: &str = &raw_text.to_lowercase();
+
+		let conf = t.mean_text_conf();
+		if conf < 20 && conf != 0 {
+			Err(format!(
+				"Title text is not readable (confidence = {}, text = {}).",
+				conf, raw_text
+			))?;
+		}
 
 		println!("Raw text: {}, confidence: {}", text, t.mean_text_conf());
 
 		let lock = cache.lock().map_err(|_| "Poisoned song cache")?;
 		let cached_song = loop {
-			let (closest, distance) = lock
+			let close_enough: Vec<_> = lock
 				.songs()
 				.map(|item| {
-					(
-						item,
-						edit_distance::edit_distance(
-							&item.song.title.to_lowercase(),
-							&text.to_lowercase(),
-						),
-					)
-				})
-				.min_by_key(|(_, d)| *d)
-				.ok_or_else(|| "Empty song cache")?;
+					let song_title = item.song.title.to_lowercase();
+					let shortest_len = Ord::min(song_title.len(), text.len());
+					let mut smallest_distance = edit_distance(&text, &song_title);
 
-			if distance > closest.song.title.len() / 3 {
+					if let Some(sliced) = &song_title.get(..shortest_len)
+						&& text.len() >= 6
+					{
+						// We want to make this route super costly, which is why we multiply by 50
+						smallest_distance =
+							smallest_distance.min(50 * edit_distance(&text, sliced));
+					}
+
+					(item, smallest_distance)
+				})
+				.filter(|(item, d)| *d < item.song.title.len() / 3)
+				.collect();
+
+			if close_enough.len() == 0 {
 				if text.len() == 1 {
 					Err(format!(
 						"Could not find match for chart name '{}'",
@@ -688,8 +704,13 @@ impl ImageCropper {
 				} else {
 					text = &text[..text.len() - 1];
 				}
+			} else if close_enough.len() == 1 {
+				break close_enough[0].0;
 			} else {
-				break closest;
+				Err(format!(
+					"Name '{}' is too vague to choose a match",
+					raw_text
+				))?;
 			};
 		};
 
