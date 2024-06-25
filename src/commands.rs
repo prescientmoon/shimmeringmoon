@@ -7,6 +7,7 @@ use image::imageops::FilterType;
 use image::ImageFormat;
 use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage};
 use poise::{serenity_prelude as serenity, CreateReply};
+use sqlx::query;
 use tokio::fs::create_dir_all;
 
 // {{{ Help
@@ -35,7 +36,7 @@ pub async fn help(
 #[poise::command(
 	prefix_command,
 	slash_command,
-	subcommands("magic"),
+	subcommands("magic", "delete"),
 	subcommand_required
 )]
 pub async fn score(_ctx: Context<'_>) -> Result<(), Error> {
@@ -110,10 +111,20 @@ pub async fn magic(
 				// Create cropper and run OCR
 				let mut cropper = ImageCropper::default();
 
+				let edited = CreateReply::default()
+					.reply(true)
+					.content(format!("Image {}: reading jacket", i + 1));
+				handle.edit(ctx, edited).await?;
+
 				let song_by_jacket = cropper.read_jacket(ctx.data(), &image);
 
 				// This makes OCR more likely to work
 				let mut ocr_image = image.grayscale().blur(1.);
+
+				let edited = CreateReply::default()
+					.reply(true)
+					.content(format!("Image {}: reading difficulty", i + 1));
+				handle.edit(ctx, edited).await?;
 
 				let difficulty = match cropper.read_difficulty(&ocr_image) {
 					// {{{ OCR error handling
@@ -135,25 +146,10 @@ pub async fn magic(
 
 				ocr_image.invert();
 
-				let score = match cropper.read_score(&ocr_image) {
-					// {{{ OCR error handling
-					Err(err) => {
-						error_with_image(
-							ctx,
-							&cropper.bytes,
-							&file.filename,
-							"Could not read score from picture",
-							&err,
-						)
-						.await?;
-
-						continue;
-					}
-					// }}}
-					Ok(score) => score,
-				};
-
-				println!("Score: {}", score.0);
+				let edited = CreateReply::default()
+					.reply(true)
+					.content(format!("Image {}: reading title", i + 1));
+				handle.edit(ctx, edited).await?;
 
 				let song_by_name = cropper.read_song(&ocr_image, &ctx.data().song_cache);
 				let cached_song = match (song_by_jacket, song_by_name) {
@@ -166,7 +162,7 @@ pub async fn magic(
 							"Hey! I could not read the score in the provided picture.",
 							&format!(
                                 "This can mean one of three things:
-1. The image you provided is not that of an Arcaea score
+1. The image you provided is *not that of an Arcaea score
 2. The image you provided contains a newly added chart that is not in my database yet
 3. The image you provided contains character art that covers the chart name. When this happens, I try to make use of the jacket art in order to determine the chart. It is possible that I've never seen the jacket art for this particular song on this particular difficulty. Contact `@prescientmoon` on discord in order to resolve the issue for you & future users playing this chart!
 
@@ -282,7 +278,7 @@ Title error: {}
 					} // }}}
 				};
 
-				// {{{ Build play
+				// {{{ Build chart
 				let song = &cached_song.song;
 				let chart = cached_song.lookup(difficulty).ok_or_else(|| {
 					format!(
@@ -290,7 +286,32 @@ Title error: {}
 						difficulty, song.title
 					)
 				})?;
+				// }}}
 
+				let edited = CreateReply::default()
+					.reply(true)
+					.content(format!("Image {}: reading score", i + 1));
+				handle.edit(ctx, edited).await?;
+
+				let score = match cropper.read_score(Some(chart.note_count), &ocr_image) {
+					// {{{ OCR error handling
+					Err(err) => {
+						error_with_image(
+							ctx,
+							&cropper.bytes,
+							&file.filename,
+							"Could not read score from picture",
+							&err,
+						)
+						.await?;
+
+						continue;
+					}
+					// }}}
+					Ok(score) => score,
+				};
+
+				// {{{ Build play
 				let play = CreatePlay::new(score, chart, &user)
 					.with_attachment(file)
 					.save(&ctx.data())
@@ -298,7 +319,7 @@ Title error: {}
 				// }}}
 				// }}}
 				// {{{ Deliver embed
-				let (embed, attachment) = play.to_embed(&song, &chart).await?;
+				let (embed, attachment) = play.to_embed(&song, &chart, i).await?;
 				embeds.push(embed);
 				if let Some(attachment) = attachment {
 					attachments.push(attachment);
@@ -325,6 +346,49 @@ Title error: {}
 
 		ctx.channel_id()
 			.send_files(ctx.http(), attachments, msg)
+			.await?;
+	}
+
+	Ok(())
+}
+// }}}
+// {{{ Score delete
+/// Delete scores, given their IDs.
+#[poise::command(prefix_command, slash_command)]
+pub async fn delete(
+	ctx: Context<'_>,
+	#[description = "Id of score to delete"] ids: Vec<u32>,
+) -> Result<(), Error> {
+	let user = match User::from_context(&ctx).await {
+		Ok(user) => user,
+		Err(_) => {
+			ctx.say("You are not an user in my database, sorry!")
+				.await?;
+			return Ok(());
+		}
+	};
+
+	if ids.len() == 0 {
+		ctx.reply("Empty ID list provided").await?;
+		return Ok(());
+	}
+
+	let mut count = 0;
+
+	for id in ids {
+		let res = query!("DELETE FROM plays WHERE id=? AND user_id=?", id, user.id)
+			.execute(&ctx.data().db)
+			.await?;
+
+		if res.rows_affected() == 0 {
+			ctx.reply(format!("No play with id {} found", id)).await?;
+		} else {
+			count += 1;
+		}
+	}
+
+	if count > 0 {
+		ctx.reply(format!("Deleted {} play(s) successfully!", count))
 			.await?;
 	}
 

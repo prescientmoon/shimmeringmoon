@@ -10,7 +10,7 @@ mod score;
 mod user;
 
 use context::{Error, UserContext};
-use poise::serenity_prelude as serenity;
+use poise::serenity_prelude::{self as serenity, UserId};
 use sqlx::sqlite::SqlitePoolOptions;
 use std::{env::var, path::PathBuf, str::FromStr, sync::Arc, time::Duration};
 
@@ -32,8 +32,7 @@ async fn on_error(error: poise::FrameworkError<'_, UserContext, Error>) {
 
 #[tokio::main]
 async fn main() {
-	let data_dir = var("SHIMMERING_DATA_DIR")
-		.expect("Missing `SHIMMERING_DATA_DIR` env var, see README for more information.");
+	let data_dir = var("SHIMMERING_DATA_DIR").expect("Missing `SHIMMERING_DATA_DIR` env var");
 
 	let pool = SqlitePoolOptions::new()
 		.connect(&format!("sqlite://{}/db.sqlite", data_dir))
@@ -44,13 +43,28 @@ async fn main() {
 	let options = poise::FrameworkOptions {
 		commands: vec![commands::help(), commands::score()],
 		prefix_options: poise::PrefixFrameworkOptions {
-			prefix: Some("!".into()),
+			stripped_dynamic_prefix: Some(|_ctx, message, _user_ctx| {
+				Box::pin(async {
+					if message.author.bot || Into::<u64>::into(message.author.id) == 1 {
+						Ok(None)
+					} else if message.content.starts_with("!") {
+						Ok(Some(message.content.split_at(1)))
+					} else if message.guild_id.is_none() {
+						if message.content.trim().len() == 0 {
+							Ok(Some(("", "score magic")))
+						} else {
+							Ok(Some(("", &message.content[..])))
+						}
+					} else {
+						Ok(None)
+					}
+				})
+			}),
 			edit_tracker: Some(Arc::new(poise::EditTracker::for_timespan(
 				Duration::from_secs(3600),
 			))),
 			..Default::default()
 		},
-		// The global error handler for all error cases that may occur
 		on_error: |error| Box::pin(on_error(error)),
 		..Default::default()
 	};
@@ -68,8 +82,8 @@ async fn main() {
 		.options(options)
 		.build();
 
-	let token = var("SHIMMERING_DISCORD_TOKEN")
-		.expect("Missing `SHIMMERING_DISCORD_TOKEN` env var, see README for more information.");
+	let token =
+		var("SHIMMERING_DISCORD_TOKEN").expect("Missing `SHIMMERING_DISCORD_TOKEN` env var");
 	let intents =
 		serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
 

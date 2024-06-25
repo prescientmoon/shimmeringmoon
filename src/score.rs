@@ -6,8 +6,8 @@ use std::{
 };
 
 use edit_distance::edit_distance;
-use image::{DynamicImage, GenericImageView};
-use num::Rational64;
+use image::{imageops::FilterType, DynamicImage, GenericImageView};
+use num::{traits::Euclid, Rational64};
 use poise::serenity_prelude::{Attachment, AttachmentId, CreateAttachment, CreateEmbed};
 use tesseract::{PageSegMode, Tesseract};
 
@@ -198,7 +198,7 @@ fn score_rects() -> &'static [RelativeRect] {
 			AbsoluteRect::new(1125, 510, 534, 93, ImageDimensions::new(2778, 1284)).to_relative(),
 		];
 		process_datapoints(&mut rects);
-		widen_by(&mut rects, 0.0, 0.01);
+		widen_by(&mut rects, 0.0, 0.0075);
 		rects
 	})
 }
@@ -270,9 +270,29 @@ pub fn jacket_rects() -> &'static [RelativeRect] {
 pub struct Score(pub u32);
 
 impl Score {
-	// {{{ Score => ζ-Score
-	/// Returns the zeta score and the number of shinies
-	pub fn to_zeta(self, note_count: u32) -> (Score, u32) {
+	// {{{ Score analysis
+	// {{{ Mini getters
+	#[inline]
+	pub fn to_zeta(self, note_count: u32) -> Score {
+		self.analyse(note_count).0
+	}
+
+	#[inline]
+	pub fn shinies(self, note_count: u32) -> u32 {
+		self.analyse(note_count).1
+	}
+
+	#[inline]
+	pub fn units(self, note_count: u32) -> u32 {
+		self.analyse(note_count).2
+	}
+	// }}}
+
+	/// Returns the zeta score, the number of shinies, and the number of score units.
+	///
+	/// Pure (and higher) notes reward two score units, far notes reward one, and lost notes reward
+	/// none.
+	pub fn analyse(self, note_count: u32) -> (Score, u32, u32) {
 		// Smallest possible difference between (zeta-)scores
 		let increment = Rational64::new_raw(5_000_000, note_count as i64).reduced();
 		let zeta_increment = Rational64::new_raw(2_000_000, note_count as i64).reduced();
@@ -286,7 +306,11 @@ impl Score {
 		let zeta_score_units = Rational64::from_integer(2) * score_units + shinies;
 		let zeta_score = Score((zeta_increment * zeta_score_units).floor().to_integer() as u32);
 
-		(zeta_score, shinies.to_integer() as u32)
+		(
+			zeta_score,
+			shinies.to_integer() as u32,
+			score_units.to_integer() as u32,
+		)
 	}
 	// }}}
 	// {{{ Score => Play rating
@@ -368,7 +392,7 @@ impl CreatePlay {
 			user_id: user.id,
 			discord_attachment_id: None,
 			score,
-			zeta_score: score.to_zeta(chart.note_count as u32).0,
+			zeta_score: score.to_zeta(chart.note_count as u32),
 			max_recall: None,
 			far_notes: None,
 			// TODO: populate these
@@ -446,15 +470,61 @@ pub struct Play {
 }
 
 impl Play {
+	// {{{ Play => distribution
+	pub fn distribution(&self, note_count: u32) -> Option<(u32, u32, u32, u32)> {
+		if let Some(fars) = self.far_notes {
+			let (_, shinies, units) = self.score.analyse(note_count);
+			let (pures, rem) = (units - fars).div_rem_euclid(&2);
+			if rem == 1 {
+				println!("The impossible happened: got an invalid amount of far notes!");
+				return None;
+			}
+
+			let lost = note_count - fars - pures;
+			let non_max_pures = pures - shinies;
+			Some((shinies, non_max_pures, fars, lost))
+		} else {
+			None
+		}
+	}
+	// }}}
+	// {{{ Play => status
+	#[inline]
+	pub fn status(&self, chart: &Chart) -> Option<String> {
+		let score = self.score.0;
+		if score >= 10_000_000 {
+			let non_max_pures = chart.note_count + 10_000_000 - score;
+			if non_max_pures == 0 {
+				Some("MPM".to_string())
+			} else {
+				Some(format!("PM (-{})", non_max_pures))
+			}
+		} else if let Some(distribution) = self.distribution(chart.note_count) {
+			// if no lost notes...
+			if distribution.3 == 0 {
+				Some(format!("FR (-{}/-{})", distribution.1, distribution.2))
+			} else {
+				Some(format!(
+					"C (-{}/-{}/-{})",
+					distribution.1, distribution.2, distribution.3
+				))
+			}
+		} else {
+			None
+		}
+	}
+	// }}}
 	// {{{ Play to embed
+	/// Creates a discord embed for this play.
+	///
+	/// The `index` variable is only used to create distinct filenames.
 	pub async fn to_embed(
 		&self,
 		song: &Song,
 		chart: &Chart,
+		index: usize,
 	) -> Result<(CreateEmbed, Option<CreateAttachment>), Error> {
-		let (_, shiny_count) = self.score.to_zeta(chart.note_count);
-
-		let attachement_name = format!("{:?}-{:?}.png", song.id, self.score.0);
+		let attachement_name = format!("{:?}-{:?}-{:?}.png", song.id, self.score.0, index);
 		let icon_attachement = match &chart.jacket {
 			Some(path) => Some(
 				CreateAttachment::file(&tokio::fs::File::open(path).await?, &attachement_name)
@@ -462,6 +532,8 @@ impl Play {
 			),
 			None => None,
 		};
+
+		println!("{:?}", self.score.shinies(chart.note_count));
 
 		let mut embed = CreateEmbed::default()
 			.title(format!(
@@ -488,9 +560,13 @@ impl Play {
 				true,
 			)
 			.field("ζ-Grade", self.zeta_score.grade(), true)
-			.field("Status", "?", true)
+			.field(
+				"Status",
+				self.status(chart).unwrap_or("?".to_string()),
+				true,
+			)
 			.field("Max recall", "?", true)
-			.field("Breakdown", format!("{}/?/?/?", shiny_count), true);
+			.field("Id", format!("{}", self.id), true);
 
 		if icon_attachement.is_some() {
 			embed = embed.thumbnail(format!("attachment://{}", &attachement_name));
@@ -513,12 +589,13 @@ mod score_tests {
 			for shiny_count in 0..=note_count {
 				let score = Score(10000000 + shiny_count);
 				let zeta_score_units = 4 * (note_count - shiny_count) + 5 * shiny_count;
-				let (zeta_score, computed_shiny_count) = score.to_zeta(note_count);
+				let (zeta_score, computed_shiny_count, units) = score.analyse(note_count);
 				let expected_zeta_score = Rational64::from_integer(zeta_score_units as i64)
 					* Rational64::new_raw(2000000, note_count as i64).reduced();
 
 				assert_eq!(zeta_score, Score(expected_zeta_score.to_integer() as u32));
 				assert_eq!(computed_shiny_count, shiny_count);
+				assert_eq!(units, 2 * note_count);
 			}
 		}
 	}
@@ -547,9 +624,13 @@ impl ImageCropper {
 	}
 
 	// {{{ Read score
-	pub fn read_score(&mut self, image: &DynamicImage) -> Result<Score, Error> {
+	pub fn read_score(
+		&mut self,
+		note_count: Option<u32>,
+		image: &DynamicImage,
+	) -> Result<Score, Error> {
 		self.crop_image_to_bytes(
-			&image,
+			&image.resize_exact(image.width(), image.height(), FilterType::Nearest),
 			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), score_rects())
 				.ok_or_else(|| "Could not find score area in picture")?
 				.to_absolute(),
@@ -560,28 +641,93 @@ impl ImageCropper {
 			PageSegMode::PsmSingleWord,
 			PageSegMode::PsmRawLine,
 			PageSegMode::PsmSingleLine,
+			PageSegMode::PsmSparseText,
+			PageSegMode::PsmSingleBlock,
 		] {
-			let result = self.read_score_with_mode(mode)?;
-			results.push(result.0);
-			// OCR sometimes loses digits
-			if result.0 < 1_000_000 {
-				continue;
-			} else {
-				return Ok(result);
+			let result = self.read_score_with_mode(mode, "0123456789'/");
+			match result {
+				Ok(result) => {
+					results.push(result.0);
+				}
+				Err(err) => {
+					println!("OCR score result error: {}", err);
+				}
 			}
 		}
 
+		// {{{ Score correction
+		// The OCR sometimes fails to read "74" with the arcaea font,
+		// so we try to detect that and fix it
+		loop {
+			println!("Attempts: {:?}.", results);
+
+			let old_stack_len = results.len();
+			results = results
+				.iter()
+				.flat_map(|result| {
+					// If the length is correct, we are good to go!
+					if *result >= 8_000_000 {
+						vec![*result]
+					} else {
+						let mut results = vec![];
+						for i in [0, 1, 3, 4] {
+							let d = 10u32.pow(i);
+							if (*result / d) % 10 == 4 && (*result / d) % 100 != 74 {
+								let n = d * 10;
+								results.push((*result / n) * n * 10 + 7 * n + (*result % n));
+							}
+						}
+
+						results
+					}
+				})
+				.collect();
+
+			if old_stack_len == results.len() {
+				break;
+			}
+		}
+		// }}}
+		// {{{ Return score if consensus exists
+		// 1. Discard scores that are known to be impossible
+		results = results
+			.into_iter()
+			.filter(|result| {
+				8_000_000 <= *result
+					&& *result <= 10_010_000
+					&& note_count
+						.map(|note_count| {
+							let (zeta, shinies, score_units) = Score(*result).analyse(note_count);
+							8_000_000 <= zeta.0
+								&& zeta.0 <= 10_000_000 && shinies <= note_count
+								&& score_units <= 2 * note_count
+						})
+						.unwrap_or(true)
+			})
+			.collect();
+
+		// 2. Look for consensus
+		for result in results.iter() {
+			if results.iter().filter(|e| **e == *result).count() > results.len() / 2 {
+				return Ok(Score(*result));
+			}
+		}
+		// }}}
+
+		results.sort();
+		results.dedup();
+
 		Err(format!(
-			"Cannot read score, no matter the mode. Attempts: {:?}",
+			"Cannot read score. Possible values: {:?}.",
 			results
 		))?;
 		unreachable!()
 	}
 
-	fn read_score_with_mode(&mut self, mode: PageSegMode) -> Result<Score, Error> {
+	fn read_score_with_mode(&mut self, mode: PageSegMode, whitelist: &str) -> Result<Score, Error> {
 		let mut t = Tesseract::new(None, Some("eng"))?
-			// .set_variable("classify_bln_numeric_mode", "1'")?
-			.set_variable("tessedit_char_whitelist", "0123456789'")?
+			.set_variable("classify_bln_numeric_mode", "1")?
+			.set_variable("tessedit_char_whitelist", whitelist)?
 			.set_image_from_mem(&self.bytes)?;
 		t.set_page_seg_mode(mode);
 		t = t.recognize()?;
@@ -596,10 +742,12 @@ impl ImageCropper {
 		// 	))?;
 		// }
 
-		let text: String = t
-			.get_text()?
-			.trim()
+		let text: String = t.get_text()?.trim().to_string();
+
+		println!("Got {}", text);
+		let text: String = text
 			.chars()
+			.map(|char| if char == '/' { '7' } else { char })
 			.filter(|char| *char != ' ' && *char != '\'')
 			.collect();
 
@@ -620,12 +768,16 @@ impl ImageCropper {
 		t.set_page_seg_mode(PageSegMode::PsmRawLine);
 		t = t.recognize()?;
 
-		if t.mean_text_conf() < 10 {
-			Err("Difficulty text is not readable.")?;
-		}
-
 		let text: &str = &t.get_text()?;
 		let text = text.trim();
+
+		let conf = t.mean_text_conf();
+		if conf < 10 && conf != 0 {
+			Err(format!(
+				"Difficulty text is not readable (confidence = {}, text = {}).",
+				conf, text
+			))?;
+		}
 
 		let difficulty = Difficulty::DIFFICULTIES
 			.iter()
@@ -670,8 +822,6 @@ impl ImageCropper {
 				conf, raw_text
 			))?;
 		}
-
-		println!("Raw text: {}, confidence: {}", text, t.mean_text_conf());
 
 		let lock = cache.lock().map_err(|_| "Poisoned song cache")?;
 		let cached_song = loop {
