@@ -266,7 +266,7 @@ pub fn jacket_rects() -> &'static [RelativeRect] {
 // }}}
 // }}}
 // {{{ Score
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Score(pub u32);
 
 impl Score {
@@ -288,13 +288,41 @@ impl Score {
 	}
 	// }}}
 
+	#[inline]
+	pub fn increment(note_count: u32) -> Rational64 {
+		Rational64::new_raw(5_000_000, note_count as i64).reduced()
+	}
+
+	/// Remove the contribution made by shinies to a score.
+	#[inline]
+	pub fn forget_shinies(self, note_count: u32) -> Self {
+		Self(
+			(Self::increment(note_count) * Rational64::from_integer(self.units(note_count) as i64))
+				.floor()
+				.to_integer() as u32,
+		)
+	}
+
+	/// Compute a score without making a distinction between shinies and pures. That is, the given
+	/// value for `pures` must refer to the sum of `pure` and `shiny` notes.
+	///
+	/// This is the simplest way to compute a score, and is useful for error analysis.
+	#[inline]
+	pub fn compute_naive(note_count: u32, pures: u32, fars: u32) -> Self {
+		Self(
+			(Self::increment(note_count) * Rational64::from_integer((2 * pures + fars) as i64))
+				.floor()
+				.to_integer() as u32,
+		)
+	}
+
 	/// Returns the zeta score, the number of shinies, and the number of score units.
 	///
 	/// Pure (and higher) notes reward two score units, far notes reward one, and lost notes reward
 	/// none.
 	pub fn analyse(self, note_count: u32) -> (Score, u32, u32) {
 		// Smallest possible difference between (zeta-)scores
-		let increment = Rational64::new_raw(5_000_000, note_count as i64).reduced();
+		let increment = Self::increment(note_count);
 		let zeta_increment = Rational64::new_raw(2_000_000, note_count as i64).reduced();
 
 		let score = Rational64::from_integer(self.0 as i64);
@@ -345,6 +373,151 @@ impl Score {
 			"C"
 		} else {
 			"D"
+		}
+	}
+	// }}}
+	// {{{ Scores & Distribution => score
+	pub fn resolve_ambiguities(
+		scores: Vec<Score>,
+		read_distribution: Option<(u32, u32, u32)>,
+		note_count: u32,
+	) -> Result<(Score, Option<u32>, Option<&'static str>), Error> {
+		if scores.len() == 0 {
+			return Err("No scores in list to disambiguate from.")?;
+		}
+
+		let mut no_shiny_scores: Vec<_> = scores
+			.iter()
+			.map(|score| score.forget_shinies(note_count))
+			.collect();
+		no_shiny_scores.sort();
+		no_shiny_scores.dedup();
+
+		if let Some(read_distribution) = read_distribution {
+			let pures = read_distribution.0;
+			let fars = read_distribution.1;
+			let losts = read_distribution.2;
+
+			// Compute score from note breakdown subpairs
+			let pf_score = Score::compute_naive(note_count, pures, fars);
+			let fl_score = Score::compute_naive(note_count, note_count - losts - fars, fars);
+			let lp_score = Score::compute_naive(note_count, pures, note_count - losts - pures);
+
+			// {{{ Score is fixed, gotta figure out the exact distribution
+			if no_shiny_scores.len() == 1 {
+				let score = *scores.iter().max().unwrap();
+
+				// {{{ Look for consensus among recomputed scores
+				// Lemma: if two computed scores agree, then so will the third
+				let consensus_fars = if pf_score == fl_score {
+					Some(fars)
+				} else {
+					// Due to the above lemma, we know all three scores must be distinct by
+					// this point.
+					//
+					// Our strategy is to check which of the three scores agrees with the real
+					// score, and to then trust the `far` value that contributed to that pair.
+					let no_shiny_score = score.forget_shinies(note_count);
+					let pf_appears = no_shiny_score == pf_score;
+					let fl_appears = no_shiny_score == fl_score;
+					let lp_appears = no_shiny_score == lp_score;
+
+					match (pf_appears, fl_appears, lp_appears) {
+						(true, false, false) => Some(fars),
+						(false, true, false) => Some(fars),
+						(false, false, true) => Some(note_count - pures - losts),
+						_ => None,
+					}
+				};
+				// }}}
+
+				if scores.len() == 0 {
+					Ok((score, consensus_fars, None))
+				} else {
+					Ok((score, consensus_fars, Some("Due to a reading error, I could not make sure the shiny-amount I calculated is accurate!")))
+				}
+			
+			// }}}
+			// {{{ Score is not fixed, gotta figure out everything at once
+		}	else {
+				// Some of the values in the note distribution are likely wrong (due to reading
+				// errors). To get around this, we take each pair from the triplet, compute the score
+				// it induces, and figure out if there's any consensus as to which value in the
+				// provided score list is the real one.
+				//
+				// Note that sometimes the note distribution cannot resolve any of the issues. This is
+				// usually the case when the disagreement comes from the number of shinies.
+
+				// {{{ Look for consensus among recomputed scores
+				// Lemma: if two computed scores agree, then so will the third
+				let (trusted_pure_count, consensus_computed_score, consensus_fars) = if pf_score
+					== fl_score
+				{
+					(true, pf_score, fars)
+				} else {
+					// Due to the above lemma, we know all three scores must be distinct by
+					// this point.
+					//
+					// Our strategy is to check which of the three scores appear in the
+					// provided score list.
+					let pf_appears = no_shiny_scores.contains(&pf_score);
+					let fl_appears = no_shiny_scores.contains(&fl_score);
+					let lp_appears = no_shiny_scores.contains(&lp_score);
+
+					match (pf_appears, fl_appears, lp_appears) {
+                        (true, false, false) => (true, pf_score, fars),
+                        (false, true, false) => (false, fl_score, fars),
+                        (false, false, true) => (true, lp_score, note_count - pures - losts),
+                        _ => Err(format!("Cannot disambiguate scores {:?}. Multiple disjoint note breakdown subpair scores appear on the possibility list", scores))?
+                    }
+				};
+				// }}}
+				// {{{ Collect all scores that agree with the consensus score.
+				let agreement: Vec<_> = scores
+					.iter()
+					.filter(|score| score.forget_shinies(note_count) == consensus_computed_score)
+					.filter(|score| {
+						let shinies = score.shinies(note_count);
+						shinies <= note_count && (!trusted_pure_count || shinies <= pures)
+					})
+					.map(|v| *v)
+					.collect();
+				// }}}
+				// {{{ Case 1: Disagreement in the amount of shinies!
+				if agreement.len() > 1 {
+					let agreement_shiny_amounts: Vec<_> =
+						agreement.iter().map(|v| v.shinies(note_count)).collect();
+
+					println!(
+						"Shiny count disagreement. Possible scores: {:?}. Possible shiny amounts: {:?}, Read distribution: {:?}",
+						scores, agreement_shiny_amounts, read_distribution
+					);
+
+					Ok((agreement.into_iter().max().unwrap(), Some(consensus_fars), 
+                        Some("Due to a reading error, I could not make sure the shiny-amount I calculated is accurate!")))
+                
+				// }}}
+				// {{{ Case 2: Total agreement!
+				} else if agreement.len() == 1 {
+					Ok((agreement[0], Some(consensus_fars), None))
+				// }}}
+				// {{{ Case 3: No agreement!
+        } else {
+					Err(format!("Could not disambiguate between possible scores {:?}. Note distribution does not agree with any possibility, leading to a score of {:?}.", scores, consensus_computed_score))?
+				}
+				// }}}
+			}
+		// }}}
+		} else {
+			if no_shiny_scores.len() == 1 {
+				if scores.len() == 1 {
+					Ok((scores[0], None, None))
+				} else {
+					Ok((scores.into_iter().max().unwrap(), None, Some("Due to a reading error, I could not make sure the shiny-amount I calculated is accurate!")))
+				}
+			} else {
+				Err("Cannot disambiguate between more than one score without a note distribution.")?
+			}
 		}
 	}
 	// }}}
@@ -404,6 +577,12 @@ impl CreatePlay {
 	#[inline]
 	pub fn with_attachment(mut self, attachment: &Attachment) -> Self {
 		self.discord_attachment_id = Some(attachment.id);
+		self
+	}
+
+	#[inline]
+	pub fn with_fars(mut self, far_count: Option<u32>) -> Self {
+		self.far_notes = far_count;
 		self
 	}
 
@@ -628,7 +807,7 @@ impl ImageCropper {
 		&mut self,
 		note_count: Option<u32>,
 		image: &DynamicImage,
-	) -> Result<Score, Error> {
+	) -> Result<Vec<Score>, Error> {
 		self.crop_image_to_bytes(
 			&image.resize_exact(image.width(), image.height(), FilterType::Nearest),
 			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), score_rects())
@@ -659,8 +838,6 @@ impl ImageCropper {
 		// The OCR sometimes fails to read "74" with the arcaea font,
 		// so we try to detect that and fix it
 		loop {
-			println!("Attempts: {:?}.", results);
-
 			let old_stack_len = results.len();
 			results = results
 				.iter()
@@ -690,7 +867,7 @@ impl ImageCropper {
 		// }}}
 		// {{{ Return score if consensus exists
 		// 1. Discard scores that are known to be impossible
-		results = results
+		let mut results: Vec<_> = results
 			.into_iter()
 			.filter(|result| {
 				8_000_000 <= *result
@@ -704,24 +881,22 @@ impl ImageCropper {
 						})
 						.unwrap_or(true)
 			})
+			.map(|r| Score(r))
 			.collect();
 
 		// 2. Look for consensus
 		for result in results.iter() {
 			if results.iter().filter(|e| **e == *result).count() > results.len() / 2 {
-				return Ok(Score(*result));
+				return Ok(vec![*result]);
 			}
 		}
 		// }}}
 
+		// If there's no consensus, we return everything
 		results.sort();
 		results.dedup();
 
-		Err(format!(
-			"Cannot read score. Possible values: {:?}.",
-			results
-		))?;
-		unreachable!()
+		Ok(results)
 	}
 
 	fn read_score_with_mode(&mut self, mode: PageSegMode, whitelist: &str) -> Result<Score, Error> {
@@ -744,7 +919,6 @@ impl ImageCropper {
 
 		let text: String = t.get_text()?.trim().to_string();
 
-		println!("Got {}", text);
 		let text: String = text
 			.chars()
 			.map(|char| if char == '/' { '7' } else { char })

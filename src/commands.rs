@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::context::{Context, Error};
-use crate::score::{jacket_rects, CreatePlay, ImageCropper, ImageDimensions, RelativeRect};
+use crate::score::{jacket_rects, CreatePlay, ImageCropper, ImageDimensions, RelativeRect, Score};
 use crate::user::User;
 use image::imageops::FilterType;
 use image::ImageFormat;
@@ -293,33 +293,41 @@ Title error: {}
 					.content(format!("Image {}: reading score", i + 1));
 				handle.edit(ctx, edited).await?;
 
-				let score = match cropper.read_score(Some(chart.note_count), &ocr_image) {
-					// {{{ OCR error handling
-					Err(err) => {
-						error_with_image(
-							ctx,
-							&cropper.bytes,
-							&file.filename,
-							"Could not read score from picture",
-							&err,
-						)
-						.await?;
+				let score_possibilities =
+					match cropper.read_score(Some(chart.note_count), &ocr_image) {
+						// {{{ OCR error handling
+						Err(err) => {
+							error_with_image(
+								ctx,
+								&cropper.bytes,
+								&file.filename,
+								"Could not read score from picture",
+								&err,
+							)
+							.await?;
 
-						continue;
-					}
-					// }}}
-					Ok(score) => score,
-				};
+							continue;
+						}
+						// }}}
+						Ok(scores) => scores,
+					};
 
 				// {{{ Build play
+				let (score, maybe_fars, score_warning) =
+					Score::resolve_ambiguities(score_possibilities, None, chart.note_count)?;
 				let play = CreatePlay::new(score, chart, &user)
 					.with_attachment(file)
+					.with_fars(maybe_fars)
 					.save(&ctx.data())
 					.await?;
 				// }}}
 				// }}}
 				// {{{ Deliver embed
-				let (embed, attachment) = play.to_embed(&song, &chart, i).await?;
+				let (mut embed, attachment) = play.to_embed(&song, &chart, i).await?;
+				if let Some(warning) = score_warning {
+					embed = embed.description(warning);
+				}
+
 				embeds.push(embed);
 				if let Some(attachment) = attachment {
 					attachments.push(attachment);

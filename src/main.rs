@@ -9,18 +9,15 @@ mod jacket;
 mod score;
 mod user;
 
+use chart::Difficulty;
 use context::{Error, UserContext};
-use poise::serenity_prelude::{self as serenity, UserId};
+use poise::serenity_prelude::{self as serenity};
 use sqlx::sqlite::SqlitePoolOptions;
 use std::{env::var, path::PathBuf, str::FromStr, sync::Arc, time::Duration};
 
 // {{{ Error handler
 async fn on_error(error: poise::FrameworkError<'_, UserContext, Error>) {
 	match error {
-		poise::FrameworkError::Setup { error, .. } => panic!("Failed to start bot: {:?}", error),
-		poise::FrameworkError::Command { error, ctx, .. } => {
-			println!("Error in command `{}`: {:?}", ctx.command().name, error,);
-		}
 		error => {
 			if let Err(e) = poise::builtins::on_error(error).await {
 				println!("Error while handling error: {}", e)
@@ -76,6 +73,10 @@ async fn main() {
 				println!("Logged in as {}", _ready.user.name);
 				poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 				let ctx = UserContext::new(PathBuf::from_str(&data_dir)?, pool).await?;
+
+				// for song in ctx.song_cache.lock().unwrap().songs() {
+				// 	song.lookup(Difficulty::BYD)
+				// }
 				Ok(ctx)
 			})
 		})
