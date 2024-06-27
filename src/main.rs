@@ -1,6 +1,7 @@
 #![warn(clippy::str_to_string)]
 #![feature(iter_map_windows)]
 #![feature(let_chains)]
+#![feature(async_closure)]
 
 mod chart;
 mod commands;
@@ -9,7 +10,6 @@ mod jacket;
 mod score;
 mod user;
 
-use chart::Difficulty;
 use context::{Error, UserContext};
 use poise::serenity_prelude::{self as serenity};
 use sqlx::sqlite::SqlitePoolOptions;
@@ -38,7 +38,11 @@ async fn main() {
 
 	// {{{ Poise options
 	let options = poise::FrameworkOptions {
-		commands: vec![commands::help(), commands::score()],
+		commands: vec![
+			commands::score::help(),
+			commands::score::score(),
+			commands::stats::stats(),
+		],
 		prefix_options: poise::PrefixFrameworkOptions {
 			stripped_dynamic_prefix: Some(|_ctx, message, _user_ctx| {
 				Box::pin(async {

@@ -28,6 +28,8 @@
               rust-analyzer-nightly
               ruff
               imagemagick
+              fontconfig
+              freetype
 
               clang
               llvmPackages.clang

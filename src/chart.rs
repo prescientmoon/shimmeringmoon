@@ -5,7 +5,7 @@ use sqlx::{prelude::FromRow, SqlitePool};
 use crate::context::Error;
 
 // {{{ Difficuly
-#[derive(Debug, Clone, Copy, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, sqlx::Type)]
 pub enum Difficulty {
 	PST,
 	PRS,
@@ -85,17 +85,31 @@ impl CachedSong {
 	}
 
 	#[inline]
-	pub fn lookup(&self, difficulty: Difficulty) -> Option<&Chart> {
+	pub fn lookup(&self, difficulty: Difficulty) -> Result<&Chart, Error> {
 		self.charts
 			.get(difficulty.to_index())
 			.and_then(|c| c.as_ref())
+			.ok_or_else(|| {
+				format!(
+					"Could not find difficulty {:?} for song {}",
+					difficulty, self.song.title
+				)
+				.into()
+			})
 	}
 
 	#[inline]
-	pub fn lookup_mut(&mut self, difficulty: Difficulty) -> Option<&mut Chart> {
+	pub fn lookup_mut(&mut self, difficulty: Difficulty) -> Result<&mut Chart, Error> {
 		self.charts
 			.get_mut(difficulty.to_index())
 			.and_then(|c| c.as_mut())
+			.ok_or_else(|| {
+				format!(
+					"Could not find difficulty {:?} for song {}",
+					difficulty, self.song.title
+				)
+				.into()
+			})
 	}
 
 	#[inline]
@@ -117,8 +131,26 @@ impl SongCache {
 	}
 
 	#[inline]
-	pub fn lookup_mut(&mut self, id: u32) -> Option<&mut CachedSong> {
-		self.songs.get_mut(id as usize).and_then(|i| i.as_mut())
+	pub fn lookup_chart(&self, chart_id: u32) -> Result<(&Song, &Chart), Error> {
+		self.songs()
+			.find_map(|item| {
+				item.charts().find_map(|chart| {
+					if chart.id == chart_id {
+						Some((&item.song, chart))
+					} else {
+						None
+					}
+				})
+			})
+			.ok_or_else(|| format!("Could not find chart with id {}", chart_id).into())
+	}
+
+	#[inline]
+	pub fn lookup_mut(&mut self, id: u32) -> Result<&mut CachedSong, Error> {
+		self.songs
+			.get_mut(id as usize)
+			.and_then(|i| i.as_mut())
+			.ok_or_else(|| format!("Could not find song with id {}", id).into())
 	}
 
 	#[inline]

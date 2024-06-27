@@ -1,3 +1,7 @@
+use std::str::FromStr;
+
+use poise::serenity_prelude::UserId;
+
 use crate::context::{Context, Error};
 
 #[derive(Debug, Clone)]
@@ -20,4 +24,15 @@ impl User {
 			nickname: user.nickname,
 		})
 	}
+}
+
+#[inline]
+pub async fn discord_it_to_discord_user(
+	&ctx: &Context<'_>,
+	discord_id: &str,
+) -> Result<poise::serenity_prelude::User, Error> {
+	UserId::from_str(discord_id)?
+		.to_user(ctx.http())
+		.await
+		.map_err(|e| e.into())
 }

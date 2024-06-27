@@ -1,9 +1,7 @@
-use std::{
-	path::PathBuf,
-	sync::{Arc, Mutex},
-};
+use std::{path::PathBuf, sync::Arc};
 
 use sqlx::SqlitePool;
+use tokio::sync::Mutex;
 
 use crate::{chart::SongCache, jacket::JacketCache};
 

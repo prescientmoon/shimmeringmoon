@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS plays (
     creation_zeta_ptt INTEGER,
 
     score INTEGER NOT NULL,
-    zeta_score INTEGER,
+    zeta_score INTEGER NOT NULL,
 
     max_recall INTEGER,
     far_notes INTEGER,
