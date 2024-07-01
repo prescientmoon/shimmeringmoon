@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use chrono::{DateTime, NaiveDateTime};
+use chrono::DateTime;
 use image::{ImageBuffer, Rgb};
 use plotters::{
 	backend::{BitMapBackend, PixelFormat, RGBPixel},
@@ -8,10 +8,7 @@ use plotters::{
 	drawing::IntoDrawingArea,
 	element::Circle,
 	series::LineSeries,
-	style::{
-		text_anchor::{HPos, Pos, VPos},
-		Color, FontTransform, IntoFont, TextStyle, BLUE, WHITE,
-	},
+	style::{Color, IntoFont, TextStyle, BLUE, WHITE},
 };
 use poise::{
 	serenity_prelude::{CreateAttachment, CreateMessage},
@@ -72,13 +69,18 @@ pub async fn best(
 	let (name, difficulty) = name
 		.strip_suffix("PST")
 		.zip(Some(Difficulty::PST))
+		.or_else(|| name.strip_suffix("[PST]").zip(Some(Difficulty::PST)))
 		.or_else(|| name.strip_suffix("PRS").zip(Some(Difficulty::PRS)))
+		.or_else(|| name.strip_suffix("[PRS]").zip(Some(Difficulty::PRS)))
 		.or_else(|| name.strip_suffix("FTR").zip(Some(Difficulty::FTR)))
+		.or_else(|| name.strip_suffix("[FTR]").zip(Some(Difficulty::FTR)))
 		.or_else(|| name.strip_suffix("ETR").zip(Some(Difficulty::ETR)))
+		.or_else(|| name.strip_suffix("[ETR]").zip(Some(Difficulty::ETR)))
 		.or_else(|| name.strip_suffix("BYD").zip(Some(Difficulty::BYD)))
+		.or_else(|| name.strip_suffix("[BYD]").zip(Some(Difficulty::BYD)))
 		.unwrap_or((&name, Difficulty::FTR));
 
-	let (song, chart) = guess_chart_name(name, &ctx.data().song_cache, difficulty).await?;
+	let (song, chart) = guess_chart_name(name, &ctx.data().song_cache, Some(difficulty), true)?;
 
 	let play = query_as!(
 		DbPlay,
@@ -93,7 +95,12 @@ pub async fn best(
 	)
 	.fetch_one(&ctx.data().db)
 	.await
-	.map_err(|_| format!("Could not find any scores for chart"))?
+	.map_err(|_| {
+		format!(
+			"Could not find any scores for {} [{:?}]",
+			song.title, chart.difficulty
+		)
+	})?
 	.to_play();
 
 	let (embed, attachment) = play
@@ -112,7 +119,7 @@ pub async fn best(
 	Ok(())
 }
 // }}}
-//  Score plot
+// {{{ Score plot
 /// Show the best score on a given chart
 #[poise::command(prefix_command, slash_command)]
 pub async fn plot(
@@ -134,13 +141,18 @@ pub async fn plot(
 	let (name, difficulty) = name
 		.strip_suffix("PST")
 		.zip(Some(Difficulty::PST))
+		.or_else(|| name.strip_suffix("[PST]").zip(Some(Difficulty::PST)))
 		.or_else(|| name.strip_suffix("PRS").zip(Some(Difficulty::PRS)))
+		.or_else(|| name.strip_suffix("[PRS]").zip(Some(Difficulty::PRS)))
 		.or_else(|| name.strip_suffix("FTR").zip(Some(Difficulty::FTR)))
+		.or_else(|| name.strip_suffix("[FTR]").zip(Some(Difficulty::FTR)))
 		.or_else(|| name.strip_suffix("ETR").zip(Some(Difficulty::ETR)))
+		.or_else(|| name.strip_suffix("[ETR]").zip(Some(Difficulty::ETR)))
 		.or_else(|| name.strip_suffix("BYD").zip(Some(Difficulty::BYD)))
+		.or_else(|| name.strip_suffix("[BYD]").zip(Some(Difficulty::BYD)))
 		.unwrap_or((&name, Difficulty::FTR));
 
-	let (song, chart) = guess_chart_name(name, &ctx.data().song_cache, difficulty).await?;
+	let (song, chart) = guess_chart_name(name, &ctx.data().song_cache, Some(difficulty), true)?;
 
 	let plays = query_as!(
 		DbPlay,
@@ -157,7 +169,11 @@ pub async fn plot(
 	.await?;
 
 	if plays.len() == 0 {
-		ctx.reply("No plays found").await?;
+		ctx.reply(format!(
+			"No plays found on {} [{:?}]",
+			song.title, chart.difficulty
+		))
+		.await?;
 		return Ok(());
 	}
 
@@ -182,7 +198,7 @@ pub async fn plot(
 	let mut buffer = vec![u8::MAX; RGBPixel::PIXEL_SIZE * (width * height) as usize];
 
 	{
-		let mut root = BitMapBackend::with_buffer(&mut buffer, (width, height)).into_drawing_area();
+		let root = BitMapBackend::with_buffer(&mut buffer, (width, height)).into_drawing_area();
 
 		let mut chart = ChartBuilder::on(&root)
 			.margin(25)
@@ -242,4 +258,4 @@ pub async fn plot(
 
 	Ok(())
 }
-//
+// }}}

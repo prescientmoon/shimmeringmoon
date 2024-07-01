@@ -1,7 +1,6 @@
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 
 use sqlx::SqlitePool;
-use tokio::sync::Mutex;
 
 use crate::{chart::SongCache, jacket::JacketCache};
 
@@ -11,21 +10,25 @@ pub type Context<'a> = poise::Context<'a, UserContext, Error>;
 
 // Custom user data passed to all command functions
 pub struct UserContext {
+	#[allow(dead_code)]
 	pub data_dir: PathBuf,
 	pub db: SqlitePool,
-	pub song_cache: Arc<Mutex<SongCache>>,
+	pub song_cache: SongCache,
 	pub jacket_cache: JacketCache,
 }
 
 impl UserContext {
 	#[inline]
 	pub async fn new(data_dir: PathBuf, db: SqlitePool) -> Result<Self, Error> {
-		let song_cache = SongCache::new(&data_dir, &db).await?;
-		let jacket_cache = JacketCache::new(&song_cache)?;
+		let mut song_cache = SongCache::new(&db).await?;
+		let jacket_cache = JacketCache::new(&data_dir, &mut song_cache)?;
+
+		println!("Created user context");
+
 		Ok(Self {
 			data_dir,
 			db,
-			song_cache: Arc::new(Mutex::new(song_cache)),
+			song_cache,
 			jacket_cache,
 		})
 	}

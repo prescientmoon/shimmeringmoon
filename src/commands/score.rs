@@ -6,11 +6,9 @@ use crate::score::{
 };
 use crate::user::{discord_it_to_discord_user, User};
 use image::imageops::FilterType;
-use image::ImageFormat;
 use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage};
 use poise::{serenity_prelude as serenity, CreateReply};
 use sqlx::query;
-use tokio::fs::create_dir_all;
 
 // {{{ Help
 /// Show this help menu
@@ -118,8 +116,6 @@ pub async fn magic(
 					.content(format!("Image {}: reading jacket", i + 1));
 				handle.edit(ctx, edited).await?;
 
-				let song_by_jacket = cropper.read_jacket(ctx.data(), &image).await;
-
 				// This makes OCR more likely to work
 				let mut ocr_image = image.grayscale().blur(1.);
 
@@ -146,6 +142,9 @@ pub async fn magic(
 					Ok(d) => d,
 				};
 
+				let song_by_jacket = cropper.read_jacket(ctx.data(), &image, difficulty).await;
+				let note_distribution = cropper.read_distribution(&image)?;
+
 				ocr_image.invert();
 
 				let edited = CreateReply::default()
@@ -153,12 +152,20 @@ pub async fn magic(
 					.content(format!("Image {}: reading title", i + 1));
 				handle.edit(ctx, edited).await?;
 
-				let song_by_name = cropper
-					.read_song(&ocr_image, &ctx.data().song_cache, difficulty)
-					.await;
+				let song_by_name =
+					cropper.read_song(&ocr_image, &ctx.data().song_cache, difficulty);
 				let (song, chart) = match (song_by_jacket, song_by_name) {
 					// {{{ Both errors
 					(Err(err_jacket), Err(err_name)) => {
+						cropper.crop_image_to_bytes(
+							&image,
+							RelativeRect::from_aspect_ratio(
+								ImageDimensions::from_image(&image),
+								jacket_rects(),
+							)
+							.ok_or_else(|| "Could not find jacket area in picture")?
+							.to_absolute(),
+						)?;
 						error_with_image(
 							ctx,
 							&cropper.bytes,
@@ -189,60 +196,8 @@ Title error: {}
 					}
 					// }}}
 					// {{{ Only name succeeded
-					(Err(err_jacket), Ok(mut by_name)) => {
+					(Err(err_jacket), Ok(by_name)) => {
 						println!("Could not recognise jacket with error: {}", err_jacket);
-
-						// {{{ Find image rect
-						let rect = RelativeRect::from_aspect_ratio(
-							ImageDimensions::from_image(&image),
-							jacket_rects(),
-						)
-						.ok_or_else(|| "Could not find jacket area in picture")?
-						.to_absolute();
-						// }}}
-						// {{{ Build path
-						let filename = format!("{}-{}", by_name.0.id, by_name.1.id);
-						let jacket = format!("user/{}", filename);
-
-						let jacket_dir = ctx.data().data_dir.join("jackets/user");
-						create_dir_all(&jacket_dir).await?;
-						let jacket_path = jacket_dir.join(format!("{}.png", filename));
-						// }}}
-						// {{{ Save image to disk
-						image
-							.crop_imm(rect.x, rect.y, rect.width, rect.height)
-							.save_with_format(&jacket_path, ImageFormat::Png)?;
-						// }}}
-						// {{{ Update jacket in db
-						sqlx::query!(
-							"UPDATE charts SET jacket=? WHERE song_id=? AND difficulty=?",
-							jacket,
-							by_name.1.song_id,
-							by_name.1.difficulty,
-						)
-						.execute(&ctx.data().db)
-						.await?;
-						// }}}
-						// {{{ Aquire and use song cache lock
-						{
-							let mut song_cache = ctx.data().song_cache.lock().await;
-
-							let chart = song_cache
-								.lookup_mut(by_name.0.id)?
-								.lookup_mut(difficulty)?;
-
-							if chart.jacket.is_none() {
-								by_name.1.jacket = Some(jacket_path.clone());
-								chart.jacket = Some(jacket_path);
-							} else {
-								println!(
-									"Jacket not detected for chart {} [{:?}]",
-									by_name.0.id, difficulty
-								)
-							};
-						}
-						// }}}
-
 						by_name
 					}
 					// }}}
@@ -250,8 +205,8 @@ Title error: {}
 					(Ok(by_jacket), Ok(by_name)) => {
 						if by_name.0.id != by_jacket.0.id {
 							println!(
-								"Got diverging choices between '{:?}' and '{:?}'",
-								by_jacket.0.id, by_name.0.id
+								"Got diverging choices between '{}' and '{}'",
+								by_jacket.0.title, by_name.0.title
 							);
 						};
 
@@ -284,8 +239,21 @@ Title error: {}
 					};
 
 				// {{{ Build play
-				let (score, maybe_fars, score_warning) =
-					Score::resolve_ambiguities(score_possibilities, None, chart.note_count)?;
+				let (score, maybe_fars, score_warning) = Score::resolve_ambiguities(
+					score_possibilities,
+					Some(note_distribution),
+					chart.note_count,
+				)
+				.map_err(|err| {
+					format!(
+						"Error occurred when disambiguating scores for '{}' [{:?}] by {}: {}",
+						song.title, difficulty, song.artist, err
+					)
+				})?;
+				println!(
+					"Maybe fars {:?}, distribution {:?}",
+					maybe_fars, note_distribution
+				);
 				let play = CreatePlay::new(score, &chart, &user)
 					.with_attachment(file)
 					.with_fars(maybe_fars)
@@ -382,8 +350,6 @@ pub async fn show(
 		return Ok(());
 	}
 
-	let lock = ctx.data().song_cache.lock().await;
-
 	let mut embeds = Vec::with_capacity(ids.len());
 	let mut attachments = Vec::with_capacity(ids.len());
 	for (i, id) in ids.iter().enumerate() {
@@ -419,7 +385,7 @@ pub async fn show(
 
 		let user = discord_it_to_discord_user(&ctx, &res.discord_id).await?;
 
-		let (song, chart) = lock.lookup_chart(play.chart_id)?;
+		let (song, chart) = ctx.data().song_cache.lookup_chart(play.chart_id)?;
 		let (embed, attachment) = play.to_embed(song, chart, i, Some(&user)).await?;
 
 		embeds.push(embed);

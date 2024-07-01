@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 use std::fmt::Display;
+use std::fs;
 use std::io::Cursor;
 use std::str::FromStr;
 use std::sync::OnceLock;
@@ -11,10 +12,10 @@ use poise::serenity_prelude::{
 	Attachment, AttachmentId, CreateAttachment, CreateEmbed, CreateEmbedAuthor, Timestamp,
 };
 use tesseract::{PageSegMode, Tesseract};
-use tokio::sync::Mutex;
 
 use crate::chart::{Chart, Difficulty, Song, SongCache};
 use crate::context::{Error, UserContext};
+use crate::jacket::IMAGE_VEC_DIM;
 use crate::user::User;
 
 // {{{ Score
@@ -183,7 +184,7 @@ impl Score {
 				};
 				// }}}
 
-				if scores.len() == 0 {
+				if scores.len() == 1 {
 					Ok((score, consensus_fars, None))
 				} else {
 					Ok((score, consensus_fars, Some("Due to a reading error, I could not make sure the shiny-amount I calculated is accurate!")))
@@ -506,11 +507,8 @@ impl Play {
 		author: Option<&poise::serenity_prelude::User>,
 	) -> Result<(CreateEmbed, Option<CreateAttachment>), Error> {
 		let attachement_name = format!("{:?}-{:?}-{:?}.png", song.id, self.score.0, index);
-		let icon_attachement = match &chart.jacket {
-			Some(path) => Some(
-				CreateAttachment::file(&tokio::fs::File::open(path).await?, &attachement_name)
-					.await?,
-			),
+		let icon_attachement = match chart.cached_jacket {
+			Some(bytes) => Some(CreateAttachment::bytes(bytes, &attachement_name)),
 			None => None,
 		};
 
@@ -545,7 +543,7 @@ impl Play {
 				true,
 			)
 			.field("Max recall", "?", true)
-			.field("Id", format!("{}", self.id), true);
+			.field("ID", format!("{}", self.id), true);
 
 		if icon_attachement.is_some() {
 			embed = embed.thumbnail(format!("attachment://{}", &attachement_name));
@@ -679,6 +677,20 @@ impl RelativeRect {
 		}
 	}
 
+	/// Shift this rect on the y axis by a given absolute pixel amount
+	#[inline]
+	pub fn shift_y_abs(&self, amount: u32) -> Self {
+		let mut res = Self::new(
+			self.x,
+			self.y + (amount as f32 / self.dimensions.height as f32),
+			self.width,
+			self.height,
+			self.dimensions,
+		);
+		res.fix();
+		res
+	}
+
 	/// Clamps the values apropriately
 	#[inline]
 	pub fn fix(&mut self) {
@@ -795,6 +807,7 @@ fn difficulty_rects() -> &'static [RelativeRect] {
 			AbsoluteRect::new(183, 487, 197, 44, ImageDimensions::new(2560, 1600)).to_relative(),
 			AbsoluteRect::new(198, 692, 219, 46, ImageDimensions::new(2732, 2048)).to_relative(),
 			AbsoluteRect::new(414, 364, 177, 38, ImageDimensions::new(2778, 1284)).to_relative(),
+			AbsoluteRect::new(76, 172, 77, 18, ImageDimensions::new(1080, 607)).to_relative(),
 		];
 		process_datapoints(&mut rects);
 		rects
@@ -842,44 +855,118 @@ pub fn jacket_rects() -> &'static [RelativeRect] {
 	})
 }
 // }}}
+// {{{ Note distribution
+pub fn note_distribution_rects() -> (
+	&'static [RelativeRect],
+	&'static [RelativeRect],
+	&'static [RelativeRect],
+) {
+	static CELL: OnceLock<(
+		&'static [RelativeRect],
+		&'static [RelativeRect],
+		&'static [RelativeRect],
+	)> = OnceLock::new();
+	*CELL.get_or_init(|| {
+		let mut pure_rects: Vec<RelativeRect> = vec![
+			AbsoluteRect::new(729, 523, 58, 22, ImageDimensions::new(1560, 720)).to_relative(),
+			AbsoluteRect::new(815, 520, 57, 23, ImageDimensions::new(1600, 720)).to_relative(),
+			AbsoluteRect::new(1019, 856, 91, 33, ImageDimensions::new(2000, 1200)).to_relative(),
+			AbsoluteRect::new(1100, 1085, 102, 38, ImageDimensions::new(2160, 1620)).to_relative(),
+			AbsoluteRect::new(1130, 1118, 105, 39, ImageDimensions::new(2224, 1668)).to_relative(),
+			AbsoluteRect::new(1286, 850, 91, 35, ImageDimensions::new(2532, 1170)).to_relative(),
+			AbsoluteRect::new(1305, 1125, 117, 44, ImageDimensions::new(2560, 1600)).to_relative(),
+			AbsoluteRect::new(1389, 1374, 126, 48, ImageDimensions::new(2732, 2048)).to_relative(),
+			AbsoluteRect::new(1407, 933, 106, 40, ImageDimensions::new(2778, 1284)).to_relative(),
+		];
+
+		process_datapoints(&mut pure_rects);
+
+		let skip_distances = vec![40, 40, 57, 67, 65, 60, 75, 78, 65];
+		let far_rects: Vec<_> = pure_rects
+			.iter()
+			.enumerate()
+			.map(|(i, rect)| rect.shift_y_abs(skip_distances[i]))
+			.collect();
+
+		let lost_rects: Vec<_> = far_rects
+			.iter()
+			.enumerate()
+			.map(|(i, rect)| rect.shift_y_abs(skip_distances[i]))
+			.collect();
+
+		(pure_rects.leak(), far_rects.leak(), lost_rects.leak())
+	})
+}
+// }}}
 // }}}
 // }}}
 // {{{ Recognise chart name
-pub async fn guess_chart_name(
+/// Runs a specialized fuzzy-search through all charts in the game.
+///
+/// The `unsafe_heuristics` toggle increases the amount of resolvable queries, but might let in
+/// some false positives. We turn it on for simple user-search commands, but disallow it for things
+/// like OCR-generated text.
+pub fn guess_chart_name<'a>(
 	raw_text: &str,
-	cache: &Mutex<SongCache>,
-	difficulty: Difficulty,
-) -> Result<(Song, Chart), Error> {
+	cache: &'a SongCache,
+	difficulty: Option<Difficulty>,
+	unsafe_heuristics: bool,
+) -> Result<(&'a Song, &'a Chart), Error> {
 	let raw_text = raw_text.trim(); // not quite raw 🤔
 	let mut text: &str = &raw_text.to_lowercase();
 
-	let lock = cache.lock().await;
+	// Cached vec used to store distance calculations
+	let mut distance_vec = Vec::with_capacity(3);
 	let (song, chart) = loop {
-		let close_enough: Vec<_> = lock
+		let mut close_enough: Vec<_> = cache
 			.songs()
-			.filter_map(|item| Some((&item.song, item.lookup(difficulty).ok()?)))
-			.map(|(song, chart)| {
-				let song_title = song.title.to_lowercase();
-				let shortest_len = Ord::min(song_title.len(), text.len());
-				let mut smallest_distance = edit_distance(&text, &song_title);
+			.filter_map(|item| {
+				let song = &item.song;
+				let chart = if let Some(difficulty) = difficulty {
+					item.lookup(difficulty).ok()?
+				} else {
+					item.charts().next()?
+				};
 
-				if let Some(sliced) = &song_title.get(..shortest_len)
-					&& text.len() >= 6
-				{
-					// We want to make this route super costly, which is why we multiply by 50
-					smallest_distance = smallest_distance.min(50 * edit_distance(&text, sliced));
+				let song_title = song.title.to_lowercase();
+				distance_vec.clear();
+
+				let base_distance = edit_distance(&text, &song_title);
+				if base_distance < 1.max(song.title.len() / 3) {
+					distance_vec.push(base_distance * 10 + 2);
 				}
 
-				(song, chart, smallest_distance)
+				let shortest_len = Ord::min(song_title.len(), text.len());
+				if let Some(sliced) = &song_title.get(..shortest_len)
+					&& (text.len() >= 6 || unsafe_heuristics)
+				{
+					let slice_distance = edit_distance(&text, sliced);
+					if slice_distance < 1 {
+						distance_vec.push(slice_distance * 10 + 3);
+					}
+				}
+
+				if let Some(shorthand) = &chart.shorthand
+					&& unsafe_heuristics
+				{
+					let short_distance = edit_distance(&text, shorthand);
+					if short_distance < 1.max(shorthand.len() / 3) {
+						distance_vec.push(short_distance * 10 + 1);
+					}
+				}
+
+				distance_vec
+					.iter()
+					.min()
+					.map(|distance| (song, chart, *distance))
 			})
-			.filter(|(song, _, d)| *d < song.title.len() / 3)
 			.collect();
 
 		if close_enough.len() == 0 {
-			if text.len() == 1 {
+			if text.len() <= 1 {
 				Err(format!(
-					"Could not find match for chart name '{}'",
-					raw_text
+					"Could not find match for chart name '{}' [{:?}]",
+					raw_text, difficulty
 				))?;
 			} else {
 				text = &text[..text.len() - 1];
@@ -887,15 +974,20 @@ pub async fn guess_chart_name(
 		} else if close_enough.len() == 1 {
 			break (close_enough[0].0, close_enough[0].1);
 		} else {
-			Err(format!(
-				"Name '{}' is too vague to choose a match",
-				raw_text
-			))?;
+			if unsafe_heuristics {
+				close_enough.sort_by_key(|(_, _, distance)| *distance);
+				break (close_enough[0].0, close_enough[0].1);
+			} else {
+				Err(format!(
+					"Name '{}' is too vague to choose a match",
+					raw_text
+				))?;
+			};
 		};
 	};
 
 	// NOTE: this will reallocate a few strings, but it is what it is
-	Ok((song.clone(), chart.clone()))
+	Ok((song, chart))
 }
 // }}}
 // {{{ Run OCR
@@ -916,6 +1008,9 @@ impl ImageCropper {
 		let image = image.crop_imm(rect.x, rect.y, rect.width, rect.height);
 		let mut cursor = Cursor::new(&mut self.bytes);
 		image.write_to(&mut cursor, image::ImageFormat::Png)?;
+
+		fs::write(format!("./logs/{}.png", Timestamp::now()), &self.bytes)?;
+
 		Ok(())
 	}
 
@@ -956,6 +1051,7 @@ impl ImageCropper {
 		// so we try to detect that and fix it
 		loop {
 			let old_stack_len = results.len();
+			println!("Results {:?}", results);
 			results = results
 				.iter()
 				.flat_map(|result| {
@@ -1000,6 +1096,7 @@ impl ImageCropper {
 			})
 			.map(|r| Score(r))
 			.collect();
+		println!("Results {:?}", results);
 
 		// 2. Look for consensus
 		for result in results.iter() {
@@ -1012,6 +1109,7 @@ impl ImageCropper {
 		// If there's no consensus, we return everything
 		results.sort();
 		results.dedup();
+		println!("Results {:?}", results);
 
 		Ok(results)
 	}
@@ -1060,7 +1158,7 @@ impl ImageCropper {
 		t = t.recognize()?;
 
 		let text: &str = &t.get_text()?;
-		let text = text.trim();
+		let text = text.trim().to_lowercase();
 
 		let conf = t.mean_text_conf();
 		if conf < 10 && conf != 0 {
@@ -1073,7 +1171,7 @@ impl ImageCropper {
 		let difficulty = Difficulty::DIFFICULTIES
 			.iter()
 			.zip(Difficulty::DIFFICULTY_STRINGS)
-			.min_by_key(|(_, difficulty_string)| edit_distance(difficulty_string, text))
+			.min_by_key(|(_, difficulty_string)| edit_distance(difficulty_string, &text))
 			.map(|(difficulty, _)| *difficulty)
 			.ok_or_else(|| format!("Unrecognised difficulty '{}'", text))?;
 
@@ -1081,12 +1179,12 @@ impl ImageCropper {
 	}
 	// }}}
 	// {{{ Read song
-	pub async fn read_song(
+	pub fn read_song<'a>(
 		&mut self,
 		image: &DynamicImage,
-		cache: &Mutex<SongCache>,
+		cache: &'a SongCache,
 		difficulty: Difficulty,
-	) -> Result<(Song, Chart), Error> {
+	) -> Result<(&'a Song, &'a Chart), Error> {
 		self.crop_image_to_bytes(
 			&image,
 			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), title_rects())
@@ -1105,24 +1203,25 @@ impl ImageCropper {
 
 		let raw_text: &str = &t.get_text()?;
 
-		let conf = t.mean_text_conf();
-		if conf < 20 && conf != 0 {
-			Err(format!(
-				"Title text is not readable (confidence = {}, text = {}).",
-				conf,
-				raw_text.trim()
-			))?;
-		}
+		// let conf = t.mean_text_conf();
+		// if conf < 20 && conf != 0 {
+		// 	Err(format!(
+		// 		"Title text is not readable (confidence = {}, text = {}).",
+		// 		conf,
+		// 		raw_text.trim()
+		// 	))?;
+		// }
 
-		guess_chart_name(raw_text, cache, difficulty).await
+		guess_chart_name(raw_text, cache, Some(difficulty), false)
 	}
 	// }}}
 	// {{{ Read jacket
 	pub async fn read_jacket<'a>(
 		&mut self,
-		ctx: &UserContext,
+		ctx: &'a UserContext,
 		image: &DynamicImage,
-	) -> Result<(Song, Chart), Error> {
+		difficulty: Difficulty,
+	) -> Result<(&'a Song, &'a Chart), Error> {
 		let rect =
 			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), jacket_rects())
 				.ok_or_else(|| "Could not find jacket area in picture")?
@@ -1134,15 +1233,59 @@ impl ImageCropper {
 			.recognise(&*cropped)
 			.ok_or_else(|| "Could not recognise jacket")?;
 
-		if distance > 100.0 {
+		if distance > (IMAGE_VEC_DIM * 3) as f32 {
 			Err("No known jacket looks like this")?;
 		}
 
-		let lock = ctx.song_cache.lock().await;
-		let (song, chart) = lock.lookup_chart(*song_id)?;
+		let item = ctx.song_cache.lookup(*song_id)?;
+		let chart = item.lookup(difficulty)?;
 
 		// NOTE: this will reallocate a few strings, but it is what it is
-		Ok((song.clone(), chart.clone()))
+		Ok((&item.song, chart))
+	}
+	// }}}
+	// {{{ Read distribution
+	pub fn read_distribution(&mut self, image: &DynamicImage) -> Result<(u32, u32, u32), Error> {
+		let mut t = Tesseract::new(None, Some("eng"))?
+			.set_variable("classify_bln_numeric_mode", "1")?
+			.set_variable("tessedit_char_whitelist", "0123456789")?;
+		t.set_page_seg_mode(PageSegMode::PsmSingleLine);
+
+		let (pure_rects, far_rects, lost_rects) = note_distribution_rects();
+		self.crop_image_to_bytes(
+			&image,
+			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), pure_rects)
+				.ok_or_else(|| "Could not find pure-rect area in picture")?
+				.to_absolute(),
+		)?;
+
+		t = t.set_image_from_mem(&self.bytes)?.recognize()?;
+		let pure_notes = u32::from_str(&t.get_text()?.trim()).unwrap_or(0);
+		println!("Raw {}", t.get_text()?.trim());
+
+		self.crop_image_to_bytes(
+			&image,
+			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), far_rects)
+				.ok_or_else(|| "Could not find far-rect area in picture")?
+				.to_absolute(),
+		)?;
+
+		t = t.set_image_from_mem(&self.bytes)?.recognize()?;
+		let far_notes = u32::from_str(&t.get_text()?.trim()).unwrap_or(0);
+		println!("Raw {}", t.get_text()?.trim());
+
+		self.crop_image_to_bytes(
+			&image,
+			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), lost_rects)
+				.ok_or_else(|| "Could not find lost-rect area in picture")?
+				.to_absolute(),
+		)?;
+
+		t = t.set_image_from_mem(&self.bytes)?.recognize()?;
+		let lost_notes = u32::from_str(&t.get_text()?.trim()).unwrap_or(0);
+		println!("Raw {}", t.get_text()?.trim());
+
+		Ok((pure_notes, far_notes, lost_notes))
 	}
 	// }}}
 }

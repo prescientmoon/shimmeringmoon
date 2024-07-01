@@ -3,5 +3,7 @@ target
 .envrc
 data/db.sqlite
 data/jackets
+data/songs
 backups
 dump.sql
+logs

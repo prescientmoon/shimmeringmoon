@@ -1,16 +1,17 @@
 # {{{ users
 create table IF NOT EXISTS users (
     id INTEGER NOT NULL PRIMARY KEY,
-    discord_id TEXT UNIQUE NOT NULL,
-    nickname TEXT UNIQUE
+    discord_id TEXT UNIQUE NOT NULL
 );
 # }}}
 # {{{ songs
 CREATE TABLE IF NOT EXISTS songs (
     id INTEGER NOT NULL PRIMARY KEY,
     title TEXT NOT NULL,
-    ocr_alias TEXT,
-    artist TEXT,
+    artist TEXT NOT NULL,
+    side TEXT NOT NULL CHECK (side IN ('light', 'conflict', 'silent')),
+    bpm TEXT NOT NULL,
+    pack TEXT,
 
     UNIQUE(title, artist)
 );
@@ -19,7 +20,8 @@ CREATE TABLE IF NOT EXISTS songs (
 CREATE TABLE IF NOT EXISTS charts (
     id INTEGER NOT NULL PRIMARY KEY,
     song_id INTEGER NOT NULL,
-    jacket TEXT,
+    note_design TEXT,
+    shorthand TEXT,
 
     difficulty TEXT NOT NULL CHECK (difficulty IN ('PST','PRS','FTR','ETR','BYD')),
     level TEXT NOT NULL,
@@ -53,4 +55,4 @@ CREATE TABLE IF NOT EXISTS plays (
 );
 # }}}
 
-insert into users(discord_id, nickname) values (385759924917108740, 'prescientmoon');
+insert into users(discord_id) values (385759924917108740);
