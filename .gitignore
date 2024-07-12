@@ -7,3 +7,4 @@ data/songs
 backups
 dump.sql
 logs
+cache

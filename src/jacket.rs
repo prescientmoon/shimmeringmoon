@@ -1,8 +1,10 @@
-use std::{collections::HashSet, fs, path::PathBuf, str::FromStr};
+use std::{fs, path::PathBuf, str::FromStr};
 
 use image::{GenericImageView, Rgba};
 use kd_tree::{KdMap, KdPoint};
 use num::Integer;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 use crate::{
 	chart::{Difficulty, SongCache},
@@ -14,8 +16,10 @@ use crate::{
 pub const SPLIT_FACTOR: u32 = 8;
 pub const IMAGE_VEC_DIM: usize = (SPLIT_FACTOR * SPLIT_FACTOR * 3) as usize;
 
-#[derive(Debug, Clone)]
+#[serde_as]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageVec {
+	#[serde_as(as = "[_; IMAGE_VEC_DIM]")]
 	pub colors: [f32; IMAGE_VEC_DIM],
 }
 
@@ -73,9 +77,9 @@ impl KdPoint for ImageVec {
 	}
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct JacketCache {
-	// TODO: make this private
-	pub tree: KdMap<ImageVec, u32>,
+	tree: KdMap<ImageVec, u32>,
 }
 
 impl JacketCache {
@@ -90,7 +94,7 @@ impl JacketCache {
 
 		fs::create_dir_all(&jacket_dir).expect("Could not create jacket dir");
 
-		let mut jackets: HashSet<(PathBuf, u32)> = HashSet::new();
+		let mut jackets = Vec::new();
 		let entries = fs::read_dir(data_dir.join("songs")).expect("Couldn't read songs directory");
 		for entry in entries {
 			let dir = entry?;
@@ -120,7 +124,7 @@ impl JacketCache {
 
 				let (song, chart) = guess_chart_name(dir_name, &song_cache, difficulty, true)?;
 
-				jackets.insert((file.path(), song.id));
+				jackets.push((file.path(), song.id));
 
 				let contents = fs::read(file.path())?.leak();
 

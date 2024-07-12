@@ -7,10 +7,13 @@ edition = "2021"
 chrono = "0.4.38"
 edit-distance = "2.1.0"
 image = "0.25.1"
-kd-tree = "0.6.0"
+kd-tree = { version="0.6.0", features=["serde"] }
 num = "0.4.3"
 plotters = { git="https://github.com/starlitcanopy/plotters.git", rev="986cd959362a2dbec8d1b25670fd083b904d7b8c" }
 poise = "0.6.1"
+postcard = { version="1.0.8", features=["use-std"] }
+serde = "1.0.204"
+serde_with = "3.8.3"
 sqlx = { version = "0.7.4", features = ["sqlite", "runtime-tokio", "chrono"] }
 tesseract = "0.15.1"
 tokio = {version="1.38.0", features=["rt-multi-thread"]}

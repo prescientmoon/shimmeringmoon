@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 
 use sqlx::SqlitePool;
 
@@ -19,7 +19,10 @@ pub struct UserContext {
 
 impl UserContext {
 	#[inline]
-	pub async fn new(data_dir: PathBuf, db: SqlitePool) -> Result<Self, Error> {
+	pub async fn new(data_dir: PathBuf, cache_dir: PathBuf, db: SqlitePool) -> Result<Self, Error> {
+		fs::create_dir_all(&cache_dir)?;
+		fs::create_dir_all(&data_dir)?;
+
 		let mut song_cache = SongCache::new(&db).await?;
 		let jacket_cache = JacketCache::new(&data_dir, &mut song_cache)?;
 

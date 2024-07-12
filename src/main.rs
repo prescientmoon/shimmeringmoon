@@ -30,6 +30,7 @@ async fn on_error(error: poise::FrameworkError<'_, UserContext, Error>) {
 #[tokio::main]
 async fn main() {
 	let data_dir = var("SHIMMERING_DATA_DIR").expect("Missing `SHIMMERING_DATA_DIR` env var");
+	let cache_dir = var("SHIMMERING_CACHE_DIR").expect("Missing `SHIMMERING_CACHE_DIR` env var");
 
 	let pool = SqlitePoolOptions::new()
 		.connect(&format!("sqlite://{}/db.sqlite", data_dir))
@@ -39,9 +40,10 @@ async fn main() {
 	// {{{ Poise options
 	let options = poise::FrameworkOptions {
 		commands: vec![
-			commands::score::help(),
+			commands::help(),
 			commands::score::score(),
 			commands::stats::stats(),
+			commands::chart::chart(),
 		],
 		prefix_options: poise::PrefixFrameworkOptions {
 			stripped_dynamic_prefix: Some(|_ctx, message, _user_ctx| {
@@ -76,11 +78,13 @@ async fn main() {
 			Box::pin(async move {
 				println!("Logged in as {}", _ready.user.name);
 				poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-				let ctx = UserContext::new(PathBuf::from_str(&data_dir)?, pool).await?;
+				let ctx = UserContext::new(
+					PathBuf::from_str(&data_dir)?,
+					PathBuf::from_str(&cache_dir)?,
+					pool,
+				)
+				.await?;
 
-				// for song in ctx.song_cache.lock().unwrap().songs() {
-				// 	song.lookup(Difficulty::BYD)
-				// }
 				Ok(ctx)
 			})
 		})

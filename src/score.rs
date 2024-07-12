@@ -900,7 +900,38 @@ pub fn note_distribution_rects() -> (
 // }}}
 // }}}
 // }}}
-// {{{ Recognise chart name
+// {{{ Recognise chart
+fn strip_case_insensitive_suffix<'a>(string: &'a str, suffix: &str) -> Option<&'a str> {
+	let suffix = suffix.to_lowercase();
+	if string.to_lowercase().ends_with(&suffix) {
+		Some(&string[0..string.len() - suffix.len()])
+	} else {
+		None
+	}
+}
+
+pub fn guess_song_and_chart<'a>(
+	ctx: &'a UserContext,
+	name: &'a str,
+) -> Result<(&'a Song, &'a Chart), Error> {
+	let name = name.trim();
+	let (name, difficulty) = name
+		.strip_suffix("PST")
+		.zip(Some(Difficulty::PST))
+		.or_else(|| strip_case_insensitive_suffix(name, "[PST]").zip(Some(Difficulty::PST)))
+		.or_else(|| strip_case_insensitive_suffix(name, "PRS").zip(Some(Difficulty::PRS)))
+		.or_else(|| strip_case_insensitive_suffix(name, "[PRS]").zip(Some(Difficulty::PRS)))
+		.or_else(|| strip_case_insensitive_suffix(name, "FTR").zip(Some(Difficulty::FTR)))
+		.or_else(|| strip_case_insensitive_suffix(name, "[FTR]").zip(Some(Difficulty::FTR)))
+		.or_else(|| strip_case_insensitive_suffix(name, "ETR").zip(Some(Difficulty::ETR)))
+		.or_else(|| strip_case_insensitive_suffix(name, "[ETR]").zip(Some(Difficulty::ETR)))
+		.or_else(|| strip_case_insensitive_suffix(name, "BYD").zip(Some(Difficulty::BYD)))
+		.or_else(|| strip_case_insensitive_suffix(name, "[BYD]").zip(Some(Difficulty::BYD)))
+		.unwrap_or((&name, Difficulty::FTR));
+
+	guess_chart_name(name, &ctx.song_cache, Some(difficulty), true)
+}
+
 /// Runs a specialized fuzzy-search through all charts in the game.
 ///
 /// The `unsafe_heuristics` toggle increases the amount of resolvable queries, but might let in
@@ -928,7 +959,7 @@ pub fn guess_chart_name<'a>(
 					item.charts().next()?
 				};
 
-				let song_title = song.title.to_lowercase();
+				let song_title = &song.lowercase_title;
 				distance_vec.clear();
 
 				let base_distance = edit_distance(&text, &song_title);

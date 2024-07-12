@@ -17,9 +17,8 @@ use poise::{
 use sqlx::query_as;
 
 use crate::{
-	chart::Difficulty,
 	context::{Context, Error},
-	score::{guess_chart_name, DbPlay, Score},
+	score::{guess_song_and_chart, DbPlay, Score},
 	user::{discord_it_to_discord_user, User},
 };
 
@@ -65,22 +64,7 @@ pub async fn best(
 		}
 	};
 
-	let name = name.trim();
-	let (name, difficulty) = name
-		.strip_suffix("PST")
-		.zip(Some(Difficulty::PST))
-		.or_else(|| name.strip_suffix("[PST]").zip(Some(Difficulty::PST)))
-		.or_else(|| name.strip_suffix("PRS").zip(Some(Difficulty::PRS)))
-		.or_else(|| name.strip_suffix("[PRS]").zip(Some(Difficulty::PRS)))
-		.or_else(|| name.strip_suffix("FTR").zip(Some(Difficulty::FTR)))
-		.or_else(|| name.strip_suffix("[FTR]").zip(Some(Difficulty::FTR)))
-		.or_else(|| name.strip_suffix("ETR").zip(Some(Difficulty::ETR)))
-		.or_else(|| name.strip_suffix("[ETR]").zip(Some(Difficulty::ETR)))
-		.or_else(|| name.strip_suffix("BYD").zip(Some(Difficulty::BYD)))
-		.or_else(|| name.strip_suffix("[BYD]").zip(Some(Difficulty::BYD)))
-		.unwrap_or((&name, Difficulty::FTR));
-
-	let (song, chart) = guess_chart_name(name, &ctx.data().song_cache, Some(difficulty), true)?;
+	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
 
 	let play = query_as!(
 		DbPlay,
@@ -137,22 +121,7 @@ pub async fn plot(
 		}
 	};
 
-	let name = name.trim();
-	let (name, difficulty) = name
-		.strip_suffix("PST")
-		.zip(Some(Difficulty::PST))
-		.or_else(|| name.strip_suffix("[PST]").zip(Some(Difficulty::PST)))
-		.or_else(|| name.strip_suffix("PRS").zip(Some(Difficulty::PRS)))
-		.or_else(|| name.strip_suffix("[PRS]").zip(Some(Difficulty::PRS)))
-		.or_else(|| name.strip_suffix("FTR").zip(Some(Difficulty::FTR)))
-		.or_else(|| name.strip_suffix("[FTR]").zip(Some(Difficulty::FTR)))
-		.or_else(|| name.strip_suffix("ETR").zip(Some(Difficulty::ETR)))
-		.or_else(|| name.strip_suffix("[ETR]").zip(Some(Difficulty::ETR)))
-		.or_else(|| name.strip_suffix("BYD").zip(Some(Difficulty::BYD)))
-		.or_else(|| name.strip_suffix("[BYD]").zip(Some(Difficulty::BYD)))
-		.unwrap_or((&name, Difficulty::FTR));
-
-	let (song, chart) = guess_chart_name(name, &ctx.data().song_cache, Some(difficulty), true)?;
+	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
 
 	let plays = query_as!(
 		DbPlay,

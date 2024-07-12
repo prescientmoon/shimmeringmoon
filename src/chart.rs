@@ -1,11 +1,14 @@
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
 use sqlx::{prelude::FromRow, SqlitePool};
 
 use crate::context::Error;
 
 // {{{ Difficuly
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, sqlx::Type)]
+#[derive(
+	Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, sqlx::Type, Serialize, Deserialize,
+)]
 pub enum Difficulty {
 	PST,
 	PRS,
@@ -42,21 +45,58 @@ impl TryFrom<String> for Difficulty {
 	}
 }
 // }}}
+// {{{ Side
+#[derive(Debug, Clone, Copy)]
+pub enum Side {
+	Light,
+	Conflict,
+	Silent,
+}
+
+impl Side {
+	pub const SIDES: [Self; 3] = [Self::Light, Self::Conflict, Self::Silent];
+	pub const SIDE_STRINGS: [&'static str; 3] = ["light", "conflict", "silent"];
+
+	#[inline]
+	pub fn to_index(self) -> usize {
+		self as usize
+	}
+}
+
+impl TryFrom<String> for Side {
+	type Error = String;
+
+	fn try_from(value: String) -> Result<Self, Self::Error> {
+		for (i, s) in Self::SIDE_STRINGS.iter().enumerate() {
+			if value == **s {
+				return Ok(Self::SIDES[i]);
+			}
+		}
+
+		Err(format!("Cannot convert {} to difficulty", value))
+	}
+}
+// }}}
 // {{{ Song
 #[derive(Debug, Clone, FromRow)]
 pub struct Song {
 	pub id: u32,
 	pub title: String,
-	#[allow(dead_code)]
+	pub lowercase_title: String,
 	pub artist: String,
+
+	pub bpm: String,
+	pub pack: Option<String>,
+	pub side: Side,
 }
 // }}}
 // {{{ Chart
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Chart {
 	pub id: u32,
 	pub song_id: u32,
 	pub shorthand: Option<String>,
+	pub note_design: Option<String>,
 
 	pub difficulty: Difficulty,
 	pub level: String, // TODO: this could become an enum
@@ -200,8 +240,12 @@ impl SongCache {
 		for song in songs {
 			let song = Song {
 				id: song.id as u32,
+				lowercase_title: song.title.to_lowercase(),
 				title: song.title,
 				artist: song.artist,
+				pack: song.pack,
+				bpm: song.bpm,
+				side: Side::try_from(song.side)?,
 			};
 
 			let song_id = song.id as usize;
@@ -225,6 +269,7 @@ impl SongCache {
 					chart_constant: chart.chart_constant as u32,
 					note_count: chart.note_count as u32,
 					cached_jacket: None,
+					note_design: chart.note_design,
 				};
 
 				let index = chart.difficulty.to_index();
