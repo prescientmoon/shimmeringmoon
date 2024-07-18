@@ -1,8 +1,10 @@
 #![warn(clippy::str_to_string)]
 #![feature(iter_map_windows)]
 #![feature(let_chains)]
+#![feature(array_try_map)]
 #![feature(async_closure)]
 
+mod bitmap;
 mod chart;
 mod commands;
 mod context;

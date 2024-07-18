@@ -19,8 +19,8 @@ pub async fn chart(
 	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
 
 	let attachement_name = "chart.png";
-	let icon_attachement = match chart.cached_jacket {
-		Some(bytes) => Some(CreateAttachment::bytes(bytes, attachement_name)),
+	let icon_attachement = match chart.cached_jacket.as_ref() {
+		Some(jacket) => Some(CreateAttachment::bytes(jacket.raw, attachement_name)),
 		None => None,
 	};
 

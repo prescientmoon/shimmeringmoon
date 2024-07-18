@@ -905,6 +905,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "freetype-rs"
+version = "0.36.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5442dee36ca09604133580dc0553780e867936bb3cbef3275859e889026d2b17"
+dependencies = [
+ "bitflags 2.5.0",
+ "freetype-sys",
+ "libc",
+]
+
+[[package]]
 name = "freetype-sys"
 version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2672,6 +2683,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "edit-distance",
+ "freetype-rs",
  "image 0.25.1",
  "kd-tree",
  "num",

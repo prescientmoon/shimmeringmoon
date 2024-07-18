@@ -1,13 +1,13 @@
 use std::{fs, path::PathBuf, str::FromStr};
 
-use image::{GenericImageView, Rgba};
+use freetype::{Face, Library};
+use image::{imageops::FilterType, GenericImageView, ImageBuffer, Rgb, Rgba};
 use kd_tree::{KdMap, KdPoint};
 use num::Integer;
-use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 
 use crate::{
-	chart::{Difficulty, SongCache},
+	bitmap::BitmapCanvas,
+	chart::{Difficulty, Jacket, SongCache},
 	context::Error,
 	score::guess_chart_name,
 };
@@ -15,11 +15,10 @@ use crate::{
 /// How many sub-segments to split each side into
 pub const SPLIT_FACTOR: u32 = 8;
 pub const IMAGE_VEC_DIM: usize = (SPLIT_FACTOR * SPLIT_FACTOR * 3) as usize;
+pub const BITMAP_IMAGE_SIZE: u32 = 192;
 
-#[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ImageVec {
-	#[serde_as(as = "[_; IMAGE_VEC_DIM]")]
 	pub colors: [f32; IMAGE_VEC_DIM],
 }
 
@@ -44,16 +43,16 @@ impl ImageVec {
 			let mut count = 0;
 
 			for (_, _, pixel) in cropped.pixels() {
-				r += pixel.0[0] as u64;
-				g += pixel.0[1] as u64;
-				b += pixel.0[2] as u64;
+				r += (pixel.0[0] as u64).pow(2);
+				g += (pixel.0[1] as u64).pow(2);
+				b += (pixel.0[2] as u64).pow(2);
 				count += 1;
 			}
 
 			let count = count as f64;
-			let r = r as f64 / count;
-			let g = g as f64 / count;
-			let b = b as f64 / count;
+			let r = (r as f64 / count).sqrt();
+			let g = (g as f64 / count).sqrt();
+			let b = (b as f64 / count).sqrt();
 			colors[i as usize * 3 + 0] = r as f32;
 			colors[i as usize * 3 + 1] = g as f32;
 			colors[i as usize * 3 + 2] = b as f32;
@@ -77,9 +76,11 @@ impl KdPoint for ImageVec {
 	}
 }
 
-#[derive(Serialize, Deserialize)]
 pub struct JacketCache {
 	tree: KdMap<ImageVec, u32>,
+	pub b30_background: ImageBuffer<Rgb<u8>, Vec<u8>>,
+	pub count_background: ImageBuffer<Rgba<u8>, Vec<u8>>,
+	pub diff_backgrounds: [ImageBuffer<Rgba<u8>, Vec<u8>>; 5],
 }
 
 impl JacketCache {
@@ -96,7 +97,7 @@ impl JacketCache {
 
 		let mut jackets = Vec::new();
 		let entries = fs::read_dir(data_dir.join("songs")).expect("Couldn't read songs directory");
-		for entry in entries {
+		for (i, entry) in entries.enumerate() {
 			let dir = entry?;
 			let raw_dir_name = dir.file_name();
 			let dir_name = raw_dir_name.to_str().unwrap();
@@ -127,6 +128,11 @@ impl JacketCache {
 				jackets.push((file.path(), song.id));
 
 				let contents = fs::read(file.path())?.leak();
+				let bitmap = Box::leak(Box::new(
+					image::load_from_memory(contents)?
+						.resize(BITMAP_IMAGE_SIZE, BITMAP_IMAGE_SIZE, FilterType::Nearest)
+						.into_rgb8(),
+				));
 
 				if name == "base" {
 					let item = song_cache.lookup_mut(song.id).unwrap();
@@ -156,14 +162,20 @@ impl JacketCache {
 						if !specialized_path.exists() && !dest.exists() {
 							std::os::unix::fs::symlink(file.path(), dest)
 								.expect("Could not symlink jacket");
-							chart.cached_jacket = Some(contents);
+							chart.cached_jacket = Some(Jacket {
+								raw: contents,
+								bitmap,
+							});
 						}
 					}
 				} else if difficulty.is_some() {
 					std::os::unix::fs::symlink(file.path(), chart.jacket_path(data_dir))
 						.expect("Could not symlink jacket");
 					let chart = song_cache.lookup_chart_mut(chart.id).unwrap();
-					chart.cached_jacket = Some(contents);
+					chart.cached_jacket = Some(Jacket {
+						raw: contents,
+						bitmap,
+					});
 				}
 			}
 		}
@@ -180,8 +192,36 @@ impl JacketCache {
 			}
 		}
 
+		let assets_dir = data_dir.join("assets");
+
+		let lib = Library::init()?;
+		let saira_font = lib.new_face(assets_dir.join("saira-variable.ttf"), 0)?;
+		let mut canvas = BitmapCanvas::new(0, 0);
+		canvas.text(
+			(0, 0),
+			saira_font,
+			20,
+			"Yo, this is a test!",
+			(0, 0, 0, 0xff),
+		)?;
+
 		let result = Self {
 			tree: KdMap::build_by_ordered_float(entries),
+			b30_background: image::open(assets_dir.join("b30_background.jpg"))?
+				.resize(2048 * 2, 1535 * 2, FilterType::Nearest)
+				.blur(20.0)
+				.into_rgb8(),
+			count_background: image::open(assets_dir.join("count_background.png"))?
+				.blur(1.0)
+				.into_rgba8(),
+			diff_backgrounds: Difficulty::DIFFICULTY_SHORTHANDS.try_map(
+				|shorthand| -> Result<_, Error> {
+					Ok(image::open(
+						assets_dir.join(format!("diff-{}.png", shorthand.to_lowercase())),
+					)?
+					.into_rgba8())
+				},
+			)?,
 		};
 
 		Ok(result)

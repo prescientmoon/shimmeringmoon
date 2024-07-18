@@ -153,8 +153,16 @@ impl Score {
 
 			// Compute score from note breakdown subpairs
 			let pf_score = Score::compute_naive(note_count, pures, fars);
-			let fl_score = Score::compute_naive(note_count, note_count - losts - fars, fars);
-			let lp_score = Score::compute_naive(note_count, pures, note_count - losts - pures);
+			let fl_score = Score::compute_naive(
+				note_count,
+				note_count.checked_sub(losts + fars).unwrap_or(0),
+				fars,
+			);
+			let lp_score = Score::compute_naive(
+				note_count,
+				pures,
+				note_count.checked_sub(losts + pures).unwrap_or(0),
+			);
 
 			if no_shiny_scores.len() == 1 {
 				// {{{ Score is fixed, gotta figure out the exact distribution
@@ -450,14 +458,14 @@ impl Play {
 	pub fn distribution(&self, note_count: u32) -> Option<(u32, u32, u32, u32)> {
 		if let Some(fars) = self.far_notes {
 			let (_, shinies, units) = self.score.analyse(note_count);
-			let (pures, rem) = (units - fars).div_rem_euclid(&2);
+			let (pures, rem) = units.checked_sub(fars)?.div_rem_euclid(&2);
 			if rem == 1 {
 				println!("The impossible happened: got an invalid amount of far notes!");
 				return None;
 			}
 
-			let lost = note_count - fars - pures;
-			let non_max_pures = pures - shinies;
+			let lost = note_count.checked_sub(fars + pures)?;
+			let non_max_pures = pures.checked_sub(shinies)?;
 			Some((shinies, non_max_pures, fars, lost))
 		} else {
 			None
@@ -474,7 +482,7 @@ impl Play {
 				return None;
 			}
 
-			let non_max_pures = chart.note_count + 10_000_000 - score;
+			let non_max_pures = (chart.note_count + 10_000_000).checked_sub(score)?;
 			if non_max_pures == 0 {
 				Some("MPM".to_string())
 			} else {
@@ -507,8 +515,8 @@ impl Play {
 		author: Option<&poise::serenity_prelude::User>,
 	) -> Result<(CreateEmbed, Option<CreateAttachment>), Error> {
 		let attachement_name = format!("{:?}-{:?}-{:?}.png", song.id, self.score.0, index);
-		let icon_attachement = match chart.cached_jacket {
-			Some(bytes) => Some(CreateAttachment::bytes(bytes, &attachement_name)),
+		let icon_attachement = match chart.cached_jacket.as_ref() {
+			Some(jacket) => Some(CreateAttachment::bytes(jacket.raw, &attachement_name)),
 			None => None,
 		};
 
@@ -527,16 +535,16 @@ impl Play {
 				true,
 			)
 			.field("Grade", self.score.grade(), true)
-			.field("ζ-Score", format!("{} (+?)", self.zeta_score), true)
+			.field("ξ-Score", format!("{} (+?)", self.zeta_score), true)
 			.field(
-				"ζ-Rating",
+				"ξ-Rating",
 				format!(
 					"{:.2} (+?)",
 					(self.zeta_score.play_rating(chart.chart_constant)) as f32 / 100.
 				),
 				true,
 			)
-			.field("ζ-Grade", self.zeta_score.grade(), true)
+			.field("ξ-Grade", self.zeta_score.grade(), true)
 			.field(
 				"Status",
 				self.status(chart).unwrap_or("?".to_string()),

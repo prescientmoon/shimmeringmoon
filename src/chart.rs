@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
+use image::{ImageBuffer, Rgb};
 use serde::{Deserialize, Serialize};
-use sqlx::{prelude::FromRow, SqlitePool};
+use sqlx::SqlitePool;
 
 use crate::context::Error;
 
@@ -78,7 +79,7 @@ impl TryFrom<String> for Side {
 }
 // }}}
 // {{{ Song
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone)]
 pub struct Song {
 	pub id: u32,
 	pub title: String,
@@ -91,7 +92,13 @@ pub struct Song {
 }
 // }}}
 // {{{ Chart
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy)]
+pub struct Jacket {
+	pub raw: &'static [u8],
+	pub bitmap: &'static ImageBuffer<Rgb<u8>, Vec<u8>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Chart {
 	pub id: u32,
 	pub song_id: u32,
@@ -104,7 +111,7 @@ pub struct Chart {
 	pub note_count: u32,
 	pub chart_constant: u32,
 
-	pub cached_jacket: Option<&'static [u8]>,
+	pub cached_jacket: Option<Jacket>,
 }
 
 impl Chart {
