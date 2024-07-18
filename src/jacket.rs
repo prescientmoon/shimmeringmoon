@@ -1,12 +1,11 @@
 use std::{fs, path::PathBuf, str::FromStr};
 
-use freetype::{Face, Library};
 use image::{imageops::FilterType, GenericImageView, ImageBuffer, Rgb, Rgba};
 use kd_tree::{KdMap, KdPoint};
 use num::Integer;
 
 use crate::{
-	bitmap::BitmapCanvas,
+	assets::should_skip_jacket_art,
 	chart::{Difficulty, Jacket, SongCache},
 	context::Error,
 	score::guess_chart_name,
@@ -88,6 +87,7 @@ impl JacketCache {
 	// This is a bit inefficient (using a hash set), but only runs once
 	pub fn new(data_dir: &PathBuf, song_cache: &mut SongCache) -> Result<Self, Error> {
 		let jacket_dir = data_dir.join("jackets");
+		let assets_dir = data_dir.join("assets");
 
 		if jacket_dir.exists() {
 			fs::remove_dir_all(&jacket_dir).expect("Could not delete jacket dir");
@@ -95,118 +95,121 @@ impl JacketCache {
 
 		fs::create_dir_all(&jacket_dir).expect("Could not create jacket dir");
 
-		let mut jackets = Vec::new();
-		let entries = fs::read_dir(data_dir.join("songs")).expect("Couldn't read songs directory");
-		for (i, entry) in entries.enumerate() {
-			let dir = entry?;
-			let raw_dir_name = dir.file_name();
-			let dir_name = raw_dir_name.to_str().unwrap();
-			for entry in fs::read_dir(dir.path()).expect("Couldn't read song directory") {
-				let file = entry?;
-				let raw_name = file.file_name();
-				let name = raw_name.to_str().unwrap().strip_suffix(".jpg").unwrap();
+		let tree_entries = if should_skip_jacket_art() {
+			let path = assets_dir.join("placeholder-jacket.jpg");
+			let contents: &'static _ = fs::read(path)?.leak();
+			let image = image::load_from_memory(contents)?;
+			let bitmap: &'static _ = Box::leak(Box::new(
+				image
+					.resize(BITMAP_IMAGE_SIZE, BITMAP_IMAGE_SIZE, FilterType::Nearest)
+					.into_rgb8(),
+			));
 
-				if !name.ends_with("_256") {
-					continue;
-				}
-				let name = name.strip_suffix("_256").unwrap();
-
-				let difficulty = match name {
-					"0" => Some(Difficulty::PST),
-					"1" => Some(Difficulty::PRS),
-					"2" => Some(Difficulty::FTR),
-					"3" => Some(Difficulty::BYD),
-					"4" => Some(Difficulty::ETR),
-					"base" => None,
-					"base_night" => None,
-					"base_ja" => None,
-					_ => Err(format!("Unknown jacket suffix {}", name))?,
-				};
-
-				let (song, chart) = guess_chart_name(dir_name, &song_cache, difficulty, true)?;
-
-				jackets.push((file.path(), song.id));
-
-				let contents = fs::read(file.path())?.leak();
-				let bitmap = Box::leak(Box::new(
-					image::load_from_memory(contents)?
-						.resize(BITMAP_IMAGE_SIZE, BITMAP_IMAGE_SIZE, FilterType::Nearest)
-						.into_rgb8(),
-				));
-
-				if name == "base" {
-					let item = song_cache.lookup_mut(song.id).unwrap();
-
-					for chart in item.charts_mut() {
-						let difficulty_num = match chart.difficulty {
-							Difficulty::PST => "0",
-							Difficulty::PRS => "1",
-							Difficulty::FTR => "2",
-							Difficulty::BYD => "3",
-							Difficulty::ETR => "4",
-						};
-
-						// We only want to create this path if there's no overwrite for this
-						// jacket.
-						let specialized_path = PathBuf::from_str(
-							&file
-								.path()
-								.to_str()
-								.unwrap()
-								.replace("base_night", difficulty_num)
-								.replace("base", difficulty_num),
-						)
-						.unwrap();
-
-						let dest = chart.jacket_path(data_dir);
-						if !specialized_path.exists() && !dest.exists() {
-							std::os::unix::fs::symlink(file.path(), dest)
-								.expect("Could not symlink jacket");
-							chart.cached_jacket = Some(Jacket {
-								raw: contents,
-								bitmap,
-							});
-						}
-					}
-				} else if difficulty.is_some() {
-					std::os::unix::fs::symlink(file.path(), chart.jacket_path(data_dir))
-						.expect("Could not symlink jacket");
-					let chart = song_cache.lookup_chart_mut(chart.id).unwrap();
+			for song in song_cache.songs_mut() {
+				for chart in song.charts_mut() {
 					chart.cached_jacket = Some(Jacket {
 						raw: contents,
 						bitmap,
 					});
 				}
 			}
-		}
 
-		let mut entries = vec![];
+			Vec::new()
+		} else {
+			let entries =
+				fs::read_dir(data_dir.join("songs")).expect("Couldn't read songs directory");
+			let mut tree_entries = vec![];
 
-		for (path, song_id) in jackets {
-			match image::io::Reader::open(path) {
-				Ok(reader) => {
-					let image = reader.decode()?;
-					entries.push((ImageVec::from_image(&image), song_id))
+			for entry in entries {
+				let dir = entry?;
+				let raw_dir_name = dir.file_name();
+				let dir_name = raw_dir_name.to_str().unwrap();
+				for entry in fs::read_dir(dir.path()).expect("Couldn't read song directory") {
+					let file = entry?;
+					let raw_name = file.file_name();
+					let name = raw_name.to_str().unwrap().strip_suffix(".jpg").unwrap();
+
+					if !name.ends_with("_256") {
+						continue;
+					}
+					let name = name.strip_suffix("_256").unwrap();
+
+					let difficulty = match name {
+						"0" => Some(Difficulty::PST),
+						"1" => Some(Difficulty::PRS),
+						"2" => Some(Difficulty::FTR),
+						"3" => Some(Difficulty::BYD),
+						"4" => Some(Difficulty::ETR),
+						"base" => None,
+						"base_night" => None,
+						"base_ja" => None,
+						_ => Err(format!("Unknown jacket suffix {}", name))?,
+					};
+
+					let (song, chart) = guess_chart_name(dir_name, &song_cache, difficulty, true)?;
+
+					let contents: &'static _ = fs::read(file.path())?.leak();
+
+					let image = image::load_from_memory(contents)?;
+					tree_entries.push((ImageVec::from_image(&image), song.id));
+
+					let bitmap: &'static _ = Box::leak(Box::new(
+						image
+							.resize(BITMAP_IMAGE_SIZE, BITMAP_IMAGE_SIZE, FilterType::Nearest)
+							.into_rgb8(),
+					));
+
+					if name == "base" {
+						let item = song_cache.lookup_mut(song.id).unwrap();
+
+						for chart in item.charts_mut() {
+							let difficulty_num = match chart.difficulty {
+								Difficulty::PST => "0",
+								Difficulty::PRS => "1",
+								Difficulty::FTR => "2",
+								Difficulty::BYD => "3",
+								Difficulty::ETR => "4",
+							};
+
+							// We only want to create this path if there's no overwrite for this
+							// jacket.
+							let specialized_path = PathBuf::from_str(
+								&file
+									.path()
+									.to_str()
+									.unwrap()
+									.replace("base_night", difficulty_num)
+									.replace("base", difficulty_num),
+							)
+							.unwrap();
+
+							let dest = chart.jacket_path(data_dir);
+							if !specialized_path.exists() && !dest.exists() {
+								std::os::unix::fs::symlink(file.path(), dest)
+									.expect("Could not symlink jacket");
+								chart.cached_jacket = Some(Jacket {
+									raw: contents,
+									bitmap,
+								});
+							}
+						}
+					} else if difficulty.is_some() {
+						std::os::unix::fs::symlink(file.path(), chart.jacket_path(data_dir))
+							.expect("Could not symlink jacket");
+						let chart = song_cache.lookup_chart_mut(chart.id).unwrap();
+						chart.cached_jacket = Some(Jacket {
+							raw: contents,
+							bitmap,
+						});
+					}
 				}
-				_ => continue,
 			}
-		}
 
-		let assets_dir = data_dir.join("assets");
-
-		let lib = Library::init()?;
-		let saira_font = lib.new_face(assets_dir.join("saira-variable.ttf"), 0)?;
-		let mut canvas = BitmapCanvas::new(0, 0);
-		canvas.text(
-			(0, 0),
-			saira_font,
-			20,
-			"Yo, this is a test!",
-			(0, 0, 0, 0xff),
-		)?;
+			tree_entries
+		};
 
 		let result = Self {
-			tree: KdMap::build_by_ordered_float(entries),
+			tree: KdMap::build_by_ordered_float(tree_entries),
 			b30_background: image::open(assets_dir.join("b30_background.jpg"))?
 				.resize(2048 * 2, 1535 * 2, FilterType::Nearest)
 				.blur(20.0)

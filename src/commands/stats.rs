@@ -17,7 +17,8 @@ use poise::{
 use sqlx::query_as;
 
 use crate::{
-	bitmap::{BitmapCanvas, LayoutDrawer, LayoutManager},
+	assets::EXO_FONT,
+	bitmap::{Align, BitmapCanvas, LayoutDrawer, LayoutManager},
 	chart::{Chart, Song},
 	context::{Context, Error},
 	jacket::BITMAP_IMAGE_SIZE,
@@ -354,18 +355,22 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 		} else {
 			0
 		};
-		// jacket_area.draw_text(
-		// 	&chart.level,
-		// 	&TextStyle::from(("Exo", 30).into_font())
-		// 		.color(&WHITE)
-		// 		.with_anchor::<RGBAColor>(Pos {
-		// 			h_pos: HPos::Center,
-		// 			v_pos: VPos::Center,
-		// 		})
-		// 		.into_text_style(&jacket_area),
-		// 	(BITMAP_IMAGE_SIZE as i32 + x_offset, 2),
-		// )?;
-		// }}}
+
+		// EXO_FONT.with_borrow_mut(|font| {
+		// 	drawer.text(
+		// 		jacket_area,
+		// 		(BITMAP_IMAGE_SIZE as i32 + x_offset - 30, 2),
+		// 		font,
+		// 		crate::bitmap::TextStyle {
+		// 			size: 40,
+		// 			weight: 250,
+		// 			color: (0xff, 0xff, 0xff, 0xff),
+		// 			h_align: Align::Center,
+		// 			v_align: Align::Center,
+		// 		},
+		// 		&chart.level,
+		// 	)
+		// })?;
 		// {{{ Display chart name
 		// Draw background
 		drawer.fill(bottom_area, (0x82, 0x71, 0xA7, 255));
