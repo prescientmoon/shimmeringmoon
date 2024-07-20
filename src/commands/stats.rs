@@ -8,7 +8,7 @@ use plotters::{
 	drawing::IntoDrawingArea,
 	element::Circle,
 	series::LineSeries,
-	style::{Color, IntoFont, TextStyle, BLUE, WHITE},
+	style::{IntoFont, TextStyle, BLUE, WHITE},
 };
 use poise::{
 	serenity_prelude::{CreateAttachment, CreateMessage},
@@ -17,8 +17,12 @@ use poise::{
 use sqlx::query_as;
 
 use crate::{
-	assets::EXO_FONT,
-	bitmap::{Align, BitmapCanvas, LayoutDrawer, LayoutManager},
+	assets::{
+		get_b30_background, get_count_background, get_difficulty_background, get_grade_background,
+		get_name_backgound, get_ptt_emblem, get_score_background, get_status_background,
+		get_top_backgound, EXO_FONT,
+	},
+	bitmap::{Align, BitmapCanvas, Color, LayoutDrawer, LayoutManager, Rect},
 	chart::{Chart, Song},
 	context::{Context, Error},
 	jacket::BITMAP_IMAGE_SIZE,
@@ -214,7 +218,7 @@ pub async fn plot(
 		chart.draw_series(
 			points
 				.iter()
-				.map(|(t, s)| Circle::new((*t, *s), 3, BLUE.filled())),
+				.map(|(t, s)| Circle::new((*t, *s), 3, plotters::style::Color::filled(&BLUE))),
 		)?;
 		root.present()?;
 	}
@@ -280,16 +284,23 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 
 	let mut layout = LayoutManager::default();
 	let jacket_area = layout.make_box(BITMAP_IMAGE_SIZE, BITMAP_IMAGE_SIZE);
+	let jacket_with_border = layout.margin_uniform(jacket_area, 3);
 	let jacket_margin = 10;
-	let jacket_with_margin =
-		layout.margin(jacket_area, jacket_margin, jacket_margin, 5, jacket_margin);
+	let jacket_with_margin = layout.margin(
+		jacket_with_border,
+		jacket_margin,
+		jacket_margin,
+		2,
+		jacket_margin,
+	);
 	let top_left_area = layout.make_box(90, layout.height(jacket_with_margin));
 	let top_area = layout.glue_vertically(top_left_area, jacket_with_margin);
-	let bottom_area = layout.make_box(layout.width(top_area), 40);
+	let bottom_area = layout.make_box(layout.width(top_area), 43);
+	let bottom_in_area = layout.margin_xy(bottom_area, -20, -7);
 	let item_area = layout.glue_horizontally(top_area, bottom_area);
-	let item_with_margin = layout.margin_xy(item_area, 25, 20);
+	let item_with_margin = layout.margin_xy(item_area, 22, 17);
 	let (item_grid, item_origins) = layout.repeated_evenly(item_with_margin, (5, 6));
-	let root = item_grid;
+	let root = layout.margin_uniform(item_grid, 30);
 
 	// layout.normalize(root);
 	let width = layout.width(root);
@@ -298,14 +309,14 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 	let canvas = BitmapCanvas::new(width, height);
 	let mut drawer = LayoutDrawer::new(layout, canvas);
 
-	let asset_cache = &ctx.data().jacket_cache;
-	let bg = &asset_cache.b30_background;
+	let bg = get_b30_background();
 
 	drawer.blit_rbg(
 		root,
-		(
-			-((bg.width() - width) as i32) / 2,
-			-((bg.height() - height) as i32) / 2,
+		// Align the center of the image with the center of the root
+		Rect::from_image(bg).align(
+			(Align::Center, Align::Center),
+			drawer.layout.lookup(root).center(),
 		),
 		bg.dimensions(),
 		bg.as_raw(),
@@ -316,10 +327,74 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 			.layout
 			.edit_to_relative(item_with_margin, item_grid, origin.0, origin.1);
 
-		drawer.fill(top_area, (59, 78, 102, 255));
+		let top_bg = get_top_backgound();
+		drawer.blit_rbg(top_area, (0, 0), top_bg.dimensions(), top_bg);
 
-		let (_play, song, chart) = &plays[i];
+		let (play, song, chart) = &plays[i];
 
+		// {{{ Display index
+		let bg = get_count_background();
+		let bg_center = Rect::from_image(bg).center();
+
+		// Draw background
+		drawer.blit_rbga(item_area, (-8, jacket_margin as i32), bg.dimensions(), bg);
+
+		EXO_FONT.with_borrow_mut(|font| {
+			drawer.text(
+				item_area,
+				(bg_center.0 - 12, bg_center.1 - 3 + jacket_margin),
+				font,
+				crate::bitmap::TextStyle {
+					size: 25,
+					weight: 800,
+					color: Color::WHITE,
+					align: (Align::Center, Align::Center),
+					stroke: None,
+					drop_shadow: Some((Color::BLACK.alpha(0xaa), (2, 2))),
+				},
+				&format!("#{}", i + 1),
+			)
+		})?;
+		// }}}
+		// {{{ Display chart name
+		// Draw background
+		let bg = get_name_backgound();
+		drawer.blit_rbg(bottom_area, (0, 0), bg.dimensions(), bg.as_raw());
+
+		// Draw text
+		EXO_FONT.with_borrow_mut(|font| {
+			let initial_size = 24;
+			let mut style = crate::bitmap::TextStyle {
+				size: initial_size,
+				weight: 800,
+				color: Color::WHITE,
+				align: (Align::Start, Align::Center),
+				stroke: Some((Color::BLACK, 1.5)),
+				drop_shadow: None,
+			};
+
+			while drawer
+				.canvas
+				.plan_text_rendering((0, 0), font, style, &song.title)?
+				.1
+				.width >= drawer.layout.width(bottom_in_area)
+			{
+				style.size -= 3;
+				style.stroke = Some((
+					Color::BLACK,
+					style.size as f32 / (initial_size as f32) * 1.5,
+				));
+			}
+
+			drawer.text(
+				bottom_in_area,
+				(0, drawer.layout.height(bottom_in_area) as i32 / 2),
+				font,
+				style,
+				&song.title,
+			)
+		})?;
+		// }}}
 		// {{{ Display jacket
 		let jacket = chart.cached_jacket.as_ref().ok_or_else(|| {
 			format!(
@@ -328,6 +403,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 			)
 		})?;
 
+		drawer.fill(jacket_with_border, Color::from_rgb_int(0x271E35));
 		drawer.blit_rbg(
 			jacket_area,
 			(0, 0),
@@ -336,13 +412,15 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 		);
 		// }}}
 		// {{{ Display difficulty background
-		let diff_bg = &asset_cache.diff_backgrounds[chart.difficulty.to_index()];
+		let diff_bg = get_difficulty_background(chart.difficulty);
+		let diff_bg_area = Rect::from_image(diff_bg).align_whole(
+			(Align::Center, Align::Center),
+			(drawer.layout.width(jacket_with_border) as i32, 0),
+		);
+
 		drawer.blit_rbga(
-			jacket_area,
-			(
-				BITMAP_IMAGE_SIZE as i32 - (diff_bg.width() as i32) / 2,
-				-(diff_bg.height() as i32) / 2,
-			),
+			jacket_with_border,
+			diff_bg_area.top_left(),
 			diff_bg.dimensions(),
 			&diff_bg.as_raw(),
 		);
@@ -356,92 +434,192 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 			0
 		};
 
-		// EXO_FONT.with_borrow_mut(|font| {
-		// 	drawer.text(
-		// 		jacket_area,
-		// 		(BITMAP_IMAGE_SIZE as i32 + x_offset - 30, 2),
-		// 		font,
-		// 		crate::bitmap::TextStyle {
-		// 			size: 40,
-		// 			weight: 250,
-		// 			color: (0xff, 0xff, 0xff, 0xff),
-		// 			h_align: Align::Center,
-		// 			v_align: Align::Center,
-		// 		},
-		// 		&chart.level,
-		// 	)
-		// })?;
-		// {{{ Display chart name
-		// Draw background
-		drawer.fill(bottom_area, (0x82, 0x71, 0xA7, 255));
+		let diff_area_center = diff_bg_area.center();
 
-		let tx = 10;
-		let ty = drawer.layout.height(bottom_area) as i32 / 2;
-
-		// let text = &song.title;
-		// let mut size = 30;
-		// let mut text_style = TextStyle::from(("Exo", size).into_font().style(FontStyle::Bold))
-		// 	.with_anchor::<RGBAColor>(Pos {
-		// 		h_pos: HPos::Left,
-		// 		v_pos: VPos::Center,
-		// 	})
-		// 	.into_text_style(&bottom_area);
-		//
-		// while text_style.font.layout_box(text).unwrap().1 .0 >= item_area.0 as i32 - 20 {
-		// 	size -= 3;
-		// 	text_style.font = ("Exo", size).into_font();
-		// }
-		//
-		// Draw drop shadow
-		// bottom_area.draw_text(
-		// 	&song.title,
-		// 	&text_style.color(&RGBAColor(0, 0, 0, 0.2)),
-		// 	(tx + 3, ty + 3),
-		// )?;
-		// bottom_area.draw_text(
-		// 	&song.title,
-		// 	&text_style.color(&RGBAColor(0, 0, 0, 0.2)),
-		// 	(tx - 3, ty + 3),
-		// )?;
-		// bottom_area.draw_text(
-		// 	&song.title,
-		// 	&text_style.color(&RGBAColor(0, 0, 0, 0.2)),
-		// 	(tx + 3, ty - 3),
-		// )?;
-		// bottom_area.draw_text(
-		// 	&song.title,
-		// 	&text_style.color(&RGBAColor(0, 0, 0, 0.2)),
-		// 	(tx - 3, ty - 3),
-		// )?;
-
-		// Draw text
-		// bottom_area.draw_text(&song.title, &text_style.color(&WHITE), (tx, ty))?;
+		EXO_FONT.with_borrow_mut(|font| {
+			drawer.text(
+				jacket_with_border,
+				(diff_area_center.0 + x_offset, diff_area_center.1),
+				font,
+				crate::bitmap::TextStyle {
+					size: 25,
+					weight: 600,
+					color: Color::from_rgb_int(0xffffff),
+					align: (Align::Center, Align::Center),
+					stroke: None,
+					drop_shadow: None,
+				},
+				&chart.level,
+			)
+		})?;
 		// }}}
-		// {{{ Display index
-		let bg = &asset_cache.count_background;
+		// {{{ Display score background
+		let score_bg = get_score_background();
+		let score_bg_pos = Rect::from_image(score_bg).align(
+			(Align::End, Align::End),
+			(
+				drawer.layout.width(jacket_area) as i32,
+				drawer.layout.height(jacket_area) as i32,
+			),
+		);
 
-		// Draw background
-		drawer.blit_rbga(item_area, (-8, jacket_margin as i32), bg.dimensions(), bg);
+		drawer.blit_rbga(
+			jacket_area,
+			score_bg_pos,
+			score_bg.dimensions(),
+			&score_bg.as_raw(),
+		);
+		// }}}
+		// {{{ Display score text
+		EXO_FONT.with_borrow_mut(|font| {
+			drawer.text(
+				jacket_area,
+				(
+					score_bg_pos.0 + 5,
+					score_bg_pos.1 + score_bg.height() as i32 / 2,
+				),
+				font,
+				crate::bitmap::TextStyle {
+					size: 23,
+					weight: 800,
+					color: Color::WHITE,
+					align: (Align::Start, Align::Center),
+					stroke: Some((Color::BLACK, 1.5)),
+					drop_shadow: None,
+				},
+				&format!("{:0>10}", format!("{}", play.score)),
+			)
+		})?;
+		// }}}
+		// {{{ Display status background
+		let status_bg = get_status_background();
+		let status_bg_area = Rect::from_image(status_bg).align_whole(
+			(Align::Center, Align::Center),
+			(
+				drawer.layout.width(jacket_area) as i32 + 3,
+				drawer.layout.height(jacket_area) as i32 + 1,
+			),
+		);
 
-		// let text_style = TextStyle::from(("Exo", 30).into_font().style(FontStyle::Bold))
-		// 	.with_anchor::<RGBAColor>(Pos {
-		// 		h_pos: HPos::Left,
-		// 		v_pos: VPos::Center,
-		// 	})
-		// 	.into_text_style(&area);
+		drawer.blit_rbga(
+			jacket_area,
+			status_bg_area.top_left(),
+			status_bg.dimensions(),
+			&status_bg.as_raw(),
+		);
+		// }}}
+		// {{{ Display status text
+		EXO_FONT.with_borrow_mut(|font| {
+			let status = play
+				.short_status(chart)
+				.ok_or_else(|| format!("Could not get status for score {}", play.score))?;
 
-		let tx = 7;
-		let ty = (jacket_margin + bg.height() as i32 / 2) - 3;
+			let x_offset = match status {
+				'P' => 2,
+				'M' => 2,
+				// TODO: ensure the F is rendered properly as well
+				_ => 0,
+			};
 
-		// Draw drop shadow
-		// area.draw_text(
-		// 	&format!("#{}", i + 1),
-		// 	&text_style.color(&BLACK),
-		// 	(tx + 2, ty + 2),
-		// )?;
+			let center = status_bg_area.center();
 
-		// Draw main text
-		// area.draw_text(&format!("#{}", i + 1), &text_style.color(&WHITE), (tx, ty))?;
+			drawer.text(
+				jacket_area,
+				(center.0 + x_offset, center.1),
+				font,
+				crate::bitmap::TextStyle {
+					size: if status == 'M' { 30 } else { 36 },
+					weight: if status == 'M' { 800 } else { 500 },
+					color: Color::WHITE,
+					align: (Align::Center, Align::Center),
+					stroke: None,
+					drop_shadow: None,
+				},
+				&format!("{}", status),
+			)
+		})?;
+		// }}}
+		// {{{ Display grade background
+		let top_left_center = (drawer.layout.width(top_left_area) as i32 + jacket_margin) / 2;
+		let grade_bg = get_grade_background();
+		let grade_bg_area = Rect::from_image(grade_bg).align_whole(
+			(Align::Center, Align::Center),
+			(top_left_center, jacket_margin + 140),
+		);
+
+		drawer.blit_rbga(
+			top_area,
+			grade_bg_area.top_left(),
+			grade_bg.dimensions(),
+			&grade_bg.as_raw(),
+		);
+		// }}}
+		// {{{ Display grade text
+		EXO_FONT.with_borrow_mut(|font| {
+			let grade = play.score.grade();
+			let center = grade_bg_area.center();
+
+			drawer.text(
+				top_left_area,
+				(center.0, center.1),
+				font,
+				crate::bitmap::TextStyle {
+					size: 30,
+					weight: 650,
+					color: Color::from_rgb_int(0x203C6B),
+					align: (Align::Center, Align::Center),
+					stroke: Some((Color::WHITE, 1.5)),
+					drop_shadow: None,
+				},
+				&format!("{}", grade),
+			)
+		})?;
+		// }}}
+		// {{{ Display rating text
+		EXO_FONT.with_borrow_mut(|font| -> Result<(), Error> {
+			let mut style = crate::bitmap::TextStyle {
+				size: 12,
+				weight: 600,
+				color: Color::WHITE,
+				align: (Align::Center, Align::Center),
+				stroke: None,
+				drop_shadow: None,
+			};
+
+			drawer.text(
+				top_left_area,
+				(top_left_center, 73),
+				font,
+				style,
+				"POTENTIAL",
+			)?;
+
+			style.size = 25;
+			style.weight = 700;
+
+			drawer.text(
+				top_left_area,
+				(top_left_center, 94),
+				font,
+				style,
+				&format!(
+					"{:.2}",
+					(play.score.play_rating(chart.chart_constant)) as f32 / 100.
+				),
+			)?;
+
+			Ok(())
+		})?;
+		// }}}
+		// {{{ Display ptt emblem
+		let ptt_emblem = get_ptt_emblem();
+		drawer.blit_rbga(
+			top_left_area,
+			Rect::from_image(ptt_emblem)
+				.align((Align::Center, Align::Center), (top_left_center, 115)),
+			ptt_emblem.dimensions(),
+			ptt_emblem.as_raw(),
+		);
 		// }}}
 	}
 

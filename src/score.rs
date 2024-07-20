@@ -18,6 +18,34 @@ use crate::context::{Error, UserContext};
 use crate::jacket::IMAGE_VEC_DIM;
 use crate::user::User;
 
+// {{{ Grade
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Grade {
+	EXP,
+	EX,
+	AA,
+	A,
+	B,
+	C,
+	D,
+}
+
+impl Grade {
+	pub const GRADE_STRINGS: [&'static str; 7] = ["EX+", "EX", "AA", "A", "B", "C", "D"];
+	pub const GRADE_SHORTHANDS: [&'static str; 7] = ["exp", "ex", "aa", "a", "b", "c", "d"];
+
+	#[inline]
+	pub fn to_index(self) -> usize {
+		self as usize
+	}
+}
+
+impl Display for Grade {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", Self::GRADE_STRINGS[self.to_index()])
+	}
+}
+// }}}
 // {{{ Score
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Score(pub u32);
@@ -110,22 +138,22 @@ impl Score {
 	// {{{ Score => grade
 	#[inline]
 	// TODO: Perhaps make an enum for this
-	pub fn grade(self) -> &'static str {
+	pub fn grade(self) -> Grade {
 		let score = self.0;
 		if score > 9900000 {
-			"EX+"
+			Grade::EXP
 		} else if score > 9800000 {
-			"EX"
+			Grade::EX
 		} else if score > 9500000 {
-			"AA"
+			Grade::AA
 		} else if score > 9200000 {
-			"A"
+			Grade::A
 		} else if score > 8900000 {
-			"B"
+			Grade::B
 		} else if score > 8600000 {
-			"C"
+			Grade::C
 		} else {
-			"D"
+			Grade::D
 		}
 	}
 	// }}}
@@ -477,7 +505,6 @@ impl Play {
 	pub fn status(&self, chart: &Chart) -> Option<String> {
 		let score = self.score.0;
 		if score >= 10_000_000 {
-			// Prevent subtracting with overflow
 			if score > chart.note_count + 10_000_000 {
 				return None;
 			}
@@ -500,6 +527,25 @@ impl Play {
 			}
 		} else {
 			None
+		}
+	}
+
+	#[inline]
+	pub fn short_status(&self, chart: &Chart) -> Option<char> {
+		let score = self.score.0;
+		if score >= 10_000_000 {
+			let non_max_pures = (chart.note_count + 10_000_000).checked_sub(score)?;
+			if non_max_pures == 0 {
+				Some('M')
+			} else {
+				Some('P')
+			}
+		} else if let Some(distribution) = self.distribution(chart.note_count)
+			&& distribution.3 == 0
+		{
+			Some('F')
+		} else {
+			Some('C')
 		}
 	}
 	// }}}
@@ -534,7 +580,7 @@ impl Play {
 				),
 				true,
 			)
-			.field("Grade", self.score.grade(), true)
+			.field("Grade", format!("{}", self.score.grade()), true)
 			.field("ξ-Score", format!("{} (+?)", self.zeta_score), true)
 			.field(
 				"ξ-Rating",
@@ -544,7 +590,7 @@ impl Play {
 				),
 				true,
 			)
-			.field("ξ-Grade", self.zeta_score.grade(), true)
+			.field("ξ-Grade", format!("{}", self.zeta_score.grade()), true)
 			.field(
 				"Status",
 				self.status(chart).unwrap_or("?".to_string()),

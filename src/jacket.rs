@@ -1,11 +1,11 @@
 use std::{fs, path::PathBuf, str::FromStr};
 
-use image::{imageops::FilterType, GenericImageView, ImageBuffer, Rgb, Rgba};
+use image::{imageops::FilterType, GenericImageView, Rgba};
 use kd_tree::{KdMap, KdPoint};
 use num::Integer;
 
 use crate::{
-	assets::should_skip_jacket_art,
+	assets::{get_assets_dir, should_skip_jacket_art},
 	chart::{Difficulty, Jacket, SongCache},
 	context::Error,
 	score::guess_chart_name,
@@ -14,7 +14,7 @@ use crate::{
 /// How many sub-segments to split each side into
 pub const SPLIT_FACTOR: u32 = 8;
 pub const IMAGE_VEC_DIM: usize = (SPLIT_FACTOR * SPLIT_FACTOR * 3) as usize;
-pub const BITMAP_IMAGE_SIZE: u32 = 192;
+pub const BITMAP_IMAGE_SIZE: u32 = 174;
 
 #[derive(Debug, Clone)]
 pub struct ImageVec {
@@ -77,9 +77,6 @@ impl KdPoint for ImageVec {
 
 pub struct JacketCache {
 	tree: KdMap<ImageVec, u32>,
-	pub b30_background: ImageBuffer<Rgb<u8>, Vec<u8>>,
-	pub count_background: ImageBuffer<Rgba<u8>, Vec<u8>>,
-	pub diff_backgrounds: [ImageBuffer<Rgba<u8>, Vec<u8>>; 5],
 }
 
 impl JacketCache {
@@ -87,7 +84,6 @@ impl JacketCache {
 	// This is a bit inefficient (using a hash set), but only runs once
 	pub fn new(data_dir: &PathBuf, song_cache: &mut SongCache) -> Result<Self, Error> {
 		let jacket_dir = data_dir.join("jackets");
-		let assets_dir = data_dir.join("assets");
 
 		if jacket_dir.exists() {
 			fs::remove_dir_all(&jacket_dir).expect("Could not delete jacket dir");
@@ -96,7 +92,7 @@ impl JacketCache {
 		fs::create_dir_all(&jacket_dir).expect("Could not create jacket dir");
 
 		let tree_entries = if should_skip_jacket_art() {
-			let path = assets_dir.join("placeholder-jacket.jpg");
+			let path = get_assets_dir().join("placeholder_jacket.jpg");
 			let contents: &'static _ = fs::read(path)?.leak();
 			let image = image::load_from_memory(contents)?;
 			let bitmap: &'static _ = Box::leak(Box::new(
@@ -210,21 +206,6 @@ impl JacketCache {
 
 		let result = Self {
 			tree: KdMap::build_by_ordered_float(tree_entries),
-			b30_background: image::open(assets_dir.join("b30_background.jpg"))?
-				.resize(2048 * 2, 1535 * 2, FilterType::Nearest)
-				.blur(20.0)
-				.into_rgb8(),
-			count_background: image::open(assets_dir.join("count_background.png"))?
-				.blur(1.0)
-				.into_rgba8(),
-			diff_backgrounds: Difficulty::DIFFICULTY_SHORTHANDS.try_map(
-				|shorthand| -> Result<_, Error> {
-					Ok(image::open(
-						assets_dir.join(format!("diff-{}.png", shorthand.to_lowercase())),
-					)?
-					.into_rgba8())
-				},
-			)?,
 		};
 
 		Ok(result)

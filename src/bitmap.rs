@@ -2,15 +2,103 @@ use freetype::{
 	bitmap::PixelMode,
 	face::{KerningMode, LoadFlag},
 	ffi::{FT_Err_Ok, FT_Set_Var_Design_Coordinates, FT_GLYPH_BBOX_PIXELS},
-	Face, FtResult, Stroker, StrokerLineCap, StrokerLineJoin,
+	Bitmap, BitmapGlyph, Face, FtResult, Glyph, StrokerLineCap, StrokerLineJoin,
 };
+use image::GenericImage;
 use num::traits::Euclid;
 
 use crate::{assets::FREETYPE_LIB, context::Error};
 
-// {{{ Config types
-pub type Color = (u8, u8, u8, u8);
+// {{{ Color
+#[derive(Debug, Clone, Copy)]
+pub struct Color(pub u8, pub u8, pub u8, pub u8);
 
+impl Color {
+	pub const BLACK: Self = Self::from_rgb_int(0x000000);
+	pub const WHITE: Self = Self::from_rgb_int(0xffffff);
+
+	#[inline]
+	pub const fn from_rgba_int(i: u32) -> Self {
+		Self(
+			(i >> 24) as u8,
+			((i >> 16) & 0xff) as u8,
+			((i >> 8) & 0xff) as u8,
+			(i & 0xff) as u8,
+		)
+	}
+
+	#[inline]
+	pub const fn from_rgb_int(i: u32) -> Self {
+		Self::from_rgba_int((i << 8) + 0xff)
+	}
+
+	#[inline]
+	pub fn alpha(mut self, a: u8) -> Self {
+		self.3 = a;
+		self
+	}
+}
+// }}}
+// {{{ Rect
+#[derive(Debug, Clone, Copy)]
+pub struct Rect {
+	pub x: i32,
+	pub y: i32,
+	pub width: u32,
+	pub height: u32,
+}
+
+impl Rect {
+	#[inline]
+	pub fn new(x: i32, y: i32, width: u32, height: u32) -> Self {
+		Self {
+			x,
+			y,
+			width,
+			height,
+		}
+	}
+
+	#[inline]
+	pub fn from_extremes(x_min: i32, y_min: i32, x_max: i32, y_max: i32) -> Self {
+		Self::new(x_min, y_min, (x_max - x_min) as u32, (y_max - y_min) as u32)
+	}
+
+	#[inline]
+	pub fn from_image(image: &impl GenericImage) -> Self {
+		Self::new(0, 0, image.width(), image.height())
+	}
+
+	#[inline]
+	pub fn align(&self, alignment: (Align, Align), pos: Position) -> Position {
+		(
+			pos.0 - alignment.0.scale(self.width) as i32,
+			pos.1 - alignment.1.scale(self.height) as i32,
+		)
+	}
+
+	#[inline]
+	pub fn align_whole(&self, alignment: (Align, Align), pos: Position) -> Self {
+		let pos = self.align(alignment, pos);
+		Self::new(pos.0, pos.1, self.width, self.height)
+	}
+
+	#[inline]
+	pub fn center(&self) -> Position {
+		(
+			self.x + self.width as i32 / 2,
+			self.y + self.height as i32 / 2,
+		)
+	}
+
+	#[inline]
+	pub fn top_left(&self) -> Position {
+		(self.x, self.y)
+	}
+}
+// }}}
+// {{{ Align
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub enum Align {
 	Start,
@@ -18,13 +106,32 @@ pub enum Align {
 	End,
 }
 
+impl Align {
+	#[inline]
+	pub fn scale(self, dist: u32) -> u32 {
+		match self {
+			Self::Start => 0,
+			Self::Center => dist / 2,
+			Self::End => dist,
+		}
+	}
+}
+// }}}
+// {{{ Other types
+pub type Position = (i32, i32);
+
+fn float_to_ft_fixed(f: f32) -> i64 {
+	(f * 64.0) as i64
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct TextStyle {
 	pub size: u32,
 	pub weight: u32,
 	pub color: Color,
-	pub h_align: Align,
-	pub v_align: Align,
+	pub align: (Align, Align),
+	pub stroke: Option<(Color, f32)>,
+	pub drop_shadow: Option<(Color, Position)>,
 }
 // }}}
 // {{{ BitmapCanvas
@@ -48,7 +155,7 @@ impl BitmapCanvas {
 	// }}}
 	// {{{ Draw RBG image
 	/// Draws a bitmap image
-	pub fn blit_rbg(&mut self, pos: (i32, i32), (iw, ih): (u32, u32), src: &[u8]) {
+	pub fn blit_rbg(&mut self, pos: Position, (iw, ih): (u32, u32), src: &[u8]) {
 		let height = self.buffer.len() as u32 / 3 / self.width;
 		for dx in 0..iw {
 			for dy in 0..ih {
@@ -59,7 +166,7 @@ impl BitmapCanvas {
 					let g = src[(dx + dy * iw) as usize * 3 + 1];
 					let b = src[(dx + dy * iw) as usize * 3 + 2];
 
-					let color = (r, g, b, 255);
+					let color = Color(r, g, b, 0xff);
 
 					self.set_pixel((x as u32, y as u32), color);
 				}
@@ -69,7 +176,7 @@ impl BitmapCanvas {
 	// }}}
 	// {{{ Draw RGBA image
 	/// Draws a bitmap image taking care of the alpha channel.
-	pub fn blit_rbga(&mut self, pos: (i32, i32), (iw, ih): (u32, u32), src: &[u8]) {
+	pub fn blit_rbga(&mut self, pos: Position, (iw, ih): (u32, u32), src: &[u8]) {
 		let height = self.buffer.len() as u32 / 3 / self.width;
 		for dx in 0..iw {
 			for dy in 0..ih {
@@ -81,7 +188,7 @@ impl BitmapCanvas {
 					let b = src[(dx + dy * iw) as usize * 4 + 2];
 					let a = src[(dx + dy * iw) as usize * 4 + 3];
 
-					let color = (r, g, b, a);
+					let color = Color(r, g, b, a);
 
 					self.set_pixel((x as u32, y as u32), color);
 				}
@@ -91,7 +198,7 @@ impl BitmapCanvas {
 	// }}}
 	// {{{ Fill
 	/// Fill with solid color
-	pub fn fill(&mut self, pos: (i32, i32), (iw, ih): (u32, u32), color: Color) {
+	pub fn fill(&mut self, pos: Position, (iw, ih): (u32, u32), color: Color) {
 		let height = self.buffer.len() as u32 / 3 / self.width;
 		for dx in 0..iw {
 			for dy in 0..ih {
@@ -105,15 +212,13 @@ impl BitmapCanvas {
 	}
 	// }}}
 	// {{{ Draw text
-	// TODO: perform gamma correction on the color interpolation.
-	/// Render text
-	pub fn text(
+	pub fn plan_text_rendering(
 		&mut self,
-		pos: (i32, i32),
+		pos: Position,
 		face: &mut Face,
 		style: TextStyle,
 		text: &str,
-	) -> Result<(), Error> {
+	) -> Result<(Position, Rect, Vec<(i64, Glyph)>), Error> {
 		// {{{ Control weight
 		unsafe {
 			let raw = face.raw_mut() as *mut _;
@@ -135,6 +240,7 @@ impl BitmapCanvas {
 			}
 		}
 		// }}}
+
 		face.set_char_size((style.size << 6) as isize, 0, 0, 0)?;
 
 		// {{{ Compute layout
@@ -200,79 +306,100 @@ impl BitmapCanvas {
 			y_max = 0;
 		}
 
-		// println!("{}, {} - {}, {}", x_min, y_min, x_max, y_max);
-
+		let bbox = Rect::from_extremes(x_min as i32, y_min as i32, x_max as i32, y_max as i32);
+		let pos = bbox.align(style.align, pos);
 		// }}}
+
+		Ok((pos, bbox, data))
+	}
+
+	/// Render text
+	pub fn text(
+		&mut self,
+		pos: Position,
+		face: &mut Face,
+		style: TextStyle,
+		text: &str,
+	) -> Result<(), Error> {
+		let (pos, bbox, data) = self.plan_text_rendering(pos, face, style, text)?;
+
 		// {{{ Render glyphs
 		for (pos_x, glyph) in &data {
 			let b_glyph = glyph.to_bitmap(freetype::RenderMode::Normal, None)?;
 			let bitmap = b_glyph.bitmap();
 			let pixel_mode = bitmap.pixel_mode()?;
 			assert_eq!(pixel_mode, PixelMode::Gray);
-			println!("starting to stroke");
 
-			// {{{ Blit border
-			let stroker = FREETYPE_LIB.with(|lib| lib.new_stroker())?;
-			stroker.set(1 << 6, StrokerLineCap::Round, StrokerLineJoin::Round, 0);
-			let sglyph = glyph.stroke(&stroker)?;
-			let sb_glyph = sglyph.to_bitmap(freetype::RenderMode::Normal, None)?;
-			let sbitmap = sb_glyph.bitmap();
-			let spixel_mode = sbitmap.pixel_mode()?;
-			assert_eq!(spixel_mode, PixelMode::Gray);
+			let char_pos = (
+				pos.0 + *pos_x as i32 - bbox.x,
+				pos.1 + bbox.height as i32 + bbox.y,
+			);
 
-			let iw = sbitmap.width();
-			let ih = sbitmap.rows();
-			println!("pitch {}, width {}, height {}", sbitmap.pitch(), iw, ih);
-			let height = self.buffer.len() as u32 / 3 / self.width;
-			let src = sbitmap.buffer();
-			for dx in 0..iw {
-				for dy in 0..ih {
-					let x = pos.0 + *pos_x as i32 + dx as i32 + sb_glyph.left();
-					let y = pos.1 + dy as i32 - sb_glyph.top();
-					if x >= 0 && (x as u32) < self.width && y >= 0 && (y as u32) < height {
-						let gray = src[(dx + dy * iw) as usize];
-
-						let r = 255 - style.color.0;
-						let g = 255 - style.color.1;
-						let b = 255 - style.color.2;
-						let a = gray;
-
-						let color = (r, g, b, a);
-
-						self.set_pixel((x as u32, y as u32), color);
-					}
-				}
+			if let Some((shadow_color, offset)) = style.drop_shadow {
+				let char_pos = (char_pos.0 + offset.0, char_pos.1 + offset.1);
+				self.blit_glyph(&b_glyph, &bitmap, char_pos, shadow_color);
 			}
-			// }}}
-			// {{{ Blit
-			let iw = bitmap.width();
-			let ih = bitmap.rows();
-			let height = self.buffer.len() as u32 / 3 / self.width;
-			let src = bitmap.buffer();
 
-			for dx in 0..iw {
-				for dy in 0..ih {
-					let x = pos.0 + *pos_x as i32 + dx as i32 + b_glyph.left();
-					let y = pos.1 + dy as i32 - b_glyph.top();
-					if x >= 0 && (x as u32) < self.width && y >= 0 && (y as u32) < height {
-						let gray = src[(dx + dy * iw) as usize];
+			if let Some((stroke_color, stroke_width)) = style.stroke {
+				// {{{ Create stroke
+				let stroker = FREETYPE_LIB.with(|lib| lib.new_stroker())?;
+				stroker.set(
+					float_to_ft_fixed(stroke_width),
+					StrokerLineCap::Round,
+					StrokerLineJoin::Round,
+					0,
+				);
 
-						let r = style.color.0;
-						let g = style.color.1;
-						let b = style.color.2;
-						let a = gray;
+				let sglyph = glyph.stroke(&stroker)?;
+				let sb_glyph = sglyph.to_bitmap(freetype::RenderMode::Normal, None)?;
+				let sbitmap = sb_glyph.bitmap();
+				let spixel_mode = sbitmap.pixel_mode()?;
+				assert_eq!(spixel_mode, PixelMode::Gray);
+				// }}}
 
-						let color = (r, g, b, a);
-
-						self.set_pixel((x as u32, y as u32), color);
-					}
-				}
+				self.blit_glyph(&sb_glyph, &sbitmap, char_pos, stroke_color);
 			}
-			// }}}
+
+			self.blit_glyph(&b_glyph, &bitmap, char_pos, style.color);
 		}
 		// }}}
 
 		Ok(())
+	}
+	// }}}
+	// {{{ Blit glyph
+	pub fn blit_glyph(
+		&mut self,
+		b_glyph: &BitmapGlyph,
+		bitmap: &Bitmap,
+		pos: Position,
+		color: Color,
+	) {
+		let iw = bitmap.width();
+		let ih = bitmap.rows();
+		let height = self.buffer.len() as u32 / 3 / self.width;
+		let src = bitmap.buffer();
+
+		for dx in 0..iw {
+			for dy in 0..ih {
+				let x = pos.0 + dx as i32 + b_glyph.left();
+				let y = pos.1 + dy as i32 - b_glyph.top();
+
+				// TODO: gamma correction
+				if x >= 0 && (x as u32) < self.width && y >= 0 && (y as u32) < height {
+					let gray = src[(dx + dy * iw) as usize];
+
+					let r = color.0;
+					let g = color.1;
+					let b = color.2;
+					let a = ((color.3 as u32 * gray as u32) / 0xff) as u8;
+
+					let color = Color(r, g, b, a);
+
+					self.set_pixel((x as u32, y as u32), color);
+				}
+			}
+		}
 	}
 	// }}}
 
@@ -340,7 +467,7 @@ impl LayoutManager {
 		y: i32,
 	) {
 		let current = self.boxes[id.0];
-		let to = self.boxes[id_relative_to.0];
+
 		if let Some((current_points_to, dx, dy)) = current.relative_to
 			&& current_points_to != id_relative_to
 		{
@@ -352,7 +479,7 @@ impl LayoutManager {
 		{
 			let a = self.lookup(id);
 			let b = self.lookup(id_relative_to);
-			assert_eq!((a.0 - b.0, a.1 - b.1), (x, y));
+			assert_eq!((a.x - b.x, a.y - b.y), (x, y));
 		}
 	}
 	// }}}
@@ -414,7 +541,7 @@ impl LayoutManager {
 		&mut self,
 		id: LayoutBoxId,
 		amount: (u32, u32),
-	) -> (LayoutBoxId, impl Iterator<Item = (i32, i32)>) {
+	) -> (LayoutBoxId, impl Iterator<Item = Position>) {
 		let inner = self.boxes[id.0];
 		let outer_id = self.make_box(inner.width * amount.0, inner.height * amount.1);
 		self.edit_to_relative(id, outer_id, 0, 0);
@@ -429,13 +556,13 @@ impl LayoutManager {
 	}
 	// }}}
 	// {{{ Lookup box
-	pub fn lookup(&self, id: LayoutBoxId) -> (i32, i32, u32, u32) {
+	pub fn lookup(&self, id: LayoutBoxId) -> Rect {
 		let current = self.boxes[id.0];
 		if let Some((to, dx, dy)) = current.relative_to {
-			let (x, y, _, _) = self.lookup(to);
-			(x + dx, y + dy, current.width, current.height)
+			let r = self.lookup(to);
+			Rect::new(r.x + dx, r.y + dy, current.width, current.height)
 		} else {
-			(0, 0, current.width, current.height)
+			Rect::new(0, 0, current.width, current.height)
 		}
 	}
 
@@ -449,10 +576,17 @@ impl LayoutManager {
 		self.boxes[id.0].height
 	}
 
+	// }}}
+	// {{{ Alignment
 	#[inline]
-	pub fn position_relative_to(&self, id: LayoutBoxId, pos: (i32, i32)) -> (i32, i32) {
+	pub fn position_relative_to(&self, id: LayoutBoxId, pos: Position) -> Position {
 		let current = self.lookup(id);
-		((pos.0 as i32 + current.0), (pos.1 as i32 + current.1))
+		((pos.0 as i32 + current.x), (pos.1 as i32 + current.y))
+	}
+
+	#[inline]
+	pub fn align(&self, id: LayoutBoxId, align: (Align, Align), pos: Position) -> Position {
+		self.lookup(id).align(align, pos)
 	}
 	// }}}
 }
@@ -473,14 +607,14 @@ impl LayoutDrawer {
 	// }}}
 	// {{{ Draw RGB image
 	/// Draws a bitmap image
-	pub fn blit_rbg(&mut self, id: LayoutBoxId, pos: (i32, i32), dims: (u32, u32), src: &[u8]) {
+	pub fn blit_rbg(&mut self, id: LayoutBoxId, pos: Position, dims: (u32, u32), src: &[u8]) {
 		let pos = self.layout.position_relative_to(id, pos);
 		self.canvas.blit_rbg(pos, dims, src);
 	}
 	// }}}
 	// {{{ Draw RGBA image
 	/// Draws a bitmap image taking care of the alpha channel.
-	pub fn blit_rbga(&mut self, id: LayoutBoxId, pos: (i32, i32), dims: (u32, u32), src: &[u8]) {
+	pub fn blit_rbga(&mut self, id: LayoutBoxId, pos: Position, dims: (u32, u32), src: &[u8]) {
 		let pos = self.layout.position_relative_to(id, pos);
 		self.canvas.blit_rbga(pos, dims, src);
 	}
@@ -489,8 +623,11 @@ impl LayoutDrawer {
 	/// Fills with solid color
 	pub fn fill(&mut self, id: LayoutBoxId, color: Color) {
 		let current = self.layout.lookup(id);
-		self.canvas
-			.fill((current.0, current.1), (current.2, current.3), color);
+		self.canvas.fill(
+			(current.x, current.y),
+			(current.width, current.height),
+			color,
+		);
 	}
 	// }}}
 	// {{{ Draw text
@@ -498,7 +635,7 @@ impl LayoutDrawer {
 	pub fn text(
 		&mut self,
 		id: LayoutBoxId,
-		pos: (i32, i32),
+		pos: Position,
 		face: &mut Face,
 		style: TextStyle,
 		text: &str,

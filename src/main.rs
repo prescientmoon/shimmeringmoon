@@ -13,7 +13,7 @@ mod jacket;
 mod score;
 mod user;
 
-use assets::DATA_DIR;
+use assets::get_data_dir;
 use context::{Error, UserContext};
 use poise::serenity_prelude::{self as serenity};
 use sqlx::sqlite::SqlitePoolOptions;
@@ -33,7 +33,7 @@ async fn on_error(error: poise::FrameworkError<'_, UserContext, Error>) {
 
 #[tokio::main]
 async fn main() {
-	let data_dir = DATA_DIR.with(|d| d.clone());
+	let data_dir = get_data_dir();
 	let cache_dir = var("SHIMMERING_CACHE_DIR").expect("Missing `SHIMMERING_CACHE_DIR` env var");
 
 	let pool = SqlitePoolOptions::new()
