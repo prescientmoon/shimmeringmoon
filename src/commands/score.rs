@@ -1,9 +1,7 @@
 use std::fmt::Display;
 
 use crate::context::{Context, Error};
-use crate::score::{
-	jacket_rects, CreatePlay, ImageCropper, ImageDimensions, Play, RelativeRect, Score,
-};
+use crate::score::{CreatePlay, ImageCropper, Play, Score, ScoreKind};
 use crate::user::{discord_it_to_discord_user, User};
 use image::imageops::FilterType;
 use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage};
@@ -80,11 +78,8 @@ pub async fn magic(
 				let bytes = file.download().await?;
 				let format = image::guess_format(&bytes)?;
 
-				let image = image::load_from_memory_with_format(&bytes, format)?.resize(
-					1024,
-					1024,
-					FilterType::Nearest,
-				);
+				let image = image::load_from_memory_with_format(&bytes, format)?;
+				let mut image = image.resize(1024, 1024, FilterType::Nearest);
 				// }}}
 				// {{{ Detection
 				// Create cropper and run OCR
@@ -98,19 +93,44 @@ pub async fn magic(
 				// This makes OCR more likely to work
 				let mut ocr_image = image.grayscale().blur(1.);
 
+				// {{{ Kind
 				let edited = CreateReply::default()
 					.reply(true)
-					.content(format!("Image {}: reading difficulty", i + 1));
+					.content(format!("Image {}: reading kind", i + 1));
 				handle.edit(ctx, edited).await?;
 
-				let difficulty = match cropper.read_difficulty(&ocr_image) {
+				let kind = match cropper.read_score_kind(&ocr_image) {
 					// {{{ OCR error handling
 					Err(err) => {
 						error_with_image(
 							ctx,
 							&cropper.bytes,
 							&file.filename,
-							"Could not read score from picture",
+							"Could not read kind from picture",
+							&err,
+						)
+						.await?;
+
+						continue;
+					}
+					// }}}
+					Ok(k) => k,
+				};
+				// }}}
+				// {{{ Difficulty
+				let edited = CreateReply::default()
+					.reply(true)
+					.content(format!("Image {}: reading difficulty", i + 1));
+				handle.edit(ctx, edited).await?;
+
+				let difficulty = match cropper.read_difficulty(&ocr_image, kind) {
+					// {{{ OCR error handling
+					Err(err) => {
+						error_with_image(
+							ctx,
+							&cropper.bytes,
+							&file.filename,
+							"Could not read difficulty from picture",
 							&err,
 						)
 						.await?;
@@ -120,68 +140,37 @@ pub async fn magic(
 					// }}}
 					Ok(d) => d,
 				};
-
-				let song_by_jacket = cropper.read_jacket(ctx.data(), &image, difficulty).await;
+				// }}}
+				// {{{ Jacket & distribution
+				let mut jacket_rect = None;
+				let song_by_jacket = cropper
+					.read_jacket(ctx.data(), &mut image, kind, difficulty, &mut jacket_rect)
+					.await;
 				let note_distribution = cropper.read_distribution(&image)?;
-
+				// }}}
 				ocr_image.invert();
-
+				// {{{ Title
 				let edited = CreateReply::default()
 					.reply(true)
 					.content(format!("Image {}: reading title", i + 1));
 				handle.edit(ctx, edited).await?;
 
-				let song_by_name =
-					cropper.read_song(&ocr_image, &ctx.data().song_cache, difficulty);
-				let (song, chart) = match (song_by_jacket, song_by_name) {
-					// {{{ Both errors
-					(Err(err_jacket), Err(err_name)) => {
-						cropper.crop_image_to_bytes(
-							&image,
-							RelativeRect::from_aspect_ratio(
-								ImageDimensions::from_image(&image),
-								jacket_rects(),
-							)
-							.ok_or_else(|| "Could not find jacket area in picture")?
-							.to_absolute(),
-						)?;
-						error_with_image(
-							ctx,
-							&cropper.bytes,
-							&file.filename,
-							"Hey! I could not read the score in the provided picture.",
-							&format!(
-                                "This can mean one of three things:
-1. The image you provided is *not that of an Arcaea score
-2. The image you provided contains a newly added chart that is not in my database yet
-3. The image you provided contains character art that covers the chart name. When this happens, I try to make use of the jacket art in order to determine the chart. It is possible that I've never seen the jacket art for this particular song on this particular difficulty. Contact `@prescientmoon` on discord in order to resolve the issue for you & future users playing this chart!
+				let song_by_name = match kind {
+					ScoreKind::SongSelect => None,
+					ScoreKind::ScoreScreen => {
+						Some(cropper.read_song(&ocr_image, &ctx.data().song_cache, difficulty))
+					}
+				};
 
-Nerdy info:
-```
-Jacket error: {}
-Title error: {}
-```" ,
-								err_jacket, err_name
-							),
-						)
-						.await?;
-						continue;
-					}
-					// }}}
-					// {{{ Only jacket succeeded
-					(Ok(by_jacket), Err(err_name)) => {
-						println!("Could not read name with error: {}", err_name);
-						by_jacket
-					}
-					// }}}
+				let (song, chart) = match (song_by_jacket, song_by_name) {
 					// {{{ Only name succeeded
-					(Err(err_jacket), Ok(by_name)) => {
+					(Err(err_jacket), Some(Ok(by_name))) => {
 						println!("Could not recognise jacket with error: {}", err_jacket);
 						by_name
 					}
 					// }}}
 					// {{{ Both succeeded
-					(Ok(by_jacket), Ok(by_name)) => {
+					(Ok(by_jacket), Some(Ok(by_name))) => {
 						if by_name.0.id != by_jacket.0.id {
 							println!(
 								"Got diverging choices between '{}' and '{}'",
@@ -191,8 +180,58 @@ Title error: {}
 
 						by_jacket
 					} // }}}
+					// {{{ Only jacket succeeded
+					(Ok(by_jacket), err_name) => {
+						if let Some(err) = err_name {
+							println!("Could not read name with error: {:?}", err.unwrap_err());
+						}
+
+						by_jacket
+					}
+					// }}}
+					// {{{ Both errors
+					(Err(err_jacket), err_name) => {
+						if let Some(rect) = jacket_rect {
+							cropper.crop_image_to_bytes(&image, rect)?;
+							error_with_image(
+							ctx,
+							&cropper.bytes,
+							&file.filename,
+							"Hey! I could not read the score in the provided picture.",
+							&format!(
+                                "This can mean one of three things:
+1. The image you provided is *not that of an Arcaea score
+2. The image you provided contains a newly added chart that is not in my database yet
+3. The image you provided contains character art that covers the chart name. When this happens, I try to make use of the jacket art in order to determine the chart. Contact `@prescientmoon` on discord to try and resolve the issue!
+
+Nerdy info:
+```
+Jacket error: {}
+Title error: {:?}
+```" ,
+								err_jacket, err_name
+							),
+						)
+						.await?;
+						} else {
+							ctx.reply(format!(
+								"This is a weird error that should never happen...
+Nerdy info:
+```
+Jacket error: {}
+Title error: {:?}
+```",
+								err_jacket, err_name
+							))
+							.await?;
+						}
+						continue;
+					} // }}}
 				};
 
+				println!("{}", song.title);
+				// }}}
+				// {{{ Score
 				let edited = CreateReply::default()
 					.reply(true)
 					.content(format!("Image {}: reading score", i + 1));
@@ -216,7 +255,7 @@ Title error: {}
 						// }}}
 						Ok(scores) => scores,
 					};
-
+				// }}}
 				// {{{ Build play
 				let (score, maybe_fars, score_warning) = Score::resolve_ambiguities(
 					score_possibilities,

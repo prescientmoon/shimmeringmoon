@@ -9,6 +9,7 @@ mod bitmap;
 mod chart;
 mod commands;
 mod context;
+mod image;
 mod jacket;
 mod score;
 mod user;

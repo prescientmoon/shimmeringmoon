@@ -7,14 +7,17 @@ use std::sync::OnceLock;
 
 use edit_distance::edit_distance;
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
+use num::integer::Roots;
 use num::{traits::Euclid, Rational64};
 use poise::serenity_prelude::{
 	Attachment, AttachmentId, CreateAttachment, CreateEmbed, CreateEmbedAuthor, Timestamp,
 };
 use tesseract::{PageSegMode, Tesseract};
 
+use crate::bitmap::Rect;
 use crate::chart::{Chart, Difficulty, Song, SongCache};
 use crate::context::{Error, UserContext};
+use crate::image::rotate;
 use crate::jacket::IMAGE_VEC_DIM;
 use crate::user::User;
 
@@ -566,6 +569,12 @@ impl Play {
 			None => None,
 		};
 
+		println!("Rating {:?}", self.score.play_rating(chart.chart_constant));
+		println!(
+			"Rating {:?}",
+			self.score.play_rating(chart.chart_constant) as f32 / 100.0
+		);
+
 		let mut embed = CreateEmbed::default()
 			.title(format!(
 				"{} [{:?} {}]",
@@ -576,7 +585,7 @@ impl Play {
 				"Rating",
 				format!(
 					"{:.2} (+?)",
-					(self.score.play_rating(chart.chart_constant)) as f32 / 100.
+					(self.score.play_rating(chart.chart_constant)) as f32 / 100.0
 				),
 				true,
 			)
@@ -646,6 +655,13 @@ mod score_tests {
 }
 // }}}
 // }}}
+// {{{ Score image kind
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScoreKind {
+	SongSelect,
+	ScoreScreen,
+}
+// }}}
 // {{{ Image processing helpers
 // {{{ ImageDimensions
 #[derive(Debug, Clone, Copy)]
@@ -702,6 +718,11 @@ impl AbsoluteRect {
 			self.height as f32 / self.dimensions.height as f32,
 			self.dimensions,
 		)
+	}
+
+	#[inline]
+	pub fn to_rect(&self) -> Rect {
+		Rect::new(self.x as i32, self.y as i32, self.width, self.height)
 	}
 }
 // }}}
@@ -796,20 +817,32 @@ impl RelativeRect {
 	}
 }
 // }}}
+// }}}
 // {{{ Data points
+// {{{ Trait
+trait UIDataPoint {
+	fn aspect_ratio(&self) -> f32;
+}
+
+impl UIDataPoint for RelativeRect {
+	fn aspect_ratio(&self) -> f32 {
+		self.dimensions.aspect_ratio()
+	}
+}
+// }}}
 // {{{ Processing
-fn process_datapoints(rects: &mut Vec<RelativeRect>) {
-	rects.sort_by_key(|r| (r.dimensions.aspect_ratio() * 1000.0).floor() as u32);
+fn process_datapoints(points: &mut Vec<impl UIDataPoint>) {
+	points.sort_by_key(|r| (r.aspect_ratio() * 1000.0).floor() as u32);
 
 	// Filter datapoints that are close together
 	let mut i = 0;
-	while i < rects.len() - 1 {
-		let low = rects[i];
-		let high = rects[i + 1];
+	while i < points.len() - 1 {
+		let low = &points[i];
+		let high = &points[i + 1];
 
-		if (low.dimensions.aspect_ratio() - high.dimensions.aspect_ratio()).abs() < 0.001 {
+		if (low.aspect_ratio() - high.aspect_ratio()).abs() < 0.001 {
 			// TODO: we could interpolate here but oh well
-			rects.remove(i + 1);
+			points.remove(i + 1);
 		}
 
 		i += 1;
@@ -889,8 +922,8 @@ fn title_rects() -> &'static [RelativeRect] {
 	})
 }
 // }}}
-// {{{ Jacket
-pub fn jacket_rects() -> &'static [RelativeRect] {
+// {{{ Jacket (score screen)
+pub fn jacket_score_screen_rects() -> &'static [RelativeRect] {
 	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
 	CELL.get_or_init(|| {
 		let mut rects: Vec<RelativeRect> = vec![
@@ -903,6 +936,19 @@ pub fn jacket_rects() -> &'static [RelativeRect] {
 			AbsoluteRect::new(58, 617, 753, 750, ImageDimensions::new(2560, 1600)).to_relative(),
 			AbsoluteRect::new(65, 829, 799, 800, ImageDimensions::new(2732, 2048)).to_relative(),
 			AbsoluteRect::new(300, 497, 670, 670, ImageDimensions::new(2778, 1284)).to_relative(),
+		];
+		process_datapoints(&mut rects);
+		rects
+	})
+}
+// }}}
+// {{{ Jacket (song select)
+pub fn jacket_song_select_rects() -> &'static [RelativeRect] {
+	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
+	CELL.get_or_init(|| {
+		let mut rects: Vec<RelativeRect> = vec![
+			AbsoluteRect::new(465, 319, 730, 45, ImageDimensions::new(2532, 1170)).to_relative(),
+			AbsoluteRect::new(158, 411, 909, 74, ImageDimensions::new(2160, 1620)).to_relative(),
 		];
 		process_datapoints(&mut rects);
 		rects
@@ -952,6 +998,18 @@ pub fn note_distribution_rects() -> (
 	})
 }
 // }}}
+// {{{ Score kind
+fn score_kind_rects() -> &'static [RelativeRect] {
+	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
+	CELL.get_or_init(|| {
+		let mut rects: Vec<RelativeRect> = vec![
+			AbsoluteRect::new(237, 16, 273, 60, ImageDimensions::new(2532, 1170)).to_relative(),
+			AbsoluteRect::new(19, 15, 273, 60, ImageDimensions::new(2160, 1620)).to_relative(),
+		];
+		process_datapoints(&mut rects);
+		rects
+	})
+}
 // }}}
 // }}}
 // {{{ Recognise chart
@@ -1084,13 +1142,9 @@ pub struct ImageCropper {
 }
 
 impl ImageCropper {
-	pub fn crop_image_to_bytes(
-		&mut self,
-		image: &DynamicImage,
-		rect: AbsoluteRect,
-	) -> Result<(), Error> {
+	pub fn crop_image_to_bytes(&mut self, image: &DynamicImage, rect: Rect) -> Result<(), Error> {
 		self.bytes.clear();
-		let image = image.crop_imm(rect.x, rect.y, rect.width, rect.height);
+		let image = image.crop_imm(rect.x as u32, rect.y as u32, rect.width, rect.height);
 		let mut cursor = Cursor::new(&mut self.bytes);
 		image.write_to(&mut cursor, image::ImageFormat::Png)?;
 
@@ -1109,7 +1163,8 @@ impl ImageCropper {
 			&image.resize_exact(image.width(), image.height(), FilterType::Nearest),
 			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), score_rects())
 				.ok_or_else(|| "Could not find score area in picture")?
-				.to_absolute(),
+				.to_absolute()
+				.to_rect(),
 		)?;
 
 		let mut results = vec![];
@@ -1230,12 +1285,21 @@ impl ImageCropper {
 	}
 	// }}}
 	// {{{ Read difficulty
-	pub fn read_difficulty(&mut self, image: &DynamicImage) -> Result<Difficulty, Error> {
+	pub fn read_difficulty(
+		&mut self,
+		image: &DynamicImage,
+		kind: ScoreKind,
+	) -> Result<Difficulty, Error> {
+		if kind == ScoreKind::SongSelect {
+			return Ok(Difficulty::FTR);
+		}
+
 		self.crop_image_to_bytes(
 			&image,
 			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), difficulty_rects())
 				.ok_or_else(|| "Could not find difficulty area in picture")?
-				.to_absolute(),
+				.to_absolute()
+				.to_rect(),
 		)?;
 
 		let mut t = Tesseract::new(None, Some("eng"))?.set_image_from_mem(&self.bytes)?;
@@ -1263,6 +1327,40 @@ impl ImageCropper {
 		Ok(difficulty)
 	}
 	// }}}
+	// {{{ Read score kind
+	pub fn read_score_kind(&mut self, image: &DynamicImage) -> Result<ScoreKind, Error> {
+		self.crop_image_to_bytes(
+			&image,
+			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), score_kind_rects())
+				.ok_or_else(|| "Could not find score kind area in picture")?
+				.to_absolute()
+				.to_rect(),
+		)?;
+
+		let mut t = Tesseract::new(None, Some("eng"))?.set_image_from_mem(&self.bytes)?;
+		t.set_page_seg_mode(PageSegMode::PsmRawLine);
+		t = t.recognize()?;
+
+		let text: &str = &t.get_text()?;
+		let text = text.trim().to_lowercase();
+
+		let conf = t.mean_text_conf();
+		if conf < 10 && conf != 0 {
+			Err(format!(
+				"Score kind text is not readable (confidence = {}, text = {}).",
+				conf, text
+			))?;
+		}
+
+		let result = if edit_distance(&text, "Result") < edit_distance(&text, "Select a song") {
+			ScoreKind::ScoreScreen
+		} else {
+			ScoreKind::SongSelect
+		};
+
+		Ok(result)
+	}
+	// }}}
 	// {{{ Read song
 	pub fn read_song<'a>(
 		&mut self,
@@ -1274,7 +1372,8 @@ impl ImageCropper {
 			&image,
 			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), title_rects())
 				.ok_or_else(|| "Could not find title area in picture")?
-				.to_absolute(),
+				.to_absolute()
+				.to_rect(),
 		)?;
 
 		let mut t = Tesseract::new(None, Some("eng"))?
@@ -1304,15 +1403,45 @@ impl ImageCropper {
 	pub async fn read_jacket<'a>(
 		&mut self,
 		ctx: &'a UserContext,
-		image: &DynamicImage,
+		image: &mut DynamicImage,
+		kind: ScoreKind,
 		difficulty: Difficulty,
+		out_rect: &mut Option<Rect>,
 	) -> Result<(&'a Song, &'a Chart), Error> {
-		let rect =
-			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), jacket_rects())
-				.ok_or_else(|| "Could not find jacket area in picture")?
-				.to_absolute();
+		let rect = RelativeRect::from_aspect_ratio(
+			ImageDimensions::from_image(image),
+			if kind == ScoreKind::ScoreScreen {
+				jacket_score_screen_rects()
+			} else {
+				jacket_song_select_rects()
+			},
+		)
+		.ok_or_else(|| "Could not find jacket area in picture")?
+		.to_absolute();
 
-		let cropped = image.view(rect.x, rect.y, rect.width, rect.height);
+		let cropped = if kind == ScoreKind::ScoreScreen {
+			*out_rect = Some(rect.to_rect());
+			image.view(rect.x, rect.y, rect.width, rect.height)
+		} else {
+			let angle = f32::atan2(rect.height as f32, rect.width as f32);
+			let side = rect.height + rect.width;
+			rotate(
+				image,
+				Rect::new(rect.x as i32, rect.y as i32, side, side),
+				(rect.x as i32, (rect.y + rect.height) as i32),
+				angle,
+			);
+
+			let len = (rect.width.pow(2) + rect.height.pow(2)).sqrt();
+
+			*out_rect = Some(Rect::new(
+				rect.x as i32,
+				(rect.y + rect.height) as i32,
+				len,
+				len,
+			));
+			image.view(rect.x, rect.y + rect.height, len, len)
+		};
 		let (distance, song_id) = ctx
 			.jacket_cache
 			.recognise(&*cropped)
@@ -1341,7 +1470,8 @@ impl ImageCropper {
 			&image,
 			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), pure_rects)
 				.ok_or_else(|| "Could not find pure-rect area in picture")?
-				.to_absolute(),
+				.to_absolute()
+				.to_rect(),
 		)?;
 
 		t = t.set_image_from_mem(&self.bytes)?.recognize()?;
@@ -1352,7 +1482,8 @@ impl ImageCropper {
 			&image,
 			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), far_rects)
 				.ok_or_else(|| "Could not find far-rect area in picture")?
-				.to_absolute(),
+				.to_absolute()
+				.to_rect(),
 		)?;
 
 		t = t.set_image_from_mem(&self.bytes)?.recognize()?;
@@ -1363,7 +1494,8 @@ impl ImageCropper {
 			&image,
 			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), lost_rects)
 				.ok_or_else(|| "Could not find lost-rect area in picture")?
-				.to_absolute(),
+				.to_absolute()
+				.to_rect(),
 		)?;
 
 		t = t.set_image_from_mem(&self.bytes)?.recognize()?;

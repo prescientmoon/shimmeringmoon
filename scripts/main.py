@@ -66,7 +66,7 @@ def import_charts_from_csv():
                         difficulty,
                         level,
                         int(note_count.replace(",", "").replace(".", "")),
-                        int(float(cc) * 100),
+                        int(round(float(cc) * 100)),
                         note_design if len(note_design) else None,
                     ),
                 )
