@@ -37,6 +37,14 @@ impl Color {
 		self.3 = a;
 		self
 	}
+
+	#[inline]
+	pub fn distance(self, other: Self) -> f32 {
+		let dr = self.0 as f32 - other.0 as f32;
+		let dg = self.1 as f32 - other.1 as f32;
+		let db = self.2 as f32 - other.2 as f32;
+		(dr * dr + dg * dg + db * db).sqrt()
+	}
 }
 // }}}
 // {{{ Rect

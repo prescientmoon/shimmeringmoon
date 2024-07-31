@@ -123,7 +123,8 @@ pub async fn magic(
 					.content(format!("Image {}: reading difficulty", i + 1));
 				handle.edit(ctx, edited).await?;
 
-				let difficulty = match cropper.read_difficulty(&ocr_image, kind) {
+				// Do not use `ocr_image` because this reads the colors
+				let difficulty = match cropper.read_difficulty(&image, kind) {
 					// {{{ OCR error handling
 					Err(err) => {
 						error_with_image(
@@ -140,6 +141,8 @@ pub async fn magic(
 					// }}}
 					Ok(d) => d,
 				};
+
+				println!("{difficulty:?}");
 				// }}}
 				// {{{ Jacket & distribution
 				let mut jacket_rect = None;

@@ -14,7 +14,7 @@ use poise::serenity_prelude::{
 };
 use tesseract::{PageSegMode, Tesseract};
 
-use crate::bitmap::Rect;
+use crate::bitmap::{Color, Rect};
 use crate::chart::{Chart, Difficulty, Song, SongCache};
 use crate::context::{Error, UserContext};
 use crate::image::rotate;
@@ -785,48 +785,107 @@ impl RelativeRect {
 			self.dimensions,
 		)
 	}
+}
+// }}}
+// {{{ AbsolutePoint
+#[derive(Debug, Clone, Copy)]
+pub struct AbsolutePoint {
+	pub x: u32,
+	pub y: u32,
+	pub dimensions: ImageDimensions,
+}
 
-	pub fn from_aspect_ratio(
-		dimensions: ImageDimensions,
-		datapoints: &[RelativeRect],
-	) -> Option<Self> {
-		let aspect_ratio = dimensions.aspect_ratio();
+impl AbsolutePoint {
+	#[inline]
+	pub fn new(x: u32, y: u32, dimensions: ImageDimensions) -> Self {
+		Self { x, y, dimensions }
+	}
 
-		for i in 0..(datapoints.len() - 1) {
-			let low = datapoints[i];
-			let high = datapoints[i + 1];
+	#[inline]
+	pub fn to_relative(&self) -> RelativePoint {
+		RelativePoint::new(
+			self.x as f32 / self.dimensions.width as f32,
+			self.y as f32 / self.dimensions.height as f32,
+			self.dimensions,
+		)
+	}
+}
+// }}}
+// {{{ RelativePoint
+#[derive(Debug, Clone, Copy)]
+pub struct RelativePoint {
+	pub x: f32,
+	pub y: f32,
+	pub dimensions: ImageDimensions,
+}
 
-			let low_ratio = low.dimensions.aspect_ratio();
-			let high_ratio = high.dimensions.aspect_ratio();
+impl RelativePoint {
+	#[inline]
+	pub fn new(x: f32, y: f32, dimensions: ImageDimensions) -> Self {
+		Self { x, y, dimensions }
+	}
 
-			if (i == 0 || low_ratio <= aspect_ratio)
-				&& (aspect_ratio <= high_ratio || i == datapoints.len() - 2)
-			{
-				let p = (aspect_ratio - low_ratio) / (high_ratio - low_ratio);
-				return Some(Self::new(
-					lerp(p, low.x, high.x),
-					lerp(p, low.y, high.y),
-					lerp(p, low.width, high.width),
-					lerp(p, low.height, high.height),
-					dimensions,
-				));
-			}
-		}
-
-		None
+	#[inline]
+	pub fn to_absolute(&self) -> AbsolutePoint {
+		AbsolutePoint::new(
+			(self.x * self.dimensions.width as f32) as u32,
+			(self.y * self.dimensions.height as f32) as u32,
+			self.dimensions,
+		)
 	}
 }
 // }}}
 // }}}
 // {{{ Data points
 // {{{ Trait
-trait UIDataPoint {
+trait UIDataPoint: Sized + Copy {
 	fn aspect_ratio(&self) -> f32;
+	fn lerp(low: &Self, high: &Self, p: f32, dimensions: ImageDimensions) -> Self;
+	fn from_aspect_ratio(dimensions: ImageDimensions, datapoints: &[Self]) -> Option<Self> {
+		let aspect_ratio = dimensions.aspect_ratio();
+
+		for i in 0..(datapoints.len() - 1) {
+			let low = datapoints[i];
+			let high = datapoints[i + 1];
+
+			let low_ratio = low.aspect_ratio();
+			let high_ratio = high.aspect_ratio();
+
+			if (i == 0 || low_ratio <= aspect_ratio)
+				&& (aspect_ratio <= high_ratio || i == datapoints.len() - 2)
+			{
+				let p = (aspect_ratio - low_ratio) / (high_ratio - low_ratio);
+				return Some(Self::lerp(&low, &high, p, dimensions));
+			}
+		}
+
+		None
+	}
 }
 
 impl UIDataPoint for RelativeRect {
 	fn aspect_ratio(&self) -> f32 {
 		self.dimensions.aspect_ratio()
+	}
+
+	fn lerp(low: &Self, high: &Self, p: f32, dimensions: ImageDimensions) -> Self {
+		Self::new(
+			lerp(p, low.x, high.x),
+			lerp(p, low.y, high.y),
+			lerp(p, low.width, high.width),
+			lerp(p, low.height, high.height),
+			dimensions,
+		)
+	}
+}
+
+impl UIDataPoint for RelativePoint {
+	fn aspect_ratio(&self) -> f32 {
+		self.dimensions.aspect_ratio()
+	}
+
+	fn lerp(low: &Self, high: &Self, p: f32, dimensions: ImageDimensions) -> Self {
+		Self::new(lerp(p, low.x, high.x), lerp(p, low.y, high.y), dimensions)
 	}
 }
 // }}}
@@ -1009,6 +1068,65 @@ fn score_kind_rects() -> &'static [RelativeRect] {
 		process_datapoints(&mut rects);
 		rects
 	})
+}
+// }}}
+// {{{ Difficulty pixel locations
+fn pst_pixel() -> &'static [RelativePoint] {
+	static CELL: OnceLock<Vec<RelativePoint>> = OnceLock::new();
+	CELL.get_or_init(|| {
+		let mut points: Vec<RelativePoint> = vec![
+			AbsolutePoint::new(89, 153, ImageDimensions::new(2532, 1170)).to_relative(),
+			AbsolutePoint::new(12, 159, ImageDimensions::new(2160, 1620)).to_relative(),
+		];
+		process_datapoints(&mut points);
+		points
+	})
+}
+
+fn prs_pixel() -> &'static [RelativePoint] {
+	static CELL: OnceLock<Vec<RelativePoint>> = OnceLock::new();
+	CELL.get_or_init(|| {
+		let mut points: Vec<RelativePoint> = vec![
+			AbsolutePoint::new(269, 153, ImageDimensions::new(2532, 1170)).to_relative(),
+			AbsolutePoint::new(199, 159, ImageDimensions::new(2160, 1620)).to_relative(),
+		];
+		process_datapoints(&mut points);
+		points
+	})
+}
+
+fn ftr_pixel() -> &'static [RelativePoint] {
+	static CELL: OnceLock<Vec<RelativePoint>> = OnceLock::new();
+	CELL.get_or_init(|| {
+		let mut points: Vec<RelativePoint> = vec![
+			AbsolutePoint::new(452, 153, ImageDimensions::new(2532, 1170)).to_relative(),
+			AbsolutePoint::new(389, 159, ImageDimensions::new(2160, 1620)).to_relative(),
+		];
+		process_datapoints(&mut points);
+		points
+	})
+}
+
+fn byd_etr_pixel() -> &'static [RelativePoint] {
+	static CELL: OnceLock<Vec<RelativePoint>> = OnceLock::new();
+	CELL.get_or_init(|| {
+		let mut points: Vec<RelativePoint> = vec![
+			AbsolutePoint::new(638, 153, ImageDimensions::new(2532, 1170)).to_relative(),
+			AbsolutePoint::new(579, 159, ImageDimensions::new(2160, 1620)).to_relative(),
+		];
+		process_datapoints(&mut points);
+		points
+	})
+}
+
+fn difficulty_pixel(difficulty: Difficulty) -> &'static [RelativePoint] {
+	match difficulty {
+		Difficulty::PST => pst_pixel(),
+		Difficulty::PRS => prs_pixel(),
+		Difficulty::FTR => ftr_pixel(),
+		Difficulty::ETR => byd_etr_pixel(),
+		Difficulty::BYD => byd_etr_pixel(),
+	}
 }
 // }}}
 // }}}
@@ -1291,7 +1409,39 @@ impl ImageCropper {
 		kind: ScoreKind,
 	) -> Result<Difficulty, Error> {
 		if kind == ScoreKind::SongSelect {
-			return Ok(Difficulty::FTR);
+			let colors = [
+				Color::BLACK,
+				Color::BLACK,
+				Color::from_rgb_int(0xCB74AB),
+				Color::from_rgb_int(0xC4B7D3),
+				Color::BLACK,
+			];
+
+			let dimensions = ImageDimensions::from_image(image);
+
+			let min = colors
+				.iter()
+				.zip(Difficulty::DIFFICULTIES)
+				.min_by_key(|(c, d)| {
+					let points = difficulty_pixel(*d);
+					let point = RelativePoint::from_aspect_ratio(dimensions, points)
+						.ok_or_else(|| "Could not find difficulty pixel in picture")
+						.unwrap_or(RelativePoint::new(0.0, 0.0, dimensions))
+						.to_absolute();
+
+					let image_color = image.get_pixel(point.x, point.y);
+					let image_color = Color(
+						image_color[0],
+						image_color[1],
+						image_color[2],
+						image_color[3],
+					);
+
+					let distance = c.distance(image_color);
+					(distance * 10000.0) as u32
+				});
+
+			return Ok(min.unwrap().1);
 		}
 
 		self.crop_image_to_bytes(
