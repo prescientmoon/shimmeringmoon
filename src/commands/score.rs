@@ -74,11 +74,8 @@ pub async fn magic(
 		for (i, file) in files.iter().enumerate() {
 			if let Some(_) = file.dimensions() {
 				// {{{ Image pre-processing
-				// Download image and guess it's format
 				let bytes = file.download().await?;
-				let format = image::guess_format(&bytes)?;
-
-				let image = image::load_from_memory_with_format(&bytes, format)?;
+				let image = image::load_from_memory(&bytes)?;
 				let mut image = image.resize(1024, 1024, FilterType::Nearest);
 				// }}}
 				// {{{ Detection
@@ -241,7 +238,7 @@ Title error: {:?}
 				handle.edit(ctx, edited).await?;
 
 				let score_possibilities =
-					match cropper.read_score(Some(chart.note_count), &ocr_image) {
+					match cropper.read_score(Some(chart.note_count), &ocr_image, kind) {
 						// {{{ OCR error handling
 						Err(err) => {
 							error_with_image(

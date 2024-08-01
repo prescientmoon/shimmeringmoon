@@ -77,11 +77,11 @@ pub async fn best(
 	let play = query_as!(
 		DbPlay,
 		"
-            SELECT * FROM plays
-            WHERE user_id=?
-            AND chart_id=?
-            ORDER BY score DESC
-        ",
+        SELECT * FROM plays
+        WHERE user_id=?
+        AND chart_id=?
+        ORDER BY score DESC
+    ",
 		user.id,
 		chart.id
 	)

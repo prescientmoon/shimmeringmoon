@@ -33,6 +33,11 @@ impl Color {
 	}
 
 	#[inline]
+	pub const fn from_bytes(bytes: [u8; 4]) -> Self {
+		Self(bytes[0], bytes[1], bytes[1], bytes[3])
+	}
+
+	#[inline]
 	pub fn alpha(mut self, a: u8) -> Self {
 		self.3 = a;
 		self

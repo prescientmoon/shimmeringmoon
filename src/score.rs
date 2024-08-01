@@ -12,6 +12,7 @@ use num::{traits::Euclid, Rational64};
 use poise::serenity_prelude::{
 	Attachment, AttachmentId, CreateAttachment, CreateEmbed, CreateEmbedAuthor, Timestamp,
 };
+use sqlx::{query_as, SqlitePool};
 use tesseract::{PageSegMode, Tesseract};
 
 use crate::bitmap::{Color, Rect};
@@ -602,10 +603,10 @@ impl Play {
 			.field("ξ-Grade", format!("{}", self.zeta_score.grade()), true)
 			.field(
 				"Status",
-				self.status(chart).unwrap_or("?".to_string()),
+				self.status(chart).unwrap_or("-".to_string()),
 				true,
 			)
-			.field("Max recall", "?", true)
+			.field("Max recall", "—", true)
 			.field("ID", format!("{}", self.id), true);
 
 		if icon_attachement.is_some() {
@@ -626,6 +627,37 @@ impl Play {
 		}
 
 		Ok((embed, icon_attachement))
+	}
+	// }}}
+	// {{{ Get best play
+	pub async fn best_play(
+		db: &SqlitePool,
+		user: User,
+		song: Song,
+		chart: Chart,
+	) -> Result<Self, Error> {
+		let play = query_as!(
+			DbPlay,
+			"
+        SELECT * FROM plays
+        WHERE user_id=?
+        AND chart_id=?
+        ORDER BY score DESC
+    ",
+			user.id,
+			chart.id
+		)
+		.fetch_one(db)
+		.await
+		.map_err(|_| {
+			format!(
+				"Could not find any scores for {} [{:?}]",
+				song.title, chart.difficulty
+			)
+		})?
+		.to_play();
+
+		Ok(play)
 	}
 	// }}}
 }
@@ -918,8 +950,8 @@ fn widen_by(rects: &mut Vec<RelativeRect>, x: f32, y: f32) {
 	}
 }
 // }}}
-// {{{ Score
-fn score_rects() -> &'static [RelativeRect] {
+// {{{ Score (score screen)
+fn score_score_screen_rects() -> &'static [RelativeRect] {
 	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
 	CELL.get_or_init(|| {
 		let mut rects: Vec<RelativeRect> = vec![
@@ -935,6 +967,19 @@ fn score_rects() -> &'static [RelativeRect] {
 		];
 		process_datapoints(&mut rects);
 		widen_by(&mut rects, 0.0, 0.0075);
+		rects
+	})
+}
+// }}}
+// {{{ Score (song select)
+pub fn score_song_select_rects() -> &'static [RelativeRect] {
+	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
+	CELL.get_or_init(|| {
+		let mut rects: Vec<RelativeRect> = vec![
+			AbsoluteRect::new(95, 256, 278, 49, ImageDimensions::new(2532, 1170)).to_relative(),
+			AbsoluteRect::new(15, 264, 291, 52, ImageDimensions::new(2160, 1620)).to_relative(),
+		];
+		process_datapoints(&mut rects);
 		rects
 	})
 }
@@ -1128,6 +1173,14 @@ fn difficulty_pixel(difficulty: Difficulty) -> &'static [RelativePoint] {
 		Difficulty::BYD => byd_etr_pixel(),
 	}
 }
+
+const DIFFICULTY_MENU_PIXEL_COLORS: [Color; Difficulty::DIFFICULTIES.len()] = [
+	Color::from_rgb_int(0xAAE5F7),
+	Color::from_rgb_int(0xBFDD85),
+	Color::from_rgb_int(0xCB74AB),
+	Color::from_rgb_int(0xC4B7D3),
+	Color::from_rgb_int(0xF89AAC),
+];
 // }}}
 // }}}
 // {{{ Recognise chart
@@ -1276,13 +1329,22 @@ impl ImageCropper {
 		&mut self,
 		note_count: Option<u32>,
 		image: &DynamicImage,
+		kind: ScoreKind,
 	) -> Result<Vec<Score>, Error> {
+		println!("kind {kind:?}");
 		self.crop_image_to_bytes(
 			&image.resize_exact(image.width(), image.height(), FilterType::Nearest),
-			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), score_rects())
-				.ok_or_else(|| "Could not find score area in picture")?
-				.to_absolute()
-				.to_rect(),
+			RelativeRect::from_aspect_ratio(
+				ImageDimensions::from_image(image),
+				if kind == ScoreKind::ScoreScreen {
+					score_score_screen_rects()
+				} else {
+					score_song_select_rects()
+				},
+			)
+			.ok_or_else(|| "Could not find score area in picture")?
+			.to_absolute()
+			.to_rect(),
 		)?;
 
 		let mut results = vec![];
@@ -1409,39 +1471,29 @@ impl ImageCropper {
 		kind: ScoreKind,
 	) -> Result<Difficulty, Error> {
 		if kind == ScoreKind::SongSelect {
-			let colors = [
-				Color::BLACK,
-				Color::BLACK,
-				Color::from_rgb_int(0xCB74AB),
-				Color::from_rgb_int(0xC4B7D3),
-				Color::BLACK,
-			];
-
 			let dimensions = ImageDimensions::from_image(image);
 
-			let min = colors
+			let min = DIFFICULTY_MENU_PIXEL_COLORS
 				.iter()
 				.zip(Difficulty::DIFFICULTIES)
 				.min_by_key(|(c, d)| {
 					let points = difficulty_pixel(*d);
 					let point = RelativePoint::from_aspect_ratio(dimensions, points)
 						.ok_or_else(|| "Could not find difficulty pixel in picture")
+						// SAFETY: should I just throwkkk here?
 						.unwrap_or(RelativePoint::new(0.0, 0.0, dimensions))
 						.to_absolute();
 
 					let image_color = image.get_pixel(point.x, point.y);
-					let image_color = Color(
-						image_color[0],
-						image_color[1],
-						image_color[2],
-						image_color[3],
-					);
+					let image_color = Color::from_bytes(image_color.0);
 
 					let distance = c.distance(image_color);
+					println!("distance {distance} image_color {image_color:?} color {c:?} difficulty {d:?}");
 					(distance * 10000.0) as u32
-				});
+				})
+				.unwrap();
 
-			return Ok(min.unwrap().1);
+			return Ok(min.1);
 		}
 
 		self.crop_image_to_bytes(
