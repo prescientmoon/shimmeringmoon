@@ -17,17 +17,20 @@ use poise::{
 use sqlx::query_as;
 
 use crate::{
+	arcaea::chart::{Chart, Song},
+	arcaea::jacket::BITMAP_IMAGE_SIZE,
+	arcaea::play::{DbPlay, Play},
+	arcaea::score::Score,
 	assets::{
 		get_b30_background, get_count_background, get_difficulty_background, get_grade_background,
 		get_name_backgound, get_ptt_emblem, get_score_background, get_status_background,
 		get_top_backgound, EXO_FONT,
 	},
 	bitmap::{Align, BitmapCanvas, Color, LayoutDrawer, LayoutManager, Rect},
-	chart::{Chart, Song},
 	context::{Context, Error},
-	jacket::BITMAP_IMAGE_SIZE,
-	score::{guess_song_and_chart, DbPlay, Play, Score},
-	user::{discord_it_to_discord_user, User},
+	get_user,
+	recognition::fuzzy_song_name::guess_song_and_chart,
+	user::discord_it_to_discord_user,
 };
 
 // {{{ Stats
@@ -63,14 +66,7 @@ pub async fn best(
 	#[description = "Name of chart to show (difficulty at the end)"]
 	name: String,
 ) -> Result<(), Error> {
-	let user = match User::from_context(&ctx).await {
-		Ok(user) => user,
-		Err(_) => {
-			ctx.say("You are not an user in my database, sorry!")
-				.await?;
-			return Ok(());
-		}
-	};
+	let user = get_user!(&ctx);
 
 	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
 	let play = query_as!(
@@ -121,14 +117,7 @@ pub async fn plot(
 	#[description = "Name of chart to show (difficulty at the end)"]
 	name: String,
 ) -> Result<(), Error> {
-	let user = match User::from_context(&ctx).await {
-		Ok(user) => user,
-		Err(_) => {
-			ctx.say("You are not an user in my database, sorry!")
-				.await?;
-			return Ok(());
-		}
-	};
+	let user = get_user!(&ctx);
 
 	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
 
@@ -240,14 +229,7 @@ pub async fn plot(
 /// Show the 30 best scores
 #[poise::command(prefix_command, slash_command)]
 pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
-	let user = match User::from_context(&ctx).await {
-		Ok(user) => user,
-		Err(_) => {
-			ctx.say("You are not an user in my database, sorry!")
-				.await?;
-			return Ok(());
-		}
-	};
+	let user = get_user!(&ctx);
 
 	let plays: Vec<DbPlay> = query_as(
 		"

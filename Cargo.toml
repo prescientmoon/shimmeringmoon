@@ -6,12 +6,12 @@ edition = "2021"
 [dependencies]
 chrono = "0.4.38"
 freetype-rs = "0.36.0"
-image = "0.25.1"
+image = "0.25.2"
 num = "0.4.3"
 plotters = { git="https://github.com/starlitcanopy/plotters.git", rev="986cd959362a2dbec8d1b25670fd083b904d7b8c", features=["bitmap_backend"] }
 poise = "0.6.1"
-sqlx = { version = "0.7.4", features = ["sqlite", "runtime-tokio", "chrono"] }
-tesseract = "0.15.1"
+sqlx = { version = "0.8.0", features = ["sqlite", "runtime-tokio", "chrono"] }
+hypertesseract = { features=["image"], git="https://github.com/BlueGhostGH/hypertesseract.git", rev="78dd8ab" }
 tokio = {version="1.38.0", features=["rt-multi-thread"]}
 
 [profile.dev.package."*"]

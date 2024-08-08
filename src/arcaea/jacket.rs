@@ -4,10 +4,10 @@ use image::{imageops::FilterType, GenericImageView, Rgba};
 use num::Integer;
 
 use crate::{
+	arcaea::chart::{Difficulty, Jacket, SongCache},
 	assets::{get_assets_dir, should_skip_jacket_art},
-	chart::{Difficulty, Jacket, SongCache},
 	context::Error,
-	score::guess_chart_name,
+	recognition::fuzzy_song_name::guess_chart_name,
 };
 
 /// How many sub-segments to split each side into
@@ -78,7 +78,7 @@ pub struct JacketCache {
 }
 
 impl JacketCache {
-	// {{{ Generate tree
+	// {{{ Generate
 	// This is a bit inefficient (using a hash set), but only runs once
 	pub fn new(data_dir: &PathBuf, song_cache: &mut SongCache) -> Result<Self, Error> {
 		let jacket_dir = data_dir.join("jackets");

@@ -34,7 +34,7 @@ impl Color {
 
 	#[inline]
 	pub const fn from_bytes(bytes: [u8; 4]) -> Self {
-		Self(bytes[0], bytes[1], bytes[1], bytes[3])
+		Self(bytes[0], bytes[1], bytes[2], bytes[3])
 	}
 
 	#[inline]

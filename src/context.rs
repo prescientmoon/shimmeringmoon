@@ -2,7 +2,9 @@ use std::{fs, path::PathBuf};
 
 use sqlx::SqlitePool;
 
-use crate::{chart::SongCache, jacket::JacketCache, ocr::ui::UIMeasurements};
+use crate::{
+	arcaea::chart::SongCache, arcaea::jacket::JacketCache, recognition::ui::UIMeasurements,
+};
 
 // Types used by all command functions
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -12,6 +14,7 @@ pub type Context<'a> = poise::Context<'a, UserContext, Error>;
 pub struct UserContext {
 	#[allow(dead_code)]
 	pub data_dir: PathBuf,
+
 	pub db: SqlitePool,
 	pub song_cache: SongCache,
 	pub jacket_cache: JacketCache,

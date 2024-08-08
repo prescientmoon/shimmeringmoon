@@ -3,17 +3,16 @@
 #![feature(let_chains)]
 #![feature(array_try_map)]
 #![feature(async_closure)]
+#![feature(try_blocks)]
 
+mod arcaea;
 mod assets;
 mod bitmap;
-mod chart;
 mod commands;
 mod context;
-mod image;
-mod jacket;
 mod levenshtein;
-mod ocr;
-mod score;
+mod recognition;
+mod transform;
 mod user;
 
 use assets::get_data_dir;

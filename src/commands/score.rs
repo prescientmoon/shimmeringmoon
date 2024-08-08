@@ -1,10 +1,10 @@
-use std::fmt::Display;
-
+use crate::arcaea::play::{CreatePlay, Play};
+use crate::arcaea::score::Score;
 use crate::context::{Context, Error};
-use crate::score::{CreatePlay, ImageCropper, Play, Score, ScoreKind};
+use crate::recognition::recognize::{ImageAnalyzer, ScoreKind};
 use crate::user::{discord_it_to_discord_user, User};
-use image::imageops::FilterType;
-use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage};
+use crate::{edit_reply, get_user};
+use poise::serenity_prelude::CreateMessage;
 use poise::{serenity_prelude as serenity, CreateReply};
 use sqlx::query;
 
@@ -21,46 +21,13 @@ pub async fn score(_ctx: Context<'_>) -> Result<(), Error> {
 }
 // }}}
 // {{{ Score magic
-// {{{ Send error embed with image
-async fn error_with_image(
-	ctx: Context<'_>,
-	bytes: &[u8],
-	filename: &str,
-	message: &str,
-	err: impl Display,
-) -> Result<(), Error> {
-	let error_attachement = CreateAttachment::bytes(bytes, filename);
-	let msg = CreateMessage::default().embed(
-		CreateEmbed::default()
-			.title(message)
-			.attachment(filename)
-			.description(format!("{}", err)),
-	);
-
-	ctx.channel_id()
-		.send_files(ctx.http(), [error_attachement], msg)
-		.await?;
-
-	Ok(())
-}
-// }}}
-
 /// Identify scores from attached images.
 #[poise::command(prefix_command, slash_command)]
 pub async fn magic(
 	ctx: Context<'_>,
 	#[description = "Images containing scores"] files: Vec<serenity::Attachment>,
 ) -> Result<(), Error> {
-	let user = match User::from_context(&ctx).await {
-		Ok(user) => user,
-		Err(_) => {
-			ctx.say("You are not an user in my database, sorry!")
-				.await?;
-			return Ok(());
-		}
-	};
-
-	println!("Handling command from user {:?}", user.discord_id);
+	let user = get_user!(&ctx);
 
 	if files.len() == 0 {
 		ctx.reply("No images found attached to message").await?;
@@ -71,246 +38,103 @@ pub async fn magic(
 			.reply(format!("Processed 0/{} scores", files.len()))
 			.await?;
 
+		let mut analyzer = ImageAnalyzer::default();
+
 		for (i, file) in files.iter().enumerate() {
 			if let Some(_) = file.dimensions() {
-				// {{{ Image pre-processing
 				let bytes = file.download().await?;
 				let mut image = image::load_from_memory(&bytes)?;
 				// image = image.resize(1024, 1024, FilterType::Nearest);
-				// }}}
-				// {{{ Detection
-				// Create cropper and run OCR
-				let mut cropper = ImageCropper::default();
 
-				let edited = CreateReply::default()
-					.reply(true)
-					.content(format!("Image {}: reading jacket", i + 1));
-				handle.edit(ctx, edited).await?;
+				let result: Result<(), Error> = try {
+					// {{{ Detection
+					// This makes OCR more likely to work
+					let mut ocr_image = image.grayscale().blur(1.);
 
-				// This makes OCR more likely to work
-				let mut ocr_image = image.grayscale().blur(1.);
+					edit_reply!(ctx, handle, "Image {}: reading kind", i + 1).await?;
+					let kind = analyzer.read_score_kind(ctx.data(), &ocr_image)?;
 
-				// {{{ Kind
-				let edited = CreateReply::default()
-					.reply(true)
-					.content(format!("Image {}: reading kind", i + 1));
-				handle.edit(ctx, edited).await?;
+					edit_reply!(ctx, handle, "Image {}: reading difficulty", i + 1).await?;
+					// Do not use `ocr_image` because this reads the colors
+					let difficulty = analyzer.read_difficulty(ctx.data(), &image, kind)?;
 
-				let kind = match cropper.read_score_kind(ctx.data(), &ocr_image) {
-					// {{{ OCR error handling
-					Err(err) => {
-						error_with_image(
-							ctx,
-							&cropper.bytes,
-							&file.filename,
-							"Could not read kind from picture",
-							&err,
-						)
+					edit_reply!(ctx, handle, "Image {}: reading jacket", i + 1).await?;
+					let (song, chart) = analyzer
+						.read_jacket(ctx.data(), &mut image, kind, difficulty)
 						.await?;
 
-						continue;
-					}
-					// }}}
-					Ok(k) => k,
-				};
-				// }}}
-				// {{{ Difficulty
-				let edited = CreateReply::default()
-					.reply(true)
-					.content(format!("Image {}: reading difficulty", i + 1));
-				handle.edit(ctx, edited).await?;
+					ocr_image.invert();
 
-				// Do not use `ocr_image` because this reads the colors
-				let difficulty = match cropper.read_difficulty(ctx.data(), &image, kind) {
-					// {{{ OCR error handling
-					Err(err) => {
-						error_with_image(
-							ctx,
-							&cropper.bytes,
-							&file.filename,
-							"Could not read difficulty from picture",
-							&err,
-						)
-						.await?;
+					let (note_distribution, max_recall) = match kind {
+						ScoreKind::ScoreScreen => {
+							edit_reply!(ctx, handle, "Image {}: reading distribution", i + 1)
+								.await?;
+							let note_distribution =
+								Some(analyzer.read_distribution(ctx.data(), &image)?);
 
-						continue;
-					}
-					// }}}
-					Ok(d) => d,
-				};
+							edit_reply!(ctx, handle, "Image {}: reading max recall", i + 1).await?;
+							let max_recall = Some(analyzer.read_max_recall(ctx.data(), &image)?);
 
-				println!("{difficulty:?}");
-				// }}}
-				// {{{ Jacket & distribution
-				let mut jacket_rect = None;
-				let song_by_jacket = cropper
-					.read_jacket(ctx.data(), &mut image, kind, difficulty, &mut jacket_rect)
-					.await;
-				// image.invert();
-				ocr_image.invert();
-				let note_distribution = match kind {
-					ScoreKind::ScoreScreen => Some(cropper.read_distribution(ctx.data(), &image)?),
-					ScoreKind::SongSelect => None,
-				};
-				// }}}
-				// {{{ Title
-				let edited = CreateReply::default()
-					.reply(true)
-					.content(format!("Image {}: reading title", i + 1));
-				handle.edit(ctx, edited).await?;
-
-				let song_by_name = match kind {
-					ScoreKind::SongSelect => None,
-					ScoreKind::ScoreScreen => {
-						Some(cropper.read_song(ctx.data(), &ocr_image, difficulty))
-					}
-				};
-
-				let (song, chart) = match (song_by_jacket, song_by_name) {
-					// {{{ Only name succeeded
-					(Err(err_jacket), Some(Ok(by_name))) => {
-						println!("Could not recognise jacket with error: {}", err_jacket);
-						by_name
-					}
-					// }}}
-					// {{{ Both succeeded
-					(Ok(by_jacket), Some(Ok(by_name))) => {
-						if by_name.0.id != by_jacket.0.id {
-							println!(
-								"Got diverging choices between '{}' and '{}'",
-								by_jacket.0.title, by_name.0.title
-							);
-						};
-
-						by_jacket
-					} // }}}
-					// {{{ Only jacket succeeded
-					(Ok(by_jacket), err_name) => {
-						if let Some(err) = err_name {
-							println!("Could not read name with error: {:?}", err.unwrap_err());
+							(note_distribution, max_recall)
 						}
+						ScoreKind::SongSelect => (None, None),
+					};
 
-						by_jacket
-					}
-					// }}}
-					// {{{ Both errors
-					(Err(err_jacket), err_name) => {
-						if let Some(rect) = jacket_rect {
-							cropper.crop_image_to_bytes(&image, rect)?;
-							error_with_image(
-							ctx,
-							&cropper.bytes,
-							&file.filename,
-							"Hey! I could not read the score in the provided picture.",
-							&format!(
-                                "This can mean one of three things:
-1. The image you provided is *not that of an Arcaea score
-2. The image you provided contains a newly added chart that is not in my database yet
-3. The image you provided contains character art that covers the chart name. When this happens, I try to make use of the jacket art in order to determine the chart. Contact `@prescientmoon` on discord to try and resolve the issue!
+					edit_reply!(ctx, handle, "Image {}: reading score", i + 1).await?;
+					let score_possibilities = analyzer.read_score(
+						ctx.data(),
+						Some(chart.note_count),
+						&ocr_image,
+						kind,
+					)?;
 
-Nerdy info:
-```
-Jacket error: {}
-Title error: {:?}
-```" ,
-								err_jacket, err_name
-							),
-						)
-						.await?;
-						} else {
-							ctx.reply(format!(
-								"This is a weird error that should never happen...
-Nerdy info:
-```
-Jacket error: {}
-Title error: {:?}
-```",
-								err_jacket, err_name
-							))
-							.await?;
-						}
-						continue;
-					} // }}}
-				};
-
-				println!("{}", song.title);
-				// }}}
-				// {{{ Score
-				let edited = CreateReply::default()
-					.reply(true)
-					.content(format!("Image {}: reading score", i + 1));
-				handle.edit(ctx, edited).await?;
-
-				let score_possibilities = match cropper.read_score(
-					ctx.data(),
-					Some(chart.note_count),
-					&ocr_image,
-					kind,
-				) {
-					// {{{ OCR error handling
-					Err(err) => {
-						error_with_image(
-							ctx,
-							&cropper.bytes,
-							&file.filename,
-							"Could not read score from picture",
-							&err,
-						)
-						.await?;
-
-						continue;
-					}
-					// }}}
-					Ok(scores) => scores,
-				};
-				// }}}
-				// {{{ Build play
-				let (score, maybe_fars, score_warning) = Score::resolve_ambiguities(
-					score_possibilities,
-					note_distribution,
-					chart.note_count,
-				)
-				.map_err(|err| {
-					format!(
-						"Error occurred when disambiguating scores for '{}' [{:?}] by {}: {}",
-						song.title, difficulty, song.artist, err
+					// {{{ Build play
+					let (score, maybe_fars, score_warning) = Score::resolve_ambiguities(
+						score_possibilities,
+						note_distribution,
+						chart.note_count,
 					)
-				})?;
-				println!(
-					"Maybe fars {:?}, distribution {:?}",
-					maybe_fars, note_distribution
-				);
-				let play = CreatePlay::new(score, &chart, &user)
-					.with_attachment(file)
-					.with_fars(maybe_fars)
-					.save(&ctx.data())
-					.await?;
-				// }}}
-				// }}}
-				// {{{ Deliver embed
-				let (mut embed, attachment) = play
-					.to_embed(&ctx.data().db, &user, &song, &chart, i, None)
-					.await?;
-				if let Some(warning) = score_warning {
-					embed = embed.description(warning);
-				}
+					.map_err(|err| {
+						format!(
+							"Error occurred when disambiguating scores for '{}' [{:?}] by {}: {}",
+							song.title, difficulty, song.artist, err
+						)
+					})?;
 
-				embeds.push(embed);
-				attachments.extend(attachment);
-			// }}}
+					let play = CreatePlay::new(score, &chart, &user)
+						.with_attachment(file)
+						.with_fars(maybe_fars)
+						.with_max_recall(max_recall)
+						.save(&ctx.data())
+						.await?;
+					// }}}
+					// }}}
+					// {{{ Deliver embed
+					let (mut embed, attachment) = play
+						.to_embed(&ctx.data().db, &user, &song, &chart, i, None)
+						.await?;
+
+					if let Some(warning) = score_warning {
+						embed = embed.description(warning);
+					}
+
+					embeds.push(embed);
+					attachments.extend(attachment);
+					// }}}
+				};
+
+				if let Err(err) = result {
+					analyzer
+						.send_discord_error(ctx, &image, &file.filename, err)
+						.await?;
+				}
 			} else {
 				ctx.reply("One of the attached files is not an image!")
 					.await?;
 				continue;
 			}
 
-			let edited = CreateReply::default().reply(true).content(format!(
-				"Processed {}/{} scores",
-				i + 1,
-				files.len()
-			));
-
-			handle.edit(ctx, edited).await?;
+			edit_reply!(ctx, handle, "Processed {}/{} scores", i + 1, files.len()).await?;
 		}
 
 		handle.delete(ctx).await?;
@@ -330,14 +154,7 @@ pub async fn delete(
 	ctx: Context<'_>,
 	#[description = "Id of score to delete"] ids: Vec<u32>,
 ) -> Result<(), Error> {
-	let user = match User::from_context(&ctx).await {
-		Ok(user) => user,
-		Err(_) => {
-			ctx.say("You are not an user in my database, sorry!")
-				.await?;
-			return Ok(());
-		}
-	};
+	let user = get_user!(&ctx);
 
 	if ids.len() == 0 {
 		ctx.reply("Empty ID list provided").await?;
@@ -383,14 +200,14 @@ pub async fn show(
 	for (i, id) in ids.iter().enumerate() {
 		let res = query!(
 			"
-                SELECT 
-                    p.id,p.chart_id,p.user_id,p.score,p.zeta_score,
-                    p.max_recall,p.created_at,p.far_notes,
-                    u.discord_id
-                FROM plays p 
-                JOIN users u ON p.user_id = u.id
-                WHERE p.id=?
-            ",
+        SELECT 
+          p.id,p.chart_id,p.user_id,p.score,p.zeta_score,
+          p.max_recall,p.created_at,p.far_notes,
+          u.discord_id
+        FROM plays p 
+        JOIN users u ON p.user_id = u.id
+        WHERE p.id=?
+      ",
 			id
 		)
 		.fetch_one(&ctx.data().db)

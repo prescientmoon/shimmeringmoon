@@ -2,9 +2,9 @@ use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage};
 use sqlx::query;
 
 use crate::{
-	chart::Side,
+	arcaea::chart::Side,
 	context::{Context, Error},
-	score::guess_song_and_chart,
+	recognition::fuzzy_song_name::guess_song_and_chart,
 };
 
 // {{{ Chart

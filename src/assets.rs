@@ -4,7 +4,7 @@ use std::{cell::RefCell, env::var, path::PathBuf, str::FromStr, sync::OnceLock};
 use freetype::{Face, Library};
 use image::{imageops::FilterType, ImageBuffer, Rgb, Rgba};
 
-use crate::chart::Difficulty;
+use crate::arcaea::chart::Difficulty;
 
 #[inline]
 pub fn get_data_dir() -> PathBuf {
