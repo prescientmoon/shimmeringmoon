@@ -329,7 +329,6 @@ mod score_tests {
 
 	#[test]
 	fn zeta_score_consistent_with_pms() {
-		// note counts
 		for note_count in 200..=2000 {
 			for shiny_count in 0..=note_count {
 				let score = Score(10000000 + shiny_count);
