@@ -11,6 +11,8 @@ mod commands;
 mod context;
 mod image;
 mod jacket;
+mod levenshtein;
+mod ocr;
 mod score;
 mod user;
 

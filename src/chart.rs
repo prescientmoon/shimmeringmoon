@@ -1,15 +1,12 @@
 use std::path::PathBuf;
 
 use image::{ImageBuffer, Rgb};
-use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
 use crate::context::Error;
 
 // {{{ Difficuly
-#[derive(
-	Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, sqlx::Type, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, sqlx::Type)]
 pub enum Difficulty {
 	PST,
 	PRS,

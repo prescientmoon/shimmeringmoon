@@ -1,7 +1,6 @@
 use std::{fs, path::PathBuf, str::FromStr};
 
 use image::{imageops::FilterType, GenericImageView, Rgba};
-use kd_tree::{KdMap, KdPoint};
 use num::Integer;
 
 use crate::{
@@ -59,24 +58,23 @@ impl ImageVec {
 
 		Self { colors }
 	}
+
+	#[inline]
+	pub fn distance_squared_to(&self, other: &Self) -> f32 {
+		let mut total = 0.0;
+
+		for i in 0..IMAGE_VEC_DIM {
+			let d = self.colors[i] - other.colors[i];
+			total += d * d;
+		}
+
+		total
+	}
 	// }}}
 }
 
-impl KdPoint for ImageVec {
-	type Dim = typenum::U75;
-	type Scalar = f32;
-
-	fn dim() -> usize {
-		IMAGE_VEC_DIM
-	}
-
-	fn at(&self, i: usize) -> Self::Scalar {
-		self.colors[i]
-	}
-}
-
 pub struct JacketCache {
-	tree: KdMap<ImageVec, u32>,
+	jackets: Vec<(u32, ImageVec)>,
 }
 
 impl JacketCache {
@@ -91,7 +89,7 @@ impl JacketCache {
 
 		fs::create_dir_all(&jacket_dir).expect("Could not create jacket dir");
 
-		let tree_entries = if should_skip_jacket_art() {
+		let jacket_vectors = if should_skip_jacket_art() {
 			let path = get_assets_dir().join("placeholder_jacket.jpg");
 			let contents: &'static _ = fs::read(path)?.leak();
 			let image = image::load_from_memory(contents)?;
@@ -114,7 +112,7 @@ impl JacketCache {
 		} else {
 			let entries =
 				fs::read_dir(data_dir.join("songs")).expect("Couldn't read songs directory");
-			let mut tree_entries = vec![];
+			let mut jacket_vectors = vec![];
 
 			for entry in entries {
 				let dir = entry?;
@@ -147,7 +145,7 @@ impl JacketCache {
 					let contents: &'static _ = fs::read(file.path())?.leak();
 
 					let image = image::load_from_memory(contents)?;
-					tree_entries.push((ImageVec::from_image(&image), song.id));
+					jacket_vectors.push((song.id, ImageVec::from_image(&image)));
 
 					let bitmap: &'static _ = Box::leak(Box::new(
 						image
@@ -201,11 +199,11 @@ impl JacketCache {
 				}
 			}
 
-			tree_entries
+			jacket_vectors
 		};
 
 		let result = Self {
-			tree: KdMap::build_by_ordered_float(tree_entries),
+			jackets: jacket_vectors,
 		};
 
 		Ok(result)
@@ -217,9 +215,12 @@ impl JacketCache {
 		&self,
 		image: &impl GenericImageView<Pixel = Rgba<u8>>,
 	) -> Option<(f32, &u32)> {
-		self.tree
-			.nearest(&ImageVec::from_image(image))
-			.map(|p| (p.squared_distance.sqrt(), &p.item.1))
+		let vec = ImageVec::from_image(image);
+		self.jackets
+			.iter()
+			.map(|(i, v)| (i, v, v.distance_squared_to(&vec)))
+			.min_by(|(_, _, d1), (_, _, d2)| d1.partial_cmp(d2).expect("NaN distance encountered"))
+			.map(|(i, _, d)| (d, i))
 	}
 	// }}}
 }

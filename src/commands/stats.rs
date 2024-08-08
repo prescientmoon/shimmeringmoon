@@ -73,7 +73,6 @@ pub async fn best(
 	};
 
 	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
-
 	let play = query_as!(
 		DbPlay,
 		"
@@ -97,6 +96,8 @@ pub async fn best(
 
 	let (embed, attachment) = play
 		.to_embed(
+			&ctx.data().db,
+			&user,
 			&song,
 			&chart,
 			0,
@@ -602,10 +603,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 				(top_left_center, 94),
 				font,
 				style,
-				&format!(
-					"{:.2}",
-					(play.score.play_rating(chart.chart_constant)) as f32 / 100.
-				),
+				&format!("{:.2}", play.score.play_rating_f32(chart.chart_constant)),
 			)?;
 
 			Ok(())

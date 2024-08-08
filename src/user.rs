@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use poise::serenity_prelude::UserId;
+use sqlx::SqlitePool;
 
 use crate::context::{Context, Error};
 
@@ -15,6 +16,17 @@ impl User {
 		let id = ctx.author().id.get().to_string();
 		let user = sqlx::query!("SELECT * FROM users WHERE discord_id = ?", id)
 			.fetch_one(&ctx.data().db)
+			.await?;
+
+		Ok(User {
+			id: user.id as u32,
+			discord_id: user.discord_id,
+		})
+	}
+
+	pub async fn by_id(db: &SqlitePool, id: u32) -> Result<Self, Error> {
+		let user = sqlx::query!("SELECT * FROM users WHERE id = ?", id)
+			.fetch_one(db)
 			.await?;
 
 		Ok(User {

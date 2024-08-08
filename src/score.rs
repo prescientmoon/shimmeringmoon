@@ -5,7 +5,6 @@ use std::io::Cursor;
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-use edit_distance::edit_distance;
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use num::integer::Roots;
 use num::{traits::Euclid, Rational64};
@@ -20,8 +19,15 @@ use crate::chart::{Chart, Difficulty, Song, SongCache};
 use crate::context::{Error, UserContext};
 use crate::image::rotate;
 use crate::jacket::IMAGE_VEC_DIM;
+use crate::levenshtein::{edit_distance, edit_distance_with};
 use crate::user::User;
 
+// {{{ Utils
+#[inline]
+fn lerp(i: f32, a: f32, b: f32) -> f32 {
+	a + (b - a) * i
+}
+// }}}
 // {{{ Grade
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Grade {
@@ -137,6 +143,11 @@ impl Score {
 			} else {
 				(self.0 as i32 - 9_500_000) / 3_000
 			}
+	}
+
+	#[inline]
+	pub fn play_rating_f32(self, chart_constant: u32) -> f32 {
+		(self.play_rating(chart_constant)) as f32 / 100.0
 	}
 	// }}}
 	// {{{ Score => grade
@@ -390,13 +401,13 @@ impl CreatePlay {
 		let attachment_id = self.discord_attachment_id.map(|i| i.get() as i64);
 		let play = sqlx::query!(
 			"
-                INSERT INTO plays(
-                user_id,chart_id,discord_attachment_id,
-                score,zeta_score,max_recall,far_notes
-                )
-                VALUES(?,?,?,?,?,?,?)
-                RETURNING id, created_at
-            ",
+        INSERT INTO plays(
+        user_id,chart_id,discord_attachment_id,
+        score,zeta_score,max_recall,far_notes
+        )
+        VALUES(?,?,?,?,?,?,?)
+        RETURNING id, created_at
+      ",
 			self.user_id,
 			self.chart_id,
 			attachment_id,
@@ -559,22 +570,43 @@ impl Play {
 	/// The `index` variable is only used to create distinct filenames.
 	pub async fn to_embed(
 		&self,
+		db: &SqlitePool,
+		user: &User,
 		song: &Song,
 		chart: &Chart,
 		index: usize,
 		author: Option<&poise::serenity_prelude::User>,
 	) -> Result<(CreateEmbed, Option<CreateAttachment>), Error> {
+		// {{{ Get previously best score
+		let previously_best = query_as!(
+			DbPlay,
+			"
+        SELECT * FROM plays
+        WHERE user_id=?
+        AND chart_id=?
+        AND created_at<?
+        ORDER BY score DESC
+    ",
+			user.id,
+			chart.id,
+			self.created_at
+		)
+		.fetch_optional(db)
+		.await
+		.map_err(|_| {
+			format!(
+				"Could not find any scores for {} [{:?}]",
+				song.title, chart.difficulty
+			)
+		})?
+		.map(|p| p.to_play());
+		// }}}
+
 		let attachement_name = format!("{:?}-{:?}-{:?}.png", song.id, self.score.0, index);
 		let icon_attachement = match chart.cached_jacket.as_ref() {
 			Some(jacket) => Some(CreateAttachment::bytes(jacket.raw, &attachement_name)),
 			None => None,
 		};
-
-		println!("Rating {:?}", self.score.play_rating(chart.chart_constant));
-		println!(
-			"Rating {:?}",
-			self.score.play_rating(chart.chart_constant) as f32 / 100.0
-		);
 
 		let mut embed = CreateEmbed::default()
 			.title(format!(
@@ -586,20 +618,41 @@ impl Play {
 				"Rating",
 				format!(
 					"{:.2} (+?)",
-					(self.score.play_rating(chart.chart_constant)) as f32 / 100.0
+					self.score.play_rating_f32(chart.chart_constant)
 				),
 				true,
 			)
 			.field("Grade", format!("{}", self.score.grade()), true)
 			.field("ξ-Score", format!("{} (+?)", self.zeta_score), true)
+			// {{{ ξ-Rating
 			.field(
 				"ξ-Rating",
-				format!(
-					"{:.2} (+?)",
-					(self.zeta_score.play_rating(chart.chart_constant)) as f32 / 100.
-				),
+				{
+					let play_rating = self.zeta_score.play_rating_f32(chart.chart_constant);
+					if let Some(previous) = previously_best {
+						let previous_play_rating =
+							previous.zeta_score.play_rating_f32(chart.chart_constant);
+
+						if play_rating >= previous_play_rating {
+							format!(
+								"{:.2} (+{})",
+								play_rating,
+								play_rating - previous_play_rating
+							)
+						} else {
+							format!(
+								"{:.2} (-{})",
+								play_rating,
+								play_rating - previous_play_rating
+							)
+						}
+					} else {
+						format!("{:.2}", play_rating)
+					}
+				},
 				true,
 			)
+			// }}}
 			.field("ξ-Grade", format!("{}", self.zeta_score.grade()), true)
 			.field(
 				"Status",
@@ -627,37 +680,6 @@ impl Play {
 		}
 
 		Ok((embed, icon_attachement))
-	}
-	// }}}
-	// {{{ Get best play
-	pub async fn best_play(
-		db: &SqlitePool,
-		user: User,
-		song: Song,
-		chart: Chart,
-	) -> Result<Self, Error> {
-		let play = query_as!(
-			DbPlay,
-			"
-        SELECT * FROM plays
-        WHERE user_id=?
-        AND chart_id=?
-        ORDER BY score DESC
-    ",
-			user.id,
-			chart.id
-		)
-		.fetch_one(db)
-		.await
-		.map_err(|_| {
-			format!(
-				"Could not find any scores for {} [{:?}]",
-				song.title, chart.difficulty
-			)
-		})?
-		.to_play();
-
-		Ok(play)
 	}
 	// }}}
 }
@@ -766,10 +788,6 @@ pub struct RelativeRect {
 	pub width: f32,
 	pub height: f32,
 	pub dimensions: ImageDimensions,
-}
-
-fn lerp(i: f32, a: f32, b: f32) -> f32 {
-	a + (b - a) * i
 }
 
 impl RelativeRect {
@@ -1229,8 +1247,11 @@ pub fn guess_chart_name<'a>(
 	let raw_text = raw_text.trim(); // not quite raw 🤔
 	let mut text: &str = &raw_text.to_lowercase();
 
+	// Cached vec used by the levenshtein distance function
+	let mut levenshtein_vec = Vec::with_capacity(20);
 	// Cached vec used to store distance calculations
 	let mut distance_vec = Vec::with_capacity(3);
+
 	let (song, chart) = loop {
 		let mut close_enough: Vec<_> = cache
 			.songs()
@@ -1245,7 +1266,7 @@ pub fn guess_chart_name<'a>(
 				let song_title = &song.lowercase_title;
 				distance_vec.clear();
 
-				let base_distance = edit_distance(&text, &song_title);
+				let base_distance = edit_distance_with(&text, &song_title, &mut levenshtein_vec);
 				if base_distance < 1.max(song.title.len() / 3) {
 					distance_vec.push(base_distance * 10 + 2);
 				}
@@ -1254,7 +1275,7 @@ pub fn guess_chart_name<'a>(
 				if let Some(sliced) = &song_title.get(..shortest_len)
 					&& (text.len() >= 6 || unsafe_heuristics)
 				{
-					let slice_distance = edit_distance(&text, sliced);
+					let slice_distance = edit_distance_with(&text, sliced, &mut levenshtein_vec);
 					if slice_distance < 1 {
 						distance_vec.push(slice_distance * 10 + 3);
 					}
@@ -1263,7 +1284,7 @@ pub fn guess_chart_name<'a>(
 				if let Some(shorthand) = &chart.shorthand
 					&& unsafe_heuristics
 				{
-					let short_distance = edit_distance(&text, shorthand);
+					let short_distance = edit_distance_with(&text, shorthand, &mut levenshtein_vec);
 					if short_distance < 1.max(shorthand.len() / 3) {
 						distance_vec.push(short_distance * 10 + 1);
 					}

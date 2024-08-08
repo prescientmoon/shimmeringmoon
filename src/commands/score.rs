@@ -280,7 +280,9 @@ Title error: {:?}
 				// }}}
 				// }}}
 				// {{{ Deliver embed
-				let (mut embed, attachment) = play.to_embed(&song, &chart, i, None).await?;
+				let (mut embed, attachment) = play
+					.to_embed(&ctx.data().db, &user, &song, &chart, i, None)
+					.await?;
 				if let Some(warning) = score_warning {
 					embed = embed.description(warning);
 				}
@@ -401,10 +403,13 @@ pub async fn show(
 			creation_zeta_ptt: None,
 		};
 
-		let user = discord_it_to_discord_user(&ctx, &res.discord_id).await?;
+		let author = discord_it_to_discord_user(&ctx, &res.discord_id).await?;
+		let user = User::by_id(&ctx.data().db, play.user_id).await?;
 
 		let (song, chart) = ctx.data().song_cache.lookup_chart(play.chart_id)?;
-		let (embed, attachment) = play.to_embed(song, chart, i, Some(&user)).await?;
+		let (embed, attachment) = play
+			.to_embed(&ctx.data().db, &user, song, chart, i, Some(&author))
+			.await?;
 
 		embeds.push(embed);
 		attachments.extend(attachment);

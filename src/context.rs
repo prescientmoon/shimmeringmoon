@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use sqlx::SqlitePool;
 
-use crate::{chart::SongCache, jacket::JacketCache};
+use crate::{chart::SongCache, jacket::JacketCache, ocr::ui_interp::UIMeasurements};
 
 // Types used by all command functions
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -15,6 +15,7 @@ pub struct UserContext {
 	pub db: SqlitePool,
 	pub song_cache: SongCache,
 	pub jacket_cache: JacketCache,
+	pub ui_measurements: UIMeasurements,
 }
 
 impl UserContext {
@@ -25,6 +26,7 @@ impl UserContext {
 
 		let mut song_cache = SongCache::new(&db).await?;
 		let jacket_cache = JacketCache::new(&data_dir, &mut song_cache)?;
+		let ui_measurements = UIMeasurements::read(&data_dir)?;
 
 		println!("Created user context");
 
@@ -33,6 +35,7 @@ impl UserContext {
 			db,
 			song_cache,
 			jacket_cache,
+			ui_measurements,
 		})
 	}
 }
