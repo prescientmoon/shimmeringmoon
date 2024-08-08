@@ -3,7 +3,6 @@ use std::fmt::Display;
 use std::fs;
 use std::io::Cursor;
 use std::str::FromStr;
-use std::sync::OnceLock;
 
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use num::integer::Roots;
@@ -15,19 +14,14 @@ use sqlx::{query_as, SqlitePool};
 use tesseract::{PageSegMode, Tesseract};
 
 use crate::bitmap::{Color, Rect};
-use crate::chart::{Chart, Difficulty, Song, SongCache};
+use crate::chart::{Chart, Difficulty, Song, SongCache, DIFFICULTY_MENU_PIXEL_COLORS};
 use crate::context::{Error, UserContext};
 use crate::image::rotate;
 use crate::jacket::IMAGE_VEC_DIM;
 use crate::levenshtein::{edit_distance, edit_distance_with};
+use crate::ocr::ui::{ScoreScreenRect, SongSelectRect, UIMeasurementRect};
 use crate::user::User;
 
-// {{{ Utils
-#[inline]
-fn lerp(i: f32, a: f32, b: f32) -> f32 {
-	a + (b - a) * i
-}
-// }}}
 // {{{ Grade
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Grade {
@@ -716,491 +710,6 @@ pub enum ScoreKind {
 	ScoreScreen,
 }
 // }}}
-// {{{ Image processing helpers
-// {{{ ImageDimensions
-#[derive(Debug, Clone, Copy)]
-pub struct ImageDimensions {
-	width: u32,
-	height: u32,
-}
-
-impl ImageDimensions {
-	#[inline]
-	pub fn new(width: u32, height: u32) -> Self {
-		Self { width, height }
-	}
-
-	#[inline]
-	pub fn aspect_ratio(&self) -> f32 {
-		self.width as f32 / self.height as f32
-	}
-
-	#[inline]
-	pub fn from_image(image: &DynamicImage) -> Self {
-		Self::new(image.width(), image.height())
-	}
-}
-// }}}
-// {{{ AbsoluteRect
-#[derive(Debug, Clone, Copy)]
-pub struct AbsoluteRect {
-	pub x: u32,
-	pub y: u32,
-	pub width: u32,
-	pub height: u32,
-	pub dimensions: ImageDimensions,
-}
-
-impl AbsoluteRect {
-	#[inline]
-	pub fn new(x: u32, y: u32, width: u32, height: u32, dimensions: ImageDimensions) -> Self {
-		Self {
-			x,
-			y,
-			width,
-			height,
-			dimensions,
-		}
-	}
-
-	#[inline]
-	pub fn to_relative(&self) -> RelativeRect {
-		RelativeRect::new(
-			self.x as f32 / self.dimensions.width as f32,
-			self.y as f32 / self.dimensions.height as f32,
-			self.width as f32 / self.dimensions.width as f32,
-			self.height as f32 / self.dimensions.height as f32,
-			self.dimensions,
-		)
-	}
-
-	#[inline]
-	pub fn to_rect(&self) -> Rect {
-		Rect::new(self.x as i32, self.y as i32, self.width, self.height)
-	}
-}
-// }}}
-// {{{ RelativeRect
-#[derive(Debug, Clone, Copy)]
-pub struct RelativeRect {
-	pub x: f32,
-	pub y: f32,
-	pub width: f32,
-	pub height: f32,
-	pub dimensions: ImageDimensions,
-}
-
-impl RelativeRect {
-	#[inline]
-	pub fn new(x: f32, y: f32, width: f32, height: f32, dimensions: ImageDimensions) -> Self {
-		Self {
-			x,
-			y,
-			width,
-			height,
-			dimensions,
-		}
-	}
-
-	/// Shift this rect on the y axis by a given absolute pixel amount
-	#[inline]
-	pub fn shift_y_abs(&self, amount: u32) -> Self {
-		let mut res = Self::new(
-			self.x,
-			self.y + (amount as f32 / self.dimensions.height as f32),
-			self.width,
-			self.height,
-			self.dimensions,
-		);
-		res.fix();
-		res
-	}
-
-	/// Clamps the values apropriately
-	#[inline]
-	pub fn fix(&mut self) {
-		self.x = self.x.max(0.);
-		self.y = self.y.max(0.);
-		self.width = self.width.min(1. - self.x);
-		self.height = self.height.min(1. - self.y);
-	}
-
-	#[inline]
-	pub fn to_absolute(&self) -> AbsoluteRect {
-		AbsoluteRect::new(
-			(self.x * self.dimensions.width as f32) as u32,
-			(self.y * self.dimensions.height as f32) as u32,
-			(self.width * self.dimensions.width as f32) as u32,
-			(self.height * self.dimensions.height as f32) as u32,
-			self.dimensions,
-		)
-	}
-}
-// }}}
-// {{{ AbsolutePoint
-#[derive(Debug, Clone, Copy)]
-pub struct AbsolutePoint {
-	pub x: u32,
-	pub y: u32,
-	pub dimensions: ImageDimensions,
-}
-
-impl AbsolutePoint {
-	#[inline]
-	pub fn new(x: u32, y: u32, dimensions: ImageDimensions) -> Self {
-		Self { x, y, dimensions }
-	}
-
-	#[inline]
-	pub fn to_relative(&self) -> RelativePoint {
-		RelativePoint::new(
-			self.x as f32 / self.dimensions.width as f32,
-			self.y as f32 / self.dimensions.height as f32,
-			self.dimensions,
-		)
-	}
-}
-// }}}
-// {{{ RelativePoint
-#[derive(Debug, Clone, Copy)]
-pub struct RelativePoint {
-	pub x: f32,
-	pub y: f32,
-	pub dimensions: ImageDimensions,
-}
-
-impl RelativePoint {
-	#[inline]
-	pub fn new(x: f32, y: f32, dimensions: ImageDimensions) -> Self {
-		Self { x, y, dimensions }
-	}
-
-	#[inline]
-	pub fn to_absolute(&self) -> AbsolutePoint {
-		AbsolutePoint::new(
-			(self.x * self.dimensions.width as f32) as u32,
-			(self.y * self.dimensions.height as f32) as u32,
-			self.dimensions,
-		)
-	}
-}
-// }}}
-// }}}
-// {{{ Data points
-// {{{ Trait
-trait UIDataPoint: Sized + Copy {
-	fn aspect_ratio(&self) -> f32;
-	fn lerp(low: &Self, high: &Self, p: f32, dimensions: ImageDimensions) -> Self;
-	fn from_aspect_ratio(dimensions: ImageDimensions, datapoints: &[Self]) -> Option<Self> {
-		let aspect_ratio = dimensions.aspect_ratio();
-
-		for i in 0..(datapoints.len() - 1) {
-			let low = datapoints[i];
-			let high = datapoints[i + 1];
-
-			let low_ratio = low.aspect_ratio();
-			let high_ratio = high.aspect_ratio();
-
-			if (i == 0 || low_ratio <= aspect_ratio)
-				&& (aspect_ratio <= high_ratio || i == datapoints.len() - 2)
-			{
-				let p = (aspect_ratio - low_ratio) / (high_ratio - low_ratio);
-				return Some(Self::lerp(&low, &high, p, dimensions));
-			}
-		}
-
-		None
-	}
-}
-
-impl UIDataPoint for RelativeRect {
-	fn aspect_ratio(&self) -> f32 {
-		self.dimensions.aspect_ratio()
-	}
-
-	fn lerp(low: &Self, high: &Self, p: f32, dimensions: ImageDimensions) -> Self {
-		Self::new(
-			lerp(p, low.x, high.x),
-			lerp(p, low.y, high.y),
-			lerp(p, low.width, high.width),
-			lerp(p, low.height, high.height),
-			dimensions,
-		)
-	}
-}
-
-impl UIDataPoint for RelativePoint {
-	fn aspect_ratio(&self) -> f32 {
-		self.dimensions.aspect_ratio()
-	}
-
-	fn lerp(low: &Self, high: &Self, p: f32, dimensions: ImageDimensions) -> Self {
-		Self::new(lerp(p, low.x, high.x), lerp(p, low.y, high.y), dimensions)
-	}
-}
-// }}}
-// {{{ Processing
-fn process_datapoints(points: &mut Vec<impl UIDataPoint>) {
-	points.sort_by_key(|r| (r.aspect_ratio() * 1000.0).floor() as u32);
-
-	// Filter datapoints that are close together
-	let mut i = 0;
-	while i < points.len() - 1 {
-		let low = &points[i];
-		let high = &points[i + 1];
-
-		if (low.aspect_ratio() - high.aspect_ratio()).abs() < 0.001 {
-			// TODO: we could interpolate here but oh well
-			points.remove(i + 1);
-		}
-
-		i += 1;
-	}
-}
-
-fn widen_by(rects: &mut Vec<RelativeRect>, x: f32, y: f32) {
-	for rect in rects {
-		rect.x -= x;
-		rect.y -= y;
-		rect.width += 2. * x;
-		rect.height += 2. * y;
-		rect.fix();
-	}
-}
-// }}}
-// {{{ Score (score screen)
-fn score_score_screen_rects() -> &'static [RelativeRect] {
-	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
-	CELL.get_or_init(|| {
-		let mut rects: Vec<RelativeRect> = vec![
-			AbsoluteRect::new(642, 287, 284, 51, ImageDimensions::new(1560, 720)).to_relative(),
-			AbsoluteRect::new(651, 285, 305, 55, ImageDimensions::new(1600, 720)).to_relative(),
-			AbsoluteRect::new(748, 485, 503, 82, ImageDimensions::new(2000, 1200)).to_relative(),
-			AbsoluteRect::new(841, 683, 500, 92, ImageDimensions::new(2160, 1620)).to_relative(),
-			AbsoluteRect::new(851, 707, 532, 91, ImageDimensions::new(2224, 1668)).to_relative(),
-			AbsoluteRect::new(1037, 462, 476, 89, ImageDimensions::new(2532, 1170)).to_relative(),
-			AbsoluteRect::new(973, 653, 620, 105, ImageDimensions::new(2560, 1600)).to_relative(),
-			AbsoluteRect::new(1069, 868, 636, 112, ImageDimensions::new(2732, 2048)).to_relative(),
-			AbsoluteRect::new(1125, 510, 534, 93, ImageDimensions::new(2778, 1284)).to_relative(),
-		];
-		process_datapoints(&mut rects);
-		widen_by(&mut rects, 0.0, 0.0075);
-		rects
-	})
-}
-// }}}
-// {{{ Score (song select)
-pub fn score_song_select_rects() -> &'static [RelativeRect] {
-	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
-	CELL.get_or_init(|| {
-		let mut rects: Vec<RelativeRect> = vec![
-			AbsoluteRect::new(95, 256, 278, 49, ImageDimensions::new(2532, 1170)).to_relative(),
-			AbsoluteRect::new(15, 264, 291, 52, ImageDimensions::new(2160, 1620)).to_relative(),
-		];
-		process_datapoints(&mut rects);
-		rects
-	})
-}
-// }}}
-// {{{ Difficulty
-fn difficulty_rects() -> &'static [RelativeRect] {
-	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
-	CELL.get_or_init(|| {
-		let mut rects: Vec<RelativeRect> = vec![
-			AbsoluteRect::new(232, 203, 104, 23, ImageDimensions::new(1560, 720)).to_relative(),
-			AbsoluteRect::new(252, 204, 99, 21, ImageDimensions::new(1600, 720)).to_relative(),
-			AbsoluteRect::new(146, 356, 155, 34, ImageDimensions::new(2000, 1200)).to_relative(),
-			AbsoluteRect::new(155, 546, 167, 38, ImageDimensions::new(2160, 1620)).to_relative(),
-			AbsoluteRect::new(163, 562, 175, 38, ImageDimensions::new(2224, 1668)).to_relative(),
-			AbsoluteRect::new(378, 332, 161, 34, ImageDimensions::new(2532, 1170)).to_relative(),
-			AbsoluteRect::new(183, 487, 197, 44, ImageDimensions::new(2560, 1600)).to_relative(),
-			AbsoluteRect::new(198, 692, 219, 46, ImageDimensions::new(2732, 2048)).to_relative(),
-			AbsoluteRect::new(414, 364, 177, 38, ImageDimensions::new(2778, 1284)).to_relative(),
-			AbsoluteRect::new(76, 172, 77, 18, ImageDimensions::new(1080, 607)).to_relative(),
-		];
-		process_datapoints(&mut rects);
-		rects
-	})
-}
-// }}}
-// {{{ Chart title
-fn title_rects() -> &'static [RelativeRect] {
-	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
-	CELL.get_or_init(|| {
-		let mut rects: Vec<RelativeRect> = vec![
-			AbsoluteRect::new(227, 74, 900, 61, ImageDimensions::new(1560, 720)).to_relative(),
-			AbsoluteRect::new(413, 72, 696, 58, ImageDimensions::new(1600, 720)).to_relative(),
-			AbsoluteRect::new(484, 148, 1046, 96, ImageDimensions::new(2000, 1200)).to_relative(),
-			AbsoluteRect::new(438, 324, 1244, 104, ImageDimensions::new(2160, 1620)).to_relative(),
-			AbsoluteRect::new(216, 336, 1366, 96, ImageDimensions::new(2224, 1668)).to_relative(),
-			AbsoluteRect::new(634, 116, 1252, 102, ImageDimensions::new(2532, 1170)).to_relative(),
-			AbsoluteRect::new(586, 222, 1320, 118, ImageDimensions::new(2560, 1600)).to_relative(),
-			AbsoluteRect::new(348, 417, 1716, 120, ImageDimensions::new(2732, 2048)).to_relative(),
-			AbsoluteRect::new(760, 128, 1270, 118, ImageDimensions::new(2778, 1284)).to_relative(),
-		];
-		process_datapoints(&mut rects);
-		widen_by(&mut rects, 0.3, 0.0);
-		rects
-	})
-}
-// }}}
-// {{{ Jacket (score screen)
-pub fn jacket_score_screen_rects() -> &'static [RelativeRect] {
-	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
-	CELL.get_or_init(|| {
-		let mut rects: Vec<RelativeRect> = vec![
-			AbsoluteRect::new(171, 268, 375, 376, ImageDimensions::new(1560, 720)).to_relative(),
-			AbsoluteRect::new(190, 267, 376, 377, ImageDimensions::new(1600, 720)).to_relative(),
-			AbsoluteRect::new(46, 456, 590, 585, ImageDimensions::new(2000, 1200)).to_relative(),
-			AbsoluteRect::new(51, 655, 633, 632, ImageDimensions::new(2160, 1620)).to_relative(),
-			AbsoluteRect::new(53, 675, 654, 653, ImageDimensions::new(2224, 1668)).to_relative(),
-			AbsoluteRect::new(274, 434, 614, 611, ImageDimensions::new(2532, 1170)).to_relative(),
-			AbsoluteRect::new(58, 617, 753, 750, ImageDimensions::new(2560, 1600)).to_relative(),
-			AbsoluteRect::new(65, 829, 799, 800, ImageDimensions::new(2732, 2048)).to_relative(),
-			AbsoluteRect::new(300, 497, 670, 670, ImageDimensions::new(2778, 1284)).to_relative(),
-		];
-		process_datapoints(&mut rects);
-		rects
-	})
-}
-// }}}
-// {{{ Jacket (song select)
-pub fn jacket_song_select_rects() -> &'static [RelativeRect] {
-	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
-	CELL.get_or_init(|| {
-		let mut rects: Vec<RelativeRect> = vec![
-			AbsoluteRect::new(465, 319, 730, 45, ImageDimensions::new(2532, 1170)).to_relative(),
-			AbsoluteRect::new(158, 411, 909, 74, ImageDimensions::new(2160, 1620)).to_relative(),
-		];
-		process_datapoints(&mut rects);
-		rects
-	})
-}
-// }}}
-// {{{ Note distribution
-pub fn note_distribution_rects() -> (
-	&'static [RelativeRect],
-	&'static [RelativeRect],
-	&'static [RelativeRect],
-) {
-	static CELL: OnceLock<(
-		&'static [RelativeRect],
-		&'static [RelativeRect],
-		&'static [RelativeRect],
-	)> = OnceLock::new();
-	*CELL.get_or_init(|| {
-		let mut pure_rects: Vec<RelativeRect> = vec![
-			AbsoluteRect::new(729, 523, 58, 22, ImageDimensions::new(1560, 720)).to_relative(),
-			AbsoluteRect::new(815, 520, 57, 23, ImageDimensions::new(1600, 720)).to_relative(),
-			AbsoluteRect::new(1019, 856, 91, 33, ImageDimensions::new(2000, 1200)).to_relative(),
-			AbsoluteRect::new(1100, 1085, 102, 38, ImageDimensions::new(2160, 1620)).to_relative(),
-			AbsoluteRect::new(1130, 1118, 105, 39, ImageDimensions::new(2224, 1668)).to_relative(),
-			AbsoluteRect::new(1286, 850, 91, 35, ImageDimensions::new(2532, 1170)).to_relative(),
-			AbsoluteRect::new(1305, 1125, 117, 44, ImageDimensions::new(2560, 1600)).to_relative(),
-			AbsoluteRect::new(1389, 1374, 126, 48, ImageDimensions::new(2732, 2048)).to_relative(),
-			AbsoluteRect::new(1407, 933, 106, 40, ImageDimensions::new(2778, 1284)).to_relative(),
-		];
-
-		process_datapoints(&mut pure_rects);
-
-		let skip_distances = vec![40, 40, 57, 67, 65, 60, 75, 78, 65];
-		let far_rects: Vec<_> = pure_rects
-			.iter()
-			.enumerate()
-			.map(|(i, rect)| rect.shift_y_abs(skip_distances[i]))
-			.collect();
-
-		let lost_rects: Vec<_> = far_rects
-			.iter()
-			.enumerate()
-			.map(|(i, rect)| rect.shift_y_abs(skip_distances[i]))
-			.collect();
-
-		(pure_rects.leak(), far_rects.leak(), lost_rects.leak())
-	})
-}
-// }}}
-// {{{ Score kind
-fn score_kind_rects() -> &'static [RelativeRect] {
-	static CELL: OnceLock<Vec<RelativeRect>> = OnceLock::new();
-	CELL.get_or_init(|| {
-		let mut rects: Vec<RelativeRect> = vec![
-			AbsoluteRect::new(237, 16, 273, 60, ImageDimensions::new(2532, 1170)).to_relative(),
-			AbsoluteRect::new(19, 15, 273, 60, ImageDimensions::new(2160, 1620)).to_relative(),
-		];
-		process_datapoints(&mut rects);
-		rects
-	})
-}
-// }}}
-// {{{ Difficulty pixel locations
-fn pst_pixel() -> &'static [RelativePoint] {
-	static CELL: OnceLock<Vec<RelativePoint>> = OnceLock::new();
-	CELL.get_or_init(|| {
-		let mut points: Vec<RelativePoint> = vec![
-			AbsolutePoint::new(89, 153, ImageDimensions::new(2532, 1170)).to_relative(),
-			AbsolutePoint::new(12, 159, ImageDimensions::new(2160, 1620)).to_relative(),
-		];
-		process_datapoints(&mut points);
-		points
-	})
-}
-
-fn prs_pixel() -> &'static [RelativePoint] {
-	static CELL: OnceLock<Vec<RelativePoint>> = OnceLock::new();
-	CELL.get_or_init(|| {
-		let mut points: Vec<RelativePoint> = vec![
-			AbsolutePoint::new(269, 153, ImageDimensions::new(2532, 1170)).to_relative(),
-			AbsolutePoint::new(199, 159, ImageDimensions::new(2160, 1620)).to_relative(),
-		];
-		process_datapoints(&mut points);
-		points
-	})
-}
-
-fn ftr_pixel() -> &'static [RelativePoint] {
-	static CELL: OnceLock<Vec<RelativePoint>> = OnceLock::new();
-	CELL.get_or_init(|| {
-		let mut points: Vec<RelativePoint> = vec![
-			AbsolutePoint::new(452, 153, ImageDimensions::new(2532, 1170)).to_relative(),
-			AbsolutePoint::new(389, 159, ImageDimensions::new(2160, 1620)).to_relative(),
-		];
-		process_datapoints(&mut points);
-		points
-	})
-}
-
-fn byd_etr_pixel() -> &'static [RelativePoint] {
-	static CELL: OnceLock<Vec<RelativePoint>> = OnceLock::new();
-	CELL.get_or_init(|| {
-		let mut points: Vec<RelativePoint> = vec![
-			AbsolutePoint::new(638, 153, ImageDimensions::new(2532, 1170)).to_relative(),
-			AbsolutePoint::new(579, 159, ImageDimensions::new(2160, 1620)).to_relative(),
-		];
-		process_datapoints(&mut points);
-		points
-	})
-}
-
-fn difficulty_pixel(difficulty: Difficulty) -> &'static [RelativePoint] {
-	match difficulty {
-		Difficulty::PST => pst_pixel(),
-		Difficulty::PRS => prs_pixel(),
-		Difficulty::FTR => ftr_pixel(),
-		Difficulty::ETR => byd_etr_pixel(),
-		Difficulty::BYD => byd_etr_pixel(),
-	}
-}
-
-const DIFFICULTY_MENU_PIXEL_COLORS: [Color; Difficulty::DIFFICULTIES.len()] = [
-	Color::from_rgb_int(0xAAE5F7),
-	Color::from_rgb_int(0xBFDD85),
-	Color::from_rgb_int(0xCB74AB),
-	Color::from_rgb_int(0xC4B7D3),
-	Color::from_rgb_int(0xF89AAC),
-];
-// }}}
-// }}}
 // {{{ Recognise chart
 fn strip_case_insensitive_suffix<'a>(string: &'a str, suffix: &str) -> Option<&'a str> {
 	let suffix = suffix.to_lowercase();
@@ -1348,6 +857,7 @@ impl ImageCropper {
 	// {{{ Read score
 	pub fn read_score(
 		&mut self,
+		ctx: &UserContext,
 		note_count: Option<u32>,
 		image: &DynamicImage,
 		kind: ScoreKind,
@@ -1355,17 +865,14 @@ impl ImageCropper {
 		println!("kind {kind:?}");
 		self.crop_image_to_bytes(
 			&image.resize_exact(image.width(), image.height(), FilterType::Nearest),
-			RelativeRect::from_aspect_ratio(
-				ImageDimensions::from_image(image),
+			ctx.ui_measurements.interpolate(
 				if kind == ScoreKind::ScoreScreen {
-					score_score_screen_rects()
+					UIMeasurementRect::ScoreScreen(ScoreScreenRect::Score)
 				} else {
-					score_song_select_rects()
+					UIMeasurementRect::SongSelect(SongSelectRect::Score)
 				},
-			)
-			.ok_or_else(|| "Could not find score area in picture")?
-			.to_absolute()
-			.to_rect(),
+				image,
+			)?,
 		)?;
 
 		let mut results = vec![];
@@ -1488,28 +995,32 @@ impl ImageCropper {
 	// {{{ Read difficulty
 	pub fn read_difficulty(
 		&mut self,
+		ctx: &UserContext,
 		image: &DynamicImage,
 		kind: ScoreKind,
 	) -> Result<Difficulty, Error> {
 		if kind == ScoreKind::SongSelect {
-			let dimensions = ImageDimensions::from_image(image);
-
 			let min = DIFFICULTY_MENU_PIXEL_COLORS
 				.iter()
 				.zip(Difficulty::DIFFICULTIES)
 				.min_by_key(|(c, d)| {
-					let points = difficulty_pixel(*d);
-					let point = RelativePoint::from_aspect_ratio(dimensions, points)
-						.ok_or_else(|| "Could not find difficulty pixel in picture")
-						// SAFETY: should I just throwkkk here?
-						.unwrap_or(RelativePoint::new(0.0, 0.0, dimensions))
-						.to_absolute();
+					let rect = ctx
+						.ui_measurements
+						.interpolate(
+							UIMeasurementRect::SongSelect(match d {
+								Difficulty::PST => SongSelectRect::Past,
+								Difficulty::PRS => SongSelectRect::Present,
+								Difficulty::FTR => SongSelectRect::Future,
+								_ => SongSelectRect::Beyond,
+							}),
+							image,
+						)
+						.unwrap();
 
-					let image_color = image.get_pixel(point.x, point.y);
+					let image_color = image.get_pixel(rect.x as u32, rect.y as u32);
 					let image_color = Color::from_bytes(image_color.0);
 
 					let distance = c.distance(image_color);
-					println!("distance {distance} image_color {image_color:?} color {c:?} difficulty {d:?}");
 					(distance * 10000.0) as u32
 				})
 				.unwrap();
@@ -1518,11 +1029,11 @@ impl ImageCropper {
 		}
 
 		self.crop_image_to_bytes(
-			&image,
-			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), difficulty_rects())
-				.ok_or_else(|| "Could not find difficulty area in picture")?
-				.to_absolute()
-				.to_rect(),
+			image,
+			ctx.ui_measurements.interpolate(
+				UIMeasurementRect::ScoreScreen(ScoreScreenRect::Difficulty),
+				image,
+			)?,
 		)?;
 
 		let mut t = Tesseract::new(None, Some("eng"))?.set_image_from_mem(&self.bytes)?;
@@ -1551,13 +1062,15 @@ impl ImageCropper {
 	}
 	// }}}
 	// {{{ Read score kind
-	pub fn read_score_kind(&mut self, image: &DynamicImage) -> Result<ScoreKind, Error> {
+	pub fn read_score_kind(
+		&mut self,
+		ctx: &UserContext,
+		image: &DynamicImage,
+	) -> Result<ScoreKind, Error> {
 		self.crop_image_to_bytes(
 			&image,
-			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), score_kind_rects())
-				.ok_or_else(|| "Could not find score kind area in picture")?
-				.to_absolute()
-				.to_rect(),
+			ctx.ui_measurements
+				.interpolate(UIMeasurementRect::PlayKind, image)?,
 		)?;
 
 		let mut t = Tesseract::new(None, Some("eng"))?.set_image_from_mem(&self.bytes)?;
@@ -1587,16 +1100,16 @@ impl ImageCropper {
 	// {{{ Read song
 	pub fn read_song<'a>(
 		&mut self,
+		ctx: &'a UserContext,
 		image: &DynamicImage,
-		cache: &'a SongCache,
 		difficulty: Difficulty,
 	) -> Result<(&'a Song, &'a Chart), Error> {
 		self.crop_image_to_bytes(
 			&image,
-			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), title_rects())
-				.ok_or_else(|| "Could not find title area in picture")?
-				.to_absolute()
-				.to_rect(),
+			ctx.ui_measurements.interpolate(
+				UIMeasurementRect::ScoreScreen(ScoreScreenRect::Title),
+				image,
+			)?,
 		)?;
 
 		let mut t = Tesseract::new(None, Some("eng"))?
@@ -1619,7 +1132,7 @@ impl ImageCropper {
 		// 	))?;
 		// }
 
-		guess_chart_name(raw_text, cache, Some(difficulty), false)
+		guess_chart_name(raw_text, &ctx.song_cache, Some(difficulty), false)
 	}
 	// }}}
 	// {{{ Read jacket
@@ -1631,39 +1144,32 @@ impl ImageCropper {
 		difficulty: Difficulty,
 		out_rect: &mut Option<Rect>,
 	) -> Result<(&'a Song, &'a Chart), Error> {
-		let rect = RelativeRect::from_aspect_ratio(
-			ImageDimensions::from_image(image),
+		let rect = ctx.ui_measurements.interpolate(
 			if kind == ScoreKind::ScoreScreen {
-				jacket_score_screen_rects()
+				UIMeasurementRect::ScoreScreen(ScoreScreenRect::Jacket)
 			} else {
-				jacket_song_select_rects()
+				UIMeasurementRect::SongSelect(SongSelectRect::Jacket)
 			},
-		)
-		.ok_or_else(|| "Could not find jacket area in picture")?
-		.to_absolute();
+			image,
+		)?;
 
 		let cropped = if kind == ScoreKind::ScoreScreen {
-			*out_rect = Some(rect.to_rect());
-			image.view(rect.x, rect.y, rect.width, rect.height)
+			*out_rect = Some(rect);
+			image.view(rect.x as u32, rect.y as u32, rect.width, rect.height)
 		} else {
 			let angle = f32::atan2(rect.height as f32, rect.width as f32);
 			let side = rect.height + rect.width;
 			rotate(
 				image,
-				Rect::new(rect.x as i32, rect.y as i32, side, side),
-				(rect.x as i32, (rect.y + rect.height) as i32),
+				Rect::new(rect.x, rect.y, side, side),
+				(rect.x, rect.y + rect.height as i32),
 				angle,
 			);
 
 			let len = (rect.width.pow(2) + rect.height.pow(2)).sqrt();
 
-			*out_rect = Some(Rect::new(
-				rect.x as i32,
-				(rect.y + rect.height) as i32,
-				len,
-				len,
-			));
-			image.view(rect.x, rect.y + rect.height, len, len)
+			*out_rect = Some(Rect::new(rect.x, rect.y + rect.height as i32, len, len));
+			image.view(rect.x as u32, rect.y as u32 + rect.height, len, len)
 		};
 		let (distance, song_id) = ctx
 			.jacket_cache
@@ -1682,19 +1188,20 @@ impl ImageCropper {
 	}
 	// }}}
 	// {{{ Read distribution
-	pub fn read_distribution(&mut self, image: &DynamicImage) -> Result<(u32, u32, u32), Error> {
+	pub fn read_distribution(
+		&mut self,
+		ctx: &UserContext,
+		image: &DynamicImage,
+	) -> Result<(u32, u32, u32), Error> {
 		let mut t = Tesseract::new(None, Some("eng"))?
 			.set_variable("classify_bln_numeric_mode", "1")?
 			.set_variable("tessedit_char_whitelist", "0123456789")?;
-		t.set_page_seg_mode(PageSegMode::PsmSingleLine);
+		t.set_page_seg_mode(PageSegMode::PsmSparseText);
 
-		let (pure_rects, far_rects, lost_rects) = note_distribution_rects();
 		self.crop_image_to_bytes(
 			&image,
-			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), pure_rects)
-				.ok_or_else(|| "Could not find pure-rect area in picture")?
-				.to_absolute()
-				.to_rect(),
+			ctx.ui_measurements
+				.interpolate(UIMeasurementRect::ScoreScreen(ScoreScreenRect::Pure), image)?,
 		)?;
 
 		t = t.set_image_from_mem(&self.bytes)?.recognize()?;
@@ -1703,10 +1210,8 @@ impl ImageCropper {
 
 		self.crop_image_to_bytes(
 			&image,
-			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), far_rects)
-				.ok_or_else(|| "Could not find far-rect area in picture")?
-				.to_absolute()
-				.to_rect(),
+			ctx.ui_measurements
+				.interpolate(UIMeasurementRect::ScoreScreen(ScoreScreenRect::Far), image)?,
 		)?;
 
 		t = t.set_image_from_mem(&self.bytes)?.recognize()?;
@@ -1715,10 +1220,8 @@ impl ImageCropper {
 
 		self.crop_image_to_bytes(
 			&image,
-			RelativeRect::from_aspect_ratio(ImageDimensions::from_image(image), lost_rects)
-				.ok_or_else(|| "Could not find lost-rect area in picture")?
-				.to_absolute()
-				.to_rect(),
+			ctx.ui_measurements
+				.interpolate(UIMeasurementRect::ScoreScreen(ScoreScreenRect::Lost), image)?,
 		)?;
 
 		t = t.set_image_from_mem(&self.bytes)?.recognize()?;

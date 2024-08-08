@@ -75,8 +75,8 @@ pub async fn magic(
 			if let Some(_) = file.dimensions() {
 				// {{{ Image pre-processing
 				let bytes = file.download().await?;
-				let image = image::load_from_memory(&bytes)?;
-				let mut image = image.resize(1024, 1024, FilterType::Nearest);
+				let mut image = image::load_from_memory(&bytes)?;
+				// image = image.resize(1024, 1024, FilterType::Nearest);
 				// }}}
 				// {{{ Detection
 				// Create cropper and run OCR
@@ -96,7 +96,7 @@ pub async fn magic(
 					.content(format!("Image {}: reading kind", i + 1));
 				handle.edit(ctx, edited).await?;
 
-				let kind = match cropper.read_score_kind(&ocr_image) {
+				let kind = match cropper.read_score_kind(ctx.data(), &ocr_image) {
 					// {{{ OCR error handling
 					Err(err) => {
 						error_with_image(
@@ -121,7 +121,7 @@ pub async fn magic(
 				handle.edit(ctx, edited).await?;
 
 				// Do not use `ocr_image` because this reads the colors
-				let difficulty = match cropper.read_difficulty(&image, kind) {
+				let difficulty = match cropper.read_difficulty(ctx.data(), &image, kind) {
 					// {{{ OCR error handling
 					Err(err) => {
 						error_with_image(
@@ -146,9 +146,13 @@ pub async fn magic(
 				let song_by_jacket = cropper
 					.read_jacket(ctx.data(), &mut image, kind, difficulty, &mut jacket_rect)
 					.await;
-				let note_distribution = cropper.read_distribution(&image)?;
-				// }}}
+				// image.invert();
 				ocr_image.invert();
+				let note_distribution = match kind {
+					ScoreKind::ScoreScreen => Some(cropper.read_distribution(ctx.data(), &image)?),
+					ScoreKind::SongSelect => None,
+				};
+				// }}}
 				// {{{ Title
 				let edited = CreateReply::default()
 					.reply(true)
@@ -158,7 +162,7 @@ pub async fn magic(
 				let song_by_name = match kind {
 					ScoreKind::SongSelect => None,
 					ScoreKind::ScoreScreen => {
-						Some(cropper.read_song(&ocr_image, &ctx.data().song_cache, difficulty))
+						Some(cropper.read_song(ctx.data(), &ocr_image, difficulty))
 					}
 				};
 
@@ -237,29 +241,33 @@ Title error: {:?}
 					.content(format!("Image {}: reading score", i + 1));
 				handle.edit(ctx, edited).await?;
 
-				let score_possibilities =
-					match cropper.read_score(Some(chart.note_count), &ocr_image, kind) {
-						// {{{ OCR error handling
-						Err(err) => {
-							error_with_image(
-								ctx,
-								&cropper.bytes,
-								&file.filename,
-								"Could not read score from picture",
-								&err,
-							)
-							.await?;
+				let score_possibilities = match cropper.read_score(
+					ctx.data(),
+					Some(chart.note_count),
+					&ocr_image,
+					kind,
+				) {
+					// {{{ OCR error handling
+					Err(err) => {
+						error_with_image(
+							ctx,
+							&cropper.bytes,
+							&file.filename,
+							"Could not read score from picture",
+							&err,
+						)
+						.await?;
 
-							continue;
-						}
-						// }}}
-						Ok(scores) => scores,
-					};
+						continue;
+					}
+					// }}}
+					Ok(scores) => scores,
+				};
 				// }}}
 				// {{{ Build play
 				let (score, maybe_fars, score_warning) = Score::resolve_ambiguities(
 					score_possibilities,
-					Some(note_distribution),
+					note_distribution,
 					chart.note_count,
 				)
 				.map_err(|err| {

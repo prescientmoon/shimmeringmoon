@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use image::{ImageBuffer, Rgb};
 use sqlx::SqlitePool;
 
-use crate::context::Error;
+use crate::{bitmap::Color, context::Error};
 
 // {{{ Difficuly
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, sqlx::Type)]
@@ -42,6 +42,14 @@ impl TryFrom<String> for Difficulty {
 		Err(format!("Cannot convert {} to difficulty", value))
 	}
 }
+
+pub const DIFFICULTY_MENU_PIXEL_COLORS: [Color; Difficulty::DIFFICULTIES.len()] = [
+	Color::from_rgb_int(0xAAE5F7),
+	Color::from_rgb_int(0xBFDD85),
+	Color::from_rgb_int(0xCB74AB),
+	Color::from_rgb_int(0xC4B7D3),
+	Color::from_rgb_int(0xF89AAC),
+];
 // }}}
 // {{{ Side
 #[derive(Debug, Clone, Copy)]

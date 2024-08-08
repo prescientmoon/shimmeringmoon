@@ -2,7 +2,9 @@
 
 use std::{fs, path::PathBuf};
 
-use crate::context::Error;
+use image::GenericImage;
+
+use crate::{bitmap::Rect, context::Error};
 
 // {{{ Rects
 #[derive(Debug, Clone, Copy)]
@@ -60,6 +62,7 @@ impl UIMeasurementRect {
 pub const UI_RECT_COUNT: usize = 15;
 // }}}
 // {{{ Measurement
+#[derive(Debug)]
 pub struct UIMeasurement {
 	dimensions: [u32; 2],
 	datapoints: [u32; UI_RECT_COUNT * 4],
@@ -86,6 +89,7 @@ impl UIMeasurement {
 }
 // }}}
 // {{{ Measurements
+#[derive(Debug)]
 pub struct UIMeasurements {
 	pub measurements: Vec<UIMeasurement>,
 }
@@ -106,7 +110,7 @@ impl UIMeasurements {
 				for (j, str) in line.split_whitespace().enumerate().take(2) {
 					measurement.dimensions[j] = u32::from_str_radix(str, 10)?;
 				}
-			} else if i == UI_RECT_COUNT + 2 {
+			} else if i == UI_RECT_COUNT + 1 {
 				measurements.push(measurement);
 				measurement = UIMeasurement::default();
 			} else {
@@ -117,7 +121,6 @@ impl UIMeasurements {
 		}
 		// }}}
 
-		measurements.push(measurement);
 		measurements.sort_by_key(|r| (r.aspect_ratio() * 1000.0) as u32);
 
 		// {{{ Filter datapoints that are close together
@@ -135,6 +138,7 @@ impl UIMeasurements {
 		}
 		// }}}
 
+		println!("Read {} UI measurements", measurements.len());
 		Ok(Self { measurements })
 	}
 	// }}}
@@ -142,9 +146,9 @@ impl UIMeasurements {
 	pub fn interpolate(
 		&self,
 		rect: UIMeasurementRect,
-		dimensions: [u32; 2],
-	) -> Result<[u32; 4], Error> {
-		let aspect_ratio = dimensions[0] as f32 / dimensions[1] as f32;
+		image: &impl GenericImage,
+	) -> Result<Rect, Error> {
+		let aspect_ratio = image.width() as f32 / image.height() as f32;
 		let r = rect.to_index();
 
 		for i in 0..(self.measurements.len() - 1) {
@@ -157,6 +161,7 @@ impl UIMeasurements {
 			if (i == 0 || low_ratio <= aspect_ratio)
 				&& (aspect_ratio <= high_ratio || i == self.measurements.len() - 2)
 			{
+				let dimensions = [image.width(), image.height()];
 				let p = (aspect_ratio - low_ratio) / (high_ratio - low_ratio);
 				let mut out = [0; 4];
 				for j in 0..4 {
@@ -165,7 +170,7 @@ impl UIMeasurements {
 					out[j] = ((l + (h - l) * p) * dimensions[j % 2] as f32) as u32;
 				}
 
-				return Ok(out);
+				return Ok(Rect::new(out[0] as i32, out[1] as i32, out[2], out[3]));
 			}
 		}
 

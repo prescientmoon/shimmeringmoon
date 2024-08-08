@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use sqlx::SqlitePool;
 
-use crate::{chart::SongCache, jacket::JacketCache, ocr::ui_interp::UIMeasurements};
+use crate::{chart::SongCache, jacket::JacketCache, ocr::ui::UIMeasurements};
 
 // Types used by all command functions
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

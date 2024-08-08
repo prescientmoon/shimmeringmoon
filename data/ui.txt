@@ -1,11 +1,28 @@
-2160 1620
+2532 1170 Inksurgence
+ 237   16  273   60 Play kind
+1037  462  476   91 Score screen — score
+ 274  434  614  611 Score screen — jacket
+ 378  332  161   34 Score screen — difficulty
+1288  849   82   39 Score screen — pures
+1288  909   82   39 Score screen — fars
+1288  969   82   39 Score screen — losts
+ 584  377   74   31 Score screen — max recall
+ 634  116 1252  102 Score screen — title
+  95  256  278   49 Song  select — score
+ 465  319  730   45 Song  select — jacket
+  89  153    0    0 Song  select — PST
+ 269  153    0    0 Song  select — PRS
+ 452  153    0    0 Song  select — FTR
+ 638  153    0    0 Song  select — ETR/BYD
+
+2160 1620 prescientmoon
   19   15  273   60 Play kind
- 841  683  500   92 Score screen — score
+ 841  682  500   94 Score screen — score
   51  655  633  632 Score screen — jacket
  155  546  167   38 Score screen — difficulty
-1095 1087   87   34 Score screen — pures
-1095 1150   87   34 Score screen — fars
-1095 1212   87   34 Score screen — losts
+1104 1087   87   34 Score screen — pures
+1104 1150   87   34 Score screen — fars
+1104 1212   87   34 Score screen — losts
  364  593   87   34 Score screen — max recall
  438  324 1244  104 Score screen — title
   15  264  291   52 Song  select — score

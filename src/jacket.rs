@@ -220,7 +220,7 @@ impl JacketCache {
 			.iter()
 			.map(|(i, v)| (i, v, v.distance_squared_to(&vec)))
 			.min_by(|(_, _, d1), (_, _, d2)| d1.partial_cmp(d2).expect("NaN distance encountered"))
-			.map(|(i, _, d)| (d, i))
+			.map(|(i, _, d)| (d.sqrt(), i))
 	}
 	// }}}
 }
