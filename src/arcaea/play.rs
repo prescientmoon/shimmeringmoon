@@ -255,7 +255,7 @@ impl Play {
 		author: Option<&poise::serenity_prelude::User>,
 	) -> Result<(CreateEmbed, Option<CreateAttachment>), Error> {
 		// {{{ Get previously best score
-		let previously_best = query_as!(
+		let prev_play = query_as!(
 			DbPlay,
 			"
         SELECT * FROM plays
@@ -277,6 +277,8 @@ impl Play {
 			)
 		})?
 		.map(|p| p.to_play());
+		let prev_score = prev_play.as_ref().map(|p| p.score);
+		let prev_zeta_score = prev_play.as_ref().map(|p| p.zeta_score);
 		// }}}
 
 		let attachement_name = format!("{:?}-{:?}-{:?}.png", song.id, self.score.0, index);
@@ -290,43 +292,23 @@ impl Play {
 				"{} [{:?} {}]",
 				&song.title, chart.difficulty, chart.level
 			))
-			.field("Score", format!("{} (+?)", self.score), true)
+			.field("Score", self.score.display_with_diff(prev_score)?, true)
 			.field(
 				"Rating",
-				format!(
-					"{:.2} (+?)",
-					self.score.play_rating_f32(chart.chart_constant)
-				),
+				self.score.display_play_rating(prev_score, chart)?,
 				true,
 			)
 			.field("Grade", format!("{}", self.score.grade()), true)
-			.field("ξ-Score", format!("{} (+?)", self.zeta_score), true)
+			.field(
+				"ξ-Score",
+				self.zeta_score.display_with_diff(prev_zeta_score)?,
+				true,
+			)
 			// {{{ ξ-Rating
 			.field(
 				"ξ-Rating",
-				{
-					let play_rating = self.zeta_score.play_rating_f32(chart.chart_constant);
-					if let Some(previous) = previously_best {
-						let previous_play_rating =
-							previous.zeta_score.play_rating_f32(chart.chart_constant);
-
-						if play_rating >= previous_play_rating {
-							format!(
-								"{:.2} (+{})",
-								play_rating,
-								play_rating - previous_play_rating
-							)
-						} else {
-							format!(
-								"{:.2} (-{})",
-								play_rating,
-								play_rating - previous_play_rating
-							)
-						}
-					} else {
-						format!("{:.2}", play_rating)
-					}
-				},
+				self.zeta_score
+					.display_play_rating(prev_zeta_score, chart)?,
 				true,
 			)
 			// }}}

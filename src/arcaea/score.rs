@@ -1,8 +1,10 @@
-use std::fmt::Display;
+use std::fmt::{Display, Write};
 
 use num::Rational64;
 
 use crate::context::Error;
+
+use super::chart::Chart;
 
 // {{{ Grade
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -124,6 +126,25 @@ impl Score {
 	#[inline]
 	pub fn play_rating_f32(self, chart_constant: u32) -> f32 {
 		(self.play_rating(chart_constant)) as f32 / 100.0
+	}
+
+	pub fn display_play_rating(self, prev: Option<Self>, chart: &Chart) -> Result<String, Error> {
+		let mut buffer = String::with_capacity(14);
+
+		let play_rating = self.play_rating_f32(chart.chart_constant);
+		write!(buffer, "{:.2}", play_rating)?;
+
+		if let Some(prev) = prev {
+			let prev_play_rating = prev.play_rating_f32(chart.chart_constant);
+
+			if play_rating >= prev_play_rating {
+				write!(buffer, " (+{:.2})", play_rating - prev_play_rating)?;
+			} else {
+				write!(buffer, " (-{:.2})", play_rating - prev_play_rating)?;
+			}
+		}
+
+		Ok(buffer)
 	}
 	// }}}
 	// {{{ Score => grade
@@ -305,6 +326,41 @@ impl Score {
 				Err("Cannot disambiguate between more than one score without a note distribution.")?
 			}
 		}
+	}
+	// }}}
+	// {{{ Display self with diff
+	/// Similar to the display implementation, but without the padding
+	/// to at least 7 digits.
+	fn display_mini_into(self, buffer: &mut String) -> Result<(), Error> {
+		let score = self.0;
+		if self.0 < 1_000 {
+			write!(buffer, "{}", score)?;
+		} else if self.0 < 1_000_000 {
+			write!(buffer, "{}'{:0>3}", (score / 1000), score % 1000)?;
+		} else {
+			write!(buffer, "{}", self)?;
+		}
+
+		Ok(())
+	}
+
+	pub fn display_with_diff(self, prev: Option<Self>) -> Result<String, Error> {
+		let mut buffer = String::with_capacity(24);
+		write!(buffer, "{}", self)?;
+
+		if let Some(prev) = prev {
+			write!(buffer, " (")?;
+			if self >= prev {
+				write!(buffer, "+")?;
+				Score(self.0 - prev.0).display_mini_into(&mut buffer)?;
+			} else {
+				write!(buffer, "-")?;
+				Score(prev.0 - self.0).display_mini_into(&mut buffer)?;
+			}
+			write!(buffer, ")")?;
+		}
+
+		Ok(buffer)
 	}
 	// }}}
 }

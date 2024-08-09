@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use std::{cell::RefCell, env::var, path::PathBuf, str::FromStr, sync::OnceLock};
 
 use freetype::{Face, Library};
