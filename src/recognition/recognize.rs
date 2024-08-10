@@ -166,7 +166,7 @@ impl ImageAnalyzer {
 		let desired_height = 100;
 		let x_scaling_factor = match kind {
 			ScoreKind::SongSelect => 1.0,
-			ScoreKind::ScoreScreen => 0.66,
+			ScoreKind::ScoreScreen => 0.666,
 		};
 
 		let image = self.interp_crop_resize(
