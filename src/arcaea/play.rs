@@ -10,6 +10,7 @@ use crate::arcaea::chart::{Chart, Song};
 use crate::context::{Error, UserContext};
 use crate::user::User;
 
+use super::chart::SongCache;
 use super::score::Score;
 
 // {{{ Create play
@@ -263,6 +264,7 @@ impl Play {
         AND chart_id=?
         AND created_at<?
         ORDER BY score DESC
+        LIMIT 1
     ",
 			user.id,
 			chart.id,
@@ -349,5 +351,62 @@ impl Play {
 		Ok((embed, icon_attachement))
 	}
 	// }}}
+}
+// }}}
+// {{{ General functions
+pub type PlayCollection<'a> = Vec<(Play, &'a Song, &'a Chart)>;
+
+pub async fn get_b30_plays<'a>(
+	db: &SqlitePool,
+	song_cache: &'a SongCache,
+	user: &User,
+) -> Result<Result<PlayCollection<'a>, &'static str>, Error> {
+	// {{{ DB data fetching
+	let plays: Vec<DbPlay> = query_as(
+		"
+        SELECT id, chart_id, user_id,
+        created_at, MAX(score) as score, zeta_score,
+        creation_ptt, creation_zeta_ptt, far_notes, max_recall, discord_attachment_id
+        FROM plays p
+        WHERE user_id = ?
+        GROUP BY chart_id
+        ORDER BY score DESC
+    ",
+	)
+	.bind(user.id)
+	.fetch_all(db)
+	.await?;
+	// }}}
+
+	if plays.len() < 30 {
+		return Ok(Err("Not enough plays found"));
+	}
+
+	// {{{ B30 computation
+	// NOTE: we reallocate here, although we do not have much of a choice,
+	// unless we want to be lazy about things
+	let mut plays: Vec<(Play, &Song, &Chart)> = plays
+		.into_iter()
+		.map(|play| {
+			let play = play.to_play();
+			let (song, chart) = song_cache.lookup_chart(play.chart_id)?;
+			Ok((play, song, chart))
+		})
+		.collect::<Result<Vec<_>, Error>>()?;
+
+	plays.sort_by_key(|(play, _, chart)| -play.score.play_rating(chart.chart_constant));
+	plays.truncate(30);
+	// }}}
+
+	Ok(Ok(plays))
+}
+
+#[inline]
+pub fn compute_b30_ptt(plays: &PlayCollection<'_>) -> i32 {
+	plays
+		.iter()
+		.map(|(play, _, chart)| play.score.play_rating(chart.chart_constant))
+		.sum::<i32>()
+		/ 30
 }
 // }}}

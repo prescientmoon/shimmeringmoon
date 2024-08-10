@@ -4,7 +4,8 @@ use std::str::FromStr;
 use std::{env, fs};
 
 use hypertesseract::{PageSegMode, Tesseract};
-use image::{DynamicImage, GenericImageView};
+use image::imageops::{resize, FilterType};
+use image::{DynamicImage, GenericImageView, RgbaImage};
 use image::{ImageBuffer, Rgba};
 use num::integer::Roots;
 use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage, Timestamp};
@@ -46,26 +47,27 @@ impl ImageAnalyzer {
 	}
 
 	// {{{ Crop
-	pub fn crop_image_to_bytes(&mut self, image: &DynamicImage, rect: Rect) -> Result<(), Error> {
+	#[inline]
+	fn should_save_debug_images() -> bool {
+		env::var("SHIMMERING_DEBUG_IMGS")
+			.map(|s| s == "1")
+			.unwrap_or(false)
+	}
+
+	fn save_image(&mut self, image: &RgbaImage) -> Result<(), Error> {
 		self.clear();
-		let image = image.crop_imm(rect.x as u32, rect.y as u32, rect.width, rect.height);
 		let mut cursor = Cursor::new(&mut self.bytes);
 		image.write_to(&mut cursor, image::ImageFormat::Png)?;
 
-		fs::write(format!("./logs/{}.png", Timestamp::now()), &self.bytes)?;
+		if Self::should_save_debug_images() {
+			fs::write(format!("./logs/{}.png", Timestamp::now()), &self.bytes)?;
+		}
 
 		Ok(())
 	}
 
 	#[inline]
 	pub fn crop(&mut self, image: &DynamicImage, rect: Rect) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
-		if env::var("SHIMMERING_DEBUG_IMGS")
-			.map(|s| s == "1")
-			.unwrap_or(false)
-		{
-			self.crop_image_to_bytes(image, rect).unwrap();
-		}
-
 		image
 			.crop_imm(rect.x as u32, rect.y as u32, rect.width, rect.height)
 			.to_rgba8()
@@ -80,7 +82,35 @@ impl ImageAnalyzer {
 	) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, Error> {
 		let rect = ctx.ui_measurements.interpolate(ui_rect, image)?;
 		self.last_rect = Some((ui_rect, rect));
-		Ok(self.crop(image, rect))
+
+		let result = self.crop(image, rect);
+		if Self::should_save_debug_images() {
+			self.save_image(&result).unwrap();
+		}
+
+		Ok(result)
+	}
+
+	#[inline]
+	pub fn interp_crop_resize(
+		&mut self,
+		ctx: &UserContext,
+		image: &DynamicImage,
+		ui_rect: UIMeasurementRect,
+		size: impl FnOnce(Rect) -> (u32, u32),
+	) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, Error> {
+		let rect = ctx.ui_measurements.interpolate(ui_rect, image)?;
+		let size = size(rect);
+		self.last_rect = Some((ui_rect, rect));
+
+		let result = self.crop(image, rect);
+		let result = resize(&result, size.0, size.1, FilterType::Nearest);
+
+		if Self::should_save_debug_images() {
+			self.save_image(&result).unwrap();
+		}
+
+		Ok(result)
 	}
 	// }}}
 	// {{{ Error handling
@@ -100,7 +130,8 @@ impl ImageAnalyzer {
 		));
 
 		if let Some((ui_rect, rect)) = self.last_rect {
-			self.crop_image_to_bytes(image, rect)?;
+			let cropped = self.crop(image, rect);
+			self.save_image(&cropped)?;
 
 			let bytes = std::mem::take(&mut self.bytes);
 			let error_attachement = CreateAttachment::bytes(bytes, filename);
@@ -131,13 +162,26 @@ impl ImageAnalyzer {
 		image: &DynamicImage,
 		kind: ScoreKind,
 	) -> Result<Vec<Score>, Error> {
-		let image = self.interp_crop(
+		// yes, this was painfully hand-picked
+		let desired_height = 100;
+		let x_scaling_factor = match kind {
+			ScoreKind::SongSelect => 1.0,
+			ScoreKind::ScoreScreen => 0.66,
+		};
+
+		let image = self.interp_crop_resize(
 			ctx,
 			image,
-			if kind == ScoreKind::ScoreScreen {
-				ScoreScreen(ScoreScreenRect::Score)
-			} else {
-				SongSelect(SongSelectRect::Score)
+			match kind {
+				ScoreKind::SongSelect => SongSelect(SongSelectRect::Score),
+				ScoreKind::ScoreScreen => ScoreScreen(ScoreScreenRect::Score),
+			},
+			|rect| {
+				(
+					(rect.width as f32 * desired_height as f32 / rect.height as f32
+						* x_scaling_factor) as u32,
+					desired_height,
+				)
 			},
 		)?;
 
@@ -423,11 +467,9 @@ impl ImageAnalyzer {
 			Err("No known jacket looks like this")?;
 		}
 
-		let item = ctx.song_cache.lookup(*song_id)?;
-		let chart = item.lookup(difficulty)?;
+		let (song, chart) = ctx.song_cache.lookup_by_difficulty(*song_id, difficulty)?;
 
-		// NOTE: this will reallocate a few strings, but it is what it is
-		Ok((&item.song, chart))
+		Ok((song, chart))
 	}
 	// }}}
 	// {{{ Read distribution

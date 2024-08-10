@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{num::NonZeroU16, path::PathBuf};
 
 use image::{ImageBuffer, Rgb};
 use sqlx::SqlitePool;
@@ -132,41 +132,80 @@ impl Chart {
 #[derive(Debug, Clone)]
 pub struct CachedSong {
 	pub song: Song,
-	charts: [Option<Chart>; 5],
+	chart_ids: [Option<NonZeroU16>; 5],
 }
 
 impl CachedSong {
 	#[inline]
-	pub fn new(song: Song, charts: [Option<Chart>; 5]) -> Self {
-		Self { song, charts }
+	pub fn new(song: Song) -> Self {
+		Self {
+			song,
+			chart_ids: [None; 5],
+		}
+	}
+}
+// }}}
+// {{{ Song cache
+#[derive(Debug, Clone, Default)]
+pub struct SongCache {
+	pub songs: Vec<Option<CachedSong>>,
+	pub charts: Vec<Option<Chart>>,
+}
+
+impl SongCache {
+	#[inline]
+	pub fn lookup_song(&self, id: u32) -> Result<&CachedSong, Error> {
+		self.songs
+			.get(id as usize)
+			.and_then(|i| i.as_ref())
+			.ok_or_else(|| format!("Could not find song with id {}", id).into())
 	}
 
 	#[inline]
-	pub fn lookup(&self, difficulty: Difficulty) -> Result<&Chart, Error> {
-		self.charts
-			.get(difficulty.to_index())
-			.and_then(|c| c.as_ref())
-			.ok_or_else(|| {
-				format!(
-					"Could not find difficulty {:?} for song {}",
-					difficulty, self.song.title
-				)
-				.into()
-			})
+	pub fn lookup_chart(&self, chart_id: u32) -> Result<(&Song, &Chart), Error> {
+		let chart = self
+			.charts
+			.get(chart_id as usize)
+			.and_then(|i| i.as_ref())
+			.ok_or_else(|| format!("Could not find chart with id {}", chart_id))?;
+		let song = &self.lookup_song(chart.song_id)?.song;
+
+		Ok((song, chart))
 	}
 
 	#[inline]
-	pub fn lookup_mut(&mut self, difficulty: Difficulty) -> Result<&mut Chart, Error> {
+	pub fn lookup_song_mut(&mut self, id: u32) -> Result<&mut CachedSong, Error> {
+		self.songs
+			.get_mut(id as usize)
+			.and_then(|i| i.as_mut())
+			.ok_or_else(|| format!("Could not find song with id {}", id).into())
+	}
+
+	#[inline]
+	pub fn lookup_chart_mut(&mut self, chart_id: u32) -> Result<&mut Chart, Error> {
 		self.charts
-			.get_mut(difficulty.to_index())
-			.and_then(|c| c.as_mut())
+			.get_mut(chart_id as usize)
+			.and_then(|i| i.as_mut())
+			.ok_or_else(|| format!("Could not find chart with id {}", chart_id).into())
+	}
+
+	#[inline]
+	pub fn lookup_by_difficulty(
+		&self,
+		id: u32,
+		difficulty: Difficulty,
+	) -> Result<(&Song, &Chart), Error> {
+		let cached_song = self.lookup_song(id)?;
+		let chart_id = cached_song.chart_ids[difficulty.to_index()]
 			.ok_or_else(|| {
 				format!(
-					"Could not find difficulty {:?} for song {}",
-					difficulty, self.song.title
+					"Cannot find chart {} [{difficulty:?}]",
+					cached_song.song.title
 				)
-				.into()
-			})
+			})?
+			.get() as u32;
+		let chart = self.lookup_chart(chart_id)?.1;
+		Ok((&cached_song.song, chart))
 	}
 
 	#[inline]
@@ -178,77 +217,13 @@ impl CachedSong {
 	pub fn charts_mut(&mut self) -> impl Iterator<Item = &mut Chart> {
 		self.charts.iter_mut().filter_map(|i| i.as_mut())
 	}
-}
-// }}}
-// {{{ Song cache
-#[derive(Debug, Clone, Default)]
-pub struct SongCache {
-	songs: Vec<Option<CachedSong>>,
-}
-
-impl SongCache {
-	#[inline]
-	pub fn lookup(&self, id: u32) -> Result<&CachedSong, Error> {
-		self.songs
-			.get(id as usize)
-			.and_then(|i| i.as_ref())
-			.ok_or_else(|| format!("Could not find song with id {}", id).into())
-	}
-
-	#[inline]
-	pub fn lookup_chart(&self, chart_id: u32) -> Result<(&Song, &Chart), Error> {
-		self.songs()
-			.find_map(|item| {
-				item.charts().find_map(|chart| {
-					if chart.id == chart_id {
-						Some((&item.song, chart))
-					} else {
-						None
-					}
-				})
-			})
-			.ok_or_else(|| format!("Could not find chart with id {}", chart_id).into())
-	}
-
-	#[inline]
-	pub fn lookup_mut(&mut self, id: u32) -> Result<&mut CachedSong, Error> {
-		self.songs
-			.get_mut(id as usize)
-			.and_then(|i| i.as_mut())
-			.ok_or_else(|| format!("Could not find song with id {}", id).into())
-	}
-
-	#[inline]
-	pub fn lookup_chart_mut(&mut self, chart_id: u32) -> Result<&mut Chart, Error> {
-		self.songs_mut()
-			.find_map(|item| {
-				item.charts_mut().find_map(|chart| {
-					if chart.id == chart_id {
-						Some(chart)
-					} else {
-						None
-					}
-				})
-			})
-			.ok_or_else(|| format!("Could not find chart with id {}", chart_id).into())
-	}
-
-	#[inline]
-	pub fn songs(&self) -> impl Iterator<Item = &CachedSong> {
-		self.songs.iter().filter_map(|i| i.as_ref())
-	}
-
-	#[inline]
-	pub fn songs_mut(&mut self) -> impl Iterator<Item = &mut CachedSong> {
-		self.songs.iter_mut().filter_map(|i| i.as_mut())
-	}
 
 	// {{{ Populate cache
 	pub async fn new(pool: &SqlitePool) -> Result<Self, Error> {
 		let mut result = Self::default();
 
+		// {{{ Songs
 		let songs = sqlx::query!("SELECT * FROM songs").fetch_all(pool).await?;
-
 		for song in songs {
 			let song = Song {
 				id: song.id as u32,
@@ -265,31 +240,42 @@ impl SongCache {
 			if song_id >= result.songs.len() {
 				result.songs.resize(song_id + 1, None);
 			}
-
-			let charts = sqlx::query!("SELECT * FROM charts WHERE song_id=?", song.id)
-				.fetch_all(pool)
-				.await?;
-
-			let mut chart_cache: [Option<_>; 5] = Default::default();
-			for chart in charts {
-				let chart = Chart {
-					id: chart.id as u32,
-					song_id: chart.song_id as u32,
-					shorthand: chart.shorthand,
-					difficulty: Difficulty::try_from(chart.difficulty)?,
-					level: chart.level,
-					chart_constant: chart.chart_constant as u32,
-					note_count: chart.note_count as u32,
-					cached_jacket: None,
-					note_design: chart.note_design,
-				};
-
-				let index = chart.difficulty.to_index();
-				chart_cache[index] = Some(chart);
-			}
-
-			result.songs[song_id] = Some(CachedSong::new(song, chart_cache));
+			result.songs[song_id] = Some(CachedSong::new(song));
 		}
+		// }}}
+		// {{{ Charts
+		let charts = sqlx::query!("SELECT * FROM charts").fetch_all(pool).await?;
+		for chart in charts {
+			let chart = Chart {
+				id: chart.id as u32,
+				song_id: chart.song_id as u32,
+				shorthand: chart.shorthand,
+				difficulty: Difficulty::try_from(chart.difficulty)?,
+				level: chart.level,
+				chart_constant: chart.chart_constant as u32,
+				note_count: chart.note_count as u32,
+				cached_jacket: None,
+				note_design: chart.note_design,
+			};
+
+			// {{{ Tie chart to song
+			{
+				let index = chart.difficulty.to_index();
+				result.lookup_song_mut(chart.song_id)?.chart_ids[index] =
+					Some(NonZeroU16::new(chart.id as u16).unwrap());
+			}
+			// }}}
+			// {{{ Save chart to cache
+			{
+				let index = chart.id as usize;
+				if index >= result.charts.len() {
+					result.charts.resize(index + 1, None);
+				}
+				result.charts[index] = Some(chart);
+			}
+			// }}}
+		}
+		// }}}
 
 		Ok(result)
 	}

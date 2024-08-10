@@ -17,10 +17,11 @@ use poise::{
 use sqlx::query_as;
 
 use crate::{
-	arcaea::chart::{Chart, Song},
-	arcaea::jacket::BITMAP_IMAGE_SIZE,
-	arcaea::play::{DbPlay, Play},
-	arcaea::score::Score,
+	arcaea::{
+		jacket::BITMAP_IMAGE_SIZE,
+		play::{compute_b30_ptt, get_b30_plays, DbPlay},
+		score::Score,
+	},
 	assets::{
 		get_b30_background, get_count_background, get_difficulty_background, get_grade_background,
 		get_name_backgound, get_ptt_emblem, get_score_background, get_status_background,
@@ -30,6 +31,7 @@ use crate::{
 	context::{Context, Error},
 	get_user,
 	recognition::fuzzy_song_name::guess_song_and_chart,
+	reply_errors,
 	user::discord_it_to_discord_user,
 };
 
@@ -121,14 +123,16 @@ pub async fn plot(
 
 	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
 
+	// SAFETY: we limit the amount of plotted plays to 1000.
 	let plays = query_as!(
 		DbPlay,
 		"
-            SELECT * FROM plays
-            WHERE user_id=?
-            AND chart_id=?
-            ORDER BY created_at ASC
-        ",
+      SELECT * FROM plays
+      WHERE user_id=?
+      AND chart_id=?
+      ORDER BY created_at ASC
+      LIMIT 1000
+    ",
 		user.id,
 		chart.id
 	)
@@ -230,41 +234,13 @@ pub async fn plot(
 #[poise::command(prefix_command, slash_command)]
 pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 	let user = get_user!(&ctx);
+	let user_ctx = ctx.data();
+	let plays = reply_errors!(
+		ctx,
+		get_b30_plays(&user_ctx.db, &user_ctx.song_cache, &user).await?
+	);
 
-	let plays: Vec<DbPlay> = query_as(
-		"
-        SELECT id, chart_id, user_id,
-        created_at, MAX(score) as score, zeta_score,
-        creation_ptt, creation_zeta_ptt, far_notes, max_recall, discord_attachment_id
-        FROM plays p
-        WHERE user_id = ?
-        GROUP BY chart_id
-        ORDER BY score DESC
-    ",
-	)
-	.bind(user.id)
-	.fetch_all(&ctx.data().db)
-	.await?;
-
-	if plays.len() < 30 {
-		ctx.reply("Not enough plays found").await?;
-		return Ok(());
-	}
-
-	// TODO: consider not reallocating everything here
-	let mut plays: Vec<(Play, &Song, &Chart)> = plays
-		.into_iter()
-		.map(|play| {
-			let play = play.to_play();
-			// TODO: change the .lookup to perform binary search or something
-			let (song, chart) = ctx.data().song_cache.lookup_chart(play.chart_id)?;
-			Ok((play, song, chart))
-		})
-		.collect::<Result<Vec<_>, Error>>()?;
-
-	plays.sort_by_key(|(play, _, chart)| -play.score.play_rating(chart.chart_constant));
-	plays.truncate(30);
-
+	// {{{ Layout
 	let mut layout = LayoutManager::default();
 	let jacket_area = layout.make_box(BITMAP_IMAGE_SIZE, BITMAP_IMAGE_SIZE);
 	let jacket_with_border = layout.margin_uniform(jacket_area, 3);
@@ -284,14 +260,15 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 	let item_with_margin = layout.margin_xy(item_area, 22, 17);
 	let (item_grid, item_origins) = layout.repeated_evenly(item_with_margin, (5, 6));
 	let root = layout.margin_uniform(item_grid, 30);
-
-	// layout.normalize(root);
+	// }}}
+	// {{{ Rendering prep
 	let width = layout.width(root);
 	let height = layout.height(root);
 
 	let canvas = BitmapCanvas::new(width, height);
 	let mut drawer = LayoutDrawer::new(layout, canvas);
-
+	// }}}
+	// {{{ Render background
 	let bg = get_b30_background();
 
 	drawer.blit_rbg(
@@ -304,6 +281,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 		bg.dimensions(),
 		bg.as_raw(),
 	);
+	// }}}
 
 	for (i, origin) in item_origins.enumerate() {
 		drawer
@@ -610,7 +588,12 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 	let mut cursor = Cursor::new(&mut out_buffer);
 	image.write_to(&mut cursor, image::ImageFormat::Png)?;
 
-	let reply = CreateReply::default().attachment(CreateAttachment::bytes(out_buffer, "b30.png"));
+	let reply = CreateReply::default()
+		.attachment(CreateAttachment::bytes(out_buffer, "b30.png"))
+		.content(format!(
+			"Your ptt is {:.2}",
+			compute_b30_ptt(&plays) as f32 / 100.0
+		));
 	ctx.send(reply).await?;
 
 	Ok(())

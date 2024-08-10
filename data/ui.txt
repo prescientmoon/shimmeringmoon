@@ -15,6 +15,23 @@
  452  153    0    0 Song  select — FTR
  638  153    0    0 Song  select — ETR/BYD
 
+2340 1080 KauanHenzon
+ 228   10  245   57 Play kind
+ 977  418  403   96 Score screen — score
+ 255  401  564  564 Score screen — jacket
+ 350  305  140   34 Score screen — difficulty
+1192  783   78   38 Score screen — pures
+1192  838   78   38 Score screen — fars
+1192  893   78   38 Score screen — losts
+ 549  344   84   36 Score screen — max recall
+ 528  112 1284   85 Score screen — title
+  84  235  240   48 Song  select — score
+ 432  296  676   37 Song  select — jacket
+  83  141    0    0 Song  select — PST
+ 251  141    0    0 Song  select — PRS
+ 419  141    0    0 Song  select — FTR
+ 587  141    0    0 Song  select — ETR/BYD
+
 2160 1620 prescientmoon
   19   15  273   60 Play kind
  841  682  500   94 Score screen — score
@@ -31,3 +48,20 @@
  199  159    0    0 Song  select — PRS
  389  159    0    0 Song  select — FTR
  581  159    0    0 Song  select — ETR/BYD
+
+2220 1080 MathNoob
+ 169   16  250   53 Play kind
+ 900  419  439   95 Score screen — score
+ 193  401  565  565 Score screen — jacket
+ 287  304  138   35 Score screen — difficulty
+1128  782   86   39 Score screen — pures
+1128  837   86   39 Score screen — fars
+1128  892   86   39 Score screen — losts
+ 486  345   85   35 Score screen — max recall
+ 346  112 1467   87 Score screen — title
+  82  233  257   51 Song  select — score
+ 393  296  674   38 Song  select — jacket
+  84  142    0    0 Song  select — PST
+ 251  142    0    0 Song  select — PRS
+ 419  142    0    0 Song  select — FTR
+ 593  142    0    0 Song  select — ETR/BYD

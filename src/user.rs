@@ -16,7 +16,8 @@ impl User {
 		let id = ctx.author().id.get().to_string();
 		let user = sqlx::query!("SELECT * FROM users WHERE discord_id = ?", id)
 			.fetch_one(&ctx.data().db)
-			.await?;
+			.await
+			.map_err(|_| "You are not an user in my database, sowwy ^~^")?;
 
 		Ok(User {
 			id: user.id as u32,

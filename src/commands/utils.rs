@@ -11,12 +11,18 @@ macro_rules! edit_reply {
 
 #[macro_export]
 macro_rules! get_user {
-	($ctx:expr) => {
-		match crate::user::User::from_context($ctx).await {
-			Ok(user) => user,
-			Err(_) => {
-				$ctx.say("You are not an user in my database, sorry!")
-					.await?;
+	($ctx:expr) => {{
+		crate::reply_errors!($ctx, crate::user::User::from_context($ctx).await)
+	}};
+}
+
+#[macro_export]
+macro_rules! reply_errors {
+	($ctx:expr, $value:expr) => {
+		match $value {
+			Ok(v) => v,
+			Err(err) => {
+				$ctx.reply(format!("{err}")).await?;
 				return Ok(());
 			}
 		}

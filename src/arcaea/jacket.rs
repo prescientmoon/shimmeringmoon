@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf, str::FromStr};
+use std::{fs, path::PathBuf};
 
 use image::{imageops::FilterType, GenericImageView, Rgba};
 use num::Integer;
@@ -99,13 +99,11 @@ impl JacketCache {
 					.into_rgb8(),
 			));
 
-			for song in song_cache.songs_mut() {
-				for chart in song.charts_mut() {
-					chart.cached_jacket = Some(Jacket {
-						raw: contents,
-						bitmap,
-					});
-				}
+			for chart in song_cache.charts_mut() {
+				chart.cached_jacket = Some(Jacket {
+					raw: contents,
+					bitmap,
+				});
 			}
 
 			Vec::new()
@@ -126,6 +124,7 @@ impl JacketCache {
 					if !name.ends_with("_256") {
 						continue;
 					}
+
 					let name = name.strip_suffix("_256").unwrap();
 
 					let difficulty = match name {
@@ -140,12 +139,16 @@ impl JacketCache {
 						_ => Err(format!("Unknown jacket suffix {}", name))?,
 					};
 
-					let (song, chart) = guess_chart_name(dir_name, &song_cache, difficulty, true)?;
+					let (song_id, chart_id) = {
+						let (song, chart) =
+							guess_chart_name(dir_name, &song_cache, difficulty, true)?;
+						(song.id, chart.id)
+					};
 
 					let contents: &'static _ = fs::read(file.path())?.leak();
 
 					let image = image::load_from_memory(contents)?;
-					jacket_vectors.push((song.id, ImageVec::from_image(&image)));
+					jacket_vectors.push((song_id, ImageVec::from_image(&image)));
 
 					let bitmap: &'static _ = Box::leak(Box::new(
 						image
@@ -154,33 +157,9 @@ impl JacketCache {
 					));
 
 					if name == "base" {
-						let item = song_cache.lookup_mut(song.id).unwrap();
-
-						for chart in item.charts_mut() {
-							let difficulty_num = match chart.difficulty {
-								Difficulty::PST => "0",
-								Difficulty::PRS => "1",
-								Difficulty::FTR => "2",
-								Difficulty::BYD => "3",
-								Difficulty::ETR => "4",
-							};
-
-							// We only want to create this path if there's no overwrite for this
-							// jacket.
-							let specialized_path = PathBuf::from_str(
-								&file
-									.path()
-									.to_str()
-									.unwrap()
-									.replace("base_night", difficulty_num)
-									.replace("base", difficulty_num),
-							)
-							.unwrap();
-
-							let dest = chart.jacket_path(data_dir);
-							if !specialized_path.exists() && !dest.exists() {
-								std::os::unix::fs::symlink(file.path(), dest)
-									.expect("Could not symlink jacket");
+						// Inefficiently iterates over everything, but it's fine for ~1k entries
+						for chart in song_cache.charts_mut() {
+							if chart.song_id == song_id && chart.cached_jacket.is_none() {
 								chart.cached_jacket = Some(Jacket {
 									raw: contents,
 									bitmap,
@@ -188,9 +167,7 @@ impl JacketCache {
 							}
 						}
 					} else if difficulty.is_some() {
-						std::os::unix::fs::symlink(file.path(), chart.jacket_path(data_dir))
-							.expect("Could not symlink jacket");
-						let chart = song_cache.lookup_chart_mut(chart.id).unwrap();
+						let chart = song_cache.lookup_chart_mut(chart_id).unwrap();
 						chart.cached_jacket = Some(Jacket {
 							raw: contents,
 							bitmap,

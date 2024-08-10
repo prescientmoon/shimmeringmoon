@@ -3,7 +3,7 @@ use crate::context::{Context, Error};
 pub mod chart;
 pub mod score;
 pub mod stats;
-mod utils;
+pub mod utils;
 
 // {{{ Help
 /// Show this help menu

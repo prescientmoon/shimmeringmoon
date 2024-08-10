@@ -58,15 +58,15 @@ pub fn guess_chart_name<'a>(
 
 	let (song, chart) = loop {
 		let mut close_enough: Vec<_> = cache
-			.songs()
-			.filter_map(|item| {
-				let song = &item.song;
-				let chart = if let Some(difficulty) = difficulty {
-					item.lookup(difficulty).ok()?
-				} else {
-					item.charts().next()?
-				};
+			.charts()
+			.filter_map(|chart| {
+				if let Some(difficulty) = difficulty
+					&& chart.difficulty != difficulty
+				{
+					return None;
+				}
 
+				let song = &cache.lookup_song(chart.song_id).ok()?.song;
 				let song_title = &song.lowercase_title;
 				distance_vec.clear();
 
