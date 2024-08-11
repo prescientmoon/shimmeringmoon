@@ -218,7 +218,7 @@ pub struct CharMeasurements {
 
 impl CharMeasurements {
 	// {{{ Creation
-	pub fn from_text(face: &mut Face, string: &str, weight: Option<u32>) -> Result<Self, Error> {
+	pub fn from_text(face: &mut Face, string: &str, _weight: Option<u32>) -> Result<Self, Error> {
 		// These are bad estimates lol
 		let char_w = 35;
 		let char_h = 60;
@@ -233,6 +233,7 @@ impl CharMeasurements {
 				align: (Align::Start, Align::Start),
 				size: char_h,
 				color: Color::BLACK,
+				// TODO: do we want to use the weight hint for resilience?
 				weight: None,
 			},
 			&string,
