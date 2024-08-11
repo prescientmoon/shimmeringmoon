@@ -35,10 +35,12 @@ impl UserContext {
 		let mut song_cache = SongCache::new(&db).await?;
 		let jacket_cache = JacketCache::new(&data_dir, &mut song_cache)?;
 		let ui_measurements = UIMeasurements::read(&data_dir)?;
+
 		let geosans_measurements = GEOSANS_FONT
 			.with_borrow_mut(|font| CharMeasurements::from_text(font, "0123456789'", None))?;
-		let exo_measurements = EXO_FONT
-			.with_borrow_mut(|font| CharMeasurements::from_text(font, "0123456789'", Some(700)))?;
+		let exo_measurements = EXO_FONT.with_borrow_mut(|font| {
+			CharMeasurements::from_text(font, "0123456789'abcdefghijklmnopqrstuvwxyz", Some(700))
+		})?;
 
 		println!("Created user context");
 

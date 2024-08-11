@@ -1,9 +1,12 @@
+use std::time::Instant;
+
 use crate::arcaea::play::{CreatePlay, Play};
 use crate::arcaea::score::Score;
 use crate::context::{Context, Error};
 use crate::recognition::recognize::{ImageAnalyzer, ScoreKind};
 use crate::user::{discord_it_to_discord_user, User};
-use crate::{edit_reply, get_user};
+use crate::{edit_reply, get_user, timed};
+use image::DynamicImage;
 use poise::serenity_prelude::CreateMessage;
 use poise::{serenity_prelude as serenity, CreateReply};
 use sqlx::query;
@@ -41,52 +44,61 @@ pub async fn magic(
 		let mut analyzer = ImageAnalyzer::default();
 
 		for (i, file) in files.iter().enumerate() {
+			let start = Instant::now();
 			if let Some(_) = file.dimensions() {
-				let bytes = file.download().await?;
-				let mut image = image::load_from_memory(&bytes)?;
+				let bytes = timed!("file download", { file.download().await? });
+				let mut image = timed!("decode image", { image::load_from_memory(&bytes)? });
+				let mut grayscale_image = timed!("grayscale image", {
+					DynamicImage::ImageLuma8(image.to_luma8())
+				});
 				// image = image.resize(1024, 1024, FilterType::Nearest);
 
 				let result: Result<(), Error> = try {
 					// {{{ Detection
-					// This makes OCR more likely to work
-					let mut ocr_image = image.grayscale().blur(1.);
 
-					edit_reply!(ctx, handle, "Image {}: reading kind", i + 1).await?;
-					let kind = analyzer.read_score_kind(ctx.data(), &ocr_image)?;
+					// edit_reply!(ctx, handle, "Image {}: reading kind", i + 1).await?;
+					let kind = timed!("read_score_kind", {
+						analyzer.read_score_kind(ctx.data(), &grayscale_image)?
+					});
 
-					edit_reply!(ctx, handle, "Image {}: reading difficulty", i + 1).await?;
+					// edit_reply!(ctx, handle, "Image {}: reading difficulty", i + 1).await?;
 					// Do not use `ocr_image` because this reads the colors
-					let difficulty = analyzer.read_difficulty(ctx.data(), &image, kind)?;
+					let difficulty = timed!("read_difficulty", {
+						analyzer.read_difficulty(ctx.data(), &image, kind)?
+					});
 
-					edit_reply!(ctx, handle, "Image {}: reading jacket", i + 1).await?;
-					let (song, chart) = analyzer
-						.read_jacket(ctx.data(), &mut image, kind, difficulty)
-						.await?;
-
-					ocr_image.invert();
+					// edit_reply!(ctx, handle, "Image {}: reading jacket", i + 1).await?;
+					let (song, chart) = timed!("read_jacket", {
+						analyzer.read_jacket(ctx.data(), &mut image, kind, difficulty)?
+					});
 
 					let (note_distribution, max_recall) = match kind {
 						ScoreKind::ScoreScreen => {
 							edit_reply!(ctx, handle, "Image {}: reading distribution", i + 1)
 								.await?;
 							let note_distribution =
-								Some(analyzer.read_distribution(ctx.data(), &image)?);
+								Some(analyzer.read_distribution(ctx.data(), &grayscale_image)?);
 
 							edit_reply!(ctx, handle, "Image {}: reading max recall", i + 1).await?;
-							let max_recall = Some(analyzer.read_max_recall(ctx.data(), &image)?);
+							let max_recall =
+								Some(analyzer.read_max_recall(ctx.data(), &grayscale_image)?);
 
 							(note_distribution, max_recall)
 						}
 						ScoreKind::SongSelect => (None, None),
 					};
 
-					edit_reply!(ctx, handle, "Image {}: reading score", i + 1).await?;
-					let score = analyzer.read_score(
-						ctx.data(),
-						Some(chart.note_count),
-						&ocr_image,
-						kind,
-					)?;
+					grayscale_image.invert();
+
+					// edit_reply!(ctx, handle, "Image {}: reading score", i + 1).await?;
+					let score = timed!("read_score", {
+						analyzer.read_score(
+							ctx.data(),
+							Some(chart.note_count),
+							&grayscale_image,
+							kind,
+						)?
+					});
 
 					// {{{ Build play
 					let maybe_fars = Score::resolve_distibution_ambiguities(
@@ -104,9 +116,11 @@ pub async fn magic(
 					// }}}
 					// }}}
 					// {{{ Deliver embed
-					let (embed, attachment) = play
-						.to_embed(&ctx.data().db, &user, &song, &chart, i, None)
-						.await?;
+
+					let (embed, attachment) = timed!("to embed", {
+						play.to_embed(&ctx.data().db, &user, &song, &chart, i, None)
+							.await?
+					});
 
 					embeds.push(embed);
 					attachments.extend(attachment);
@@ -123,8 +137,16 @@ pub async fn magic(
 					.await?;
 				continue;
 			}
+			let took = start.elapsed();
 
-			edit_reply!(ctx, handle, "Processed {}/{} scores", i + 1, files.len()).await?;
+			edit_reply!(
+				ctx,
+				handle,
+				"Processed {}/{} scores. Last score took {took:?} to process.",
+				i + 1,
+				files.len()
+			)
+			.await?;
 		}
 
 		handle.delete(ctx).await?;

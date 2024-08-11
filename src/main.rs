@@ -13,6 +13,7 @@ mod context;
 mod levenshtein;
 mod logs;
 mod recognition;
+mod time;
 mod transform;
 mod user;
 

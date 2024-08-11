@@ -12,7 +12,7 @@
 //! 5. Compute the largest width & height of the connected components.
 //! 5. Split each component (more precisely, start at its top-left corner and
 //!    split an area equal to the aforementioned width & height) into a grid of
-//!    N^2 chunks (N=5 at the moment), and use that to generate a vector who's
+//!    N^2 chunks (N=5 at the moment), and use that to generate a vector whose
 //!    elements represent the percentage of black pixels in each chunk which
 //!    belong to the connected component at hand.
 //! 6. Normalise the vectors to remain font-weight independent.
@@ -33,6 +33,7 @@ use crate::{
 	bitmap::{Align, BitmapCanvas, Color, TextStyle},
 	context::Error,
 	logs::{debug_image_buffer_log, debug_image_log},
+	timed,
 };
 
 // {{{ ConponentVec
@@ -47,7 +48,11 @@ struct ComponentVec {
 
 impl ComponentVec {
 	// {{{ (Component => vector) encoding
-	fn from_component(components: &ComponentsWithBounds, component: u32) -> Result<Self, Error> {
+	fn from_component(
+		components: &ComponentsWithBounds,
+		area: (u32, u32),
+		component: u32,
+	) -> Result<Self, Error> {
 		let mut chunks = [0.0; IMAGE_VEC_DIM];
 		let bounds = components
 			.bounds
@@ -58,10 +63,10 @@ impl ComponentVec {
 		for i in 0..(SPLIT_FACTOR * SPLIT_FACTOR) {
 			let (iy, ix) = i.div_rem_euclid(&SPLIT_FACTOR);
 
-			let x_start = bounds.x_min + ix * components.max_width / SPLIT_FACTOR;
-			let x_end = bounds.x_min + (ix + 1) * components.max_width / SPLIT_FACTOR;
-			let y_start = bounds.y_min + iy * components.max_height / SPLIT_FACTOR;
-			let y_end = bounds.y_min + (iy + 1) * components.max_height / SPLIT_FACTOR;
+			let x_start = bounds.x_min + ix * area.0 / SPLIT_FACTOR;
+			let x_end = bounds.x_min + (ix + 1) * area.0 / SPLIT_FACTOR;
+			let y_start = bounds.y_min + iy * area.1 / SPLIT_FACTOR;
+			let y_end = bounds.y_min + (iy + 1) * area.1 / SPLIT_FACTOR;
 			let mut count = 0;
 
 			for x in x_start..x_end {
@@ -148,9 +153,6 @@ struct ComponentsWithBounds {
 	// but we don't want to waste a place in this vector.
 	bounds: Vec<Option<ComponentBounds>>,
 
-	max_width: u32,
-	max_height: u32,
-
 	/// Stores the indices of `self.bounds` sorted based on their min position.
 	bounds_by_position: Vec<usize>,
 }
@@ -202,20 +204,6 @@ impl ComponentsWithBounds {
 			}
 		}
 		// }}}
-		// {{{ Compute max width/height
-		let max_width = bounds
-			.iter()
-			.filter_map(|o| o.as_ref())
-			.map(|b| b.x_max - b.x_min)
-			.max()
-			.ok_or_else(|| "No connected components found")?;
-		let max_height = bounds
-			.iter()
-			.filter_map(|o| o.as_ref())
-			.map(|b| b.y_max - b.y_min)
-			.max()
-			.ok_or_else(|| "No connected components found")?;
-		// }}}
 
 		let mut bounds_by_position: Vec<usize> = (0..(bounds.len()))
 			.filter(|i| bounds[*i].is_some())
@@ -225,8 +213,6 @@ impl ComponentsWithBounds {
 		Ok(Self {
 			components,
 			bounds,
-			max_width,
-			max_height,
 			bounds_by_position,
 		})
 	}
@@ -235,11 +221,14 @@ impl ComponentsWithBounds {
 // {{{ Char measurements
 pub struct CharMeasurements {
 	chars: Vec<(char, ComponentVec)>,
+
+	max_width: u32,
+	max_height: u32,
 }
 
 impl CharMeasurements {
 	// {{{ Creation
-	pub fn from_text(face: &mut Face, string: &str, _weight: Option<u32>) -> Result<Self, Error> {
+	pub fn from_text(face: &mut Face, string: &str, weight: Option<u32>) -> Result<Self, Error> {
 		// These are bad estimates lol
 		let char_w = 35;
 		let char_h = 60;
@@ -255,7 +244,7 @@ impl CharMeasurements {
 				size: char_h,
 				color: Color::BLACK,
 				// TODO: do we want to use the weight hint for resilience?
-				weight: None,
+				weight,
 			},
 			&string,
 		)?;
@@ -267,30 +256,64 @@ impl CharMeasurements {
 
 		let components = ComponentsWithBounds::from_image(&image)?;
 
+		// {{{ Compute max width/height
+		let max_width = components
+			.bounds
+			.iter()
+			.filter_map(|o| o.as_ref())
+			.map(|b| b.x_max - b.x_min)
+			.max()
+			.ok_or_else(|| "No connected components found")?;
+		let max_height = components
+			.bounds
+			.iter()
+			.filter_map(|o| o.as_ref())
+			.map(|b| b.y_max - b.y_min)
+			.max()
+			.ok_or_else(|| "No connected components found")?;
+		// }}}
+
 		let mut chars = Vec::with_capacity(string.len());
 		for (i, char) in string.chars().enumerate() {
 			chars.push((
 				char,
 				ComponentVec::from_component(
 					&components,
+					(max_width, max_height),
 					components.bounds_by_position[i] as u32 + 1,
 				)?,
 			))
 		}
 
-		Ok(Self { chars })
+		Ok(Self {
+			chars,
+			max_width,
+			max_height,
+		})
 	}
 	// }}}
 	// {{{ Recognition
-	pub fn recognise(&self, image: &DynamicImage) -> Result<String, Error> {
-		let components = ComponentsWithBounds::from_image(image)?;
+	pub fn recognise(&self, image: &DynamicImage, whitelist: &str) -> Result<String, Error> {
+		let components = timed!("from_image", { ComponentsWithBounds::from_image(image)? });
 		let mut result = String::new();
+
+		let max_height = components
+			.bounds
+			.iter()
+			.filter_map(|o| o.as_ref())
+			.map(|b| b.y_max - b.y_min)
+			.max()
+			.ok_or_else(|| "No connected components found")?;
+		let max_width = self.max_width * max_height / self.max_height;
+
 		for i in &components.bounds_by_position {
-			let vec = ComponentVec::from_component(&components, *i as u32 + 1)?;
+			let vec =
+				ComponentVec::from_component(&components, (max_width, max_height), *i as u32 + 1)?;
 
 			let best_match = self
 				.chars
 				.iter()
+				.filter(|(c, _)| whitelist.contains(*c))
 				.map(|(i, v)| (*i, v, v.distance_squared_to(&vec)))
 				.min_by(|(_, _, d1), (_, _, d2)| {
 					d1.partial_cmp(d2).expect("NaN distance encountered")

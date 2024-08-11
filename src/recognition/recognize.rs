@@ -4,7 +4,6 @@ use std::str::FromStr;
 use hypertesseract::{PageSegMode, Tesseract};
 use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView};
-use image::{ImageBuffer, Rgba};
 use num::integer::Roots;
 use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage};
 
@@ -14,11 +13,12 @@ use crate::arcaea::score::Score;
 use crate::bitmap::{Color, Rect};
 use crate::context::{Context, Error, UserContext};
 use crate::levenshtein::edit_distance;
-use crate::logs::debug_image_buffer_log;
+use crate::logs::debug_image_log;
 use crate::recognition::fuzzy_song_name::guess_chart_name;
 use crate::recognition::ui::{
 	ScoreScreenRect, SongSelectRect, UIMeasurementRect, UIMeasurementRect::*,
 };
+use crate::timed;
 use crate::transform::rotate;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,10 +47,8 @@ impl ImageAnalyzer {
 
 	// {{{ Crop
 	#[inline]
-	pub fn crop(&mut self, image: &DynamicImage, rect: Rect) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
-		image
-			.crop_imm(rect.x as u32, rect.y as u32, rect.width, rect.height)
-			.to_rgba8()
+	pub fn crop(&mut self, image: &DynamicImage, rect: Rect) -> DynamicImage {
+		image.crop_imm(rect.x as u32, rect.y as u32, rect.width, rect.height)
 	}
 
 	#[inline]
@@ -59,12 +57,12 @@ impl ImageAnalyzer {
 		ctx: &UserContext,
 		image: &DynamicImage,
 		ui_rect: UIMeasurementRect,
-	) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, Error> {
+	) -> Result<DynamicImage, Error> {
 		let rect = ctx.ui_measurements.interpolate(ui_rect, image)?;
 		self.last_rect = Some((ui_rect, rect));
 
 		let result = self.crop(image, rect);
-		debug_image_buffer_log(&result)?;
+		debug_image_log(&result)?;
 
 		Ok(result)
 	}
@@ -76,16 +74,14 @@ impl ImageAnalyzer {
 		image: &DynamicImage,
 		ui_rect: UIMeasurementRect,
 		size: (u32, u32),
-	) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, Error> {
+	) -> Result<DynamicImage, Error> {
 		let rect = ctx.ui_measurements.interpolate(ui_rect, image)?;
 		self.last_rect = Some((ui_rect, rect));
 
 		let result = self.crop(image, rect);
-		let result = DynamicImage::ImageRgba8(result)
-			.resize(size.0, size.1, FilterType::Nearest)
-			.into_rgba8();
+		let result = result.resize(size.0, size.1, FilterType::Nearest);
 
-		debug_image_buffer_log(&result)?;
+		debug_image_log(&result)?;
 
 		Ok(result)
 	}
@@ -138,32 +134,35 @@ impl ImageAnalyzer {
 		image: &DynamicImage,
 		kind: ScoreKind,
 	) -> Result<Score, Error> {
-		let image = self.interp_crop_resize(
-			ctx,
-			image,
-			match kind {
-				ScoreKind::SongSelect => SongSelect(SongSelectRect::Score),
-				ScoreKind::ScoreScreen => ScoreScreen(ScoreScreenRect::Score),
-			},
-			(u32::MAX, 100),
-		)?;
+		let image = timed!("interp_crop_resize", {
+			self.interp_crop_resize(
+				ctx,
+				image,
+				match kind {
+					ScoreKind::SongSelect => SongSelect(SongSelectRect::Score),
+					ScoreKind::ScoreScreen => ScoreScreen(ScoreScreenRect::Score),
+				},
+				(u32::MAX, 100),
+			)?
+		});
 
 		let measurements = match kind {
 			ScoreKind::SongSelect => &ctx.exo_measurements,
 			ScoreKind::ScoreScreen => &ctx.geosans_measurements,
 		};
 
-		let result = Score(
-			measurements
-				.recognise(&DynamicImage::ImageRgba8(image))?
-				.chars()
-				.filter(|c| *c != '\'')
-				.collect::<String>()
-				.parse()?,
-		);
+		let result = timed!("full recognition", {
+			Score(
+				measurements
+					.recognise(&image, "0123456789'")?
+					.chars()
+					.filter(|c| *c != '\'')
+					.collect::<String>()
+					.parse()?,
+			)
+		});
 
-		// {{{ Return score if consensus exists
-		// 1. Discard scores that are known to be impossible
+		// Discard scores if it's impossible
 		if result.0 <= 10_010_000
 			&& note_count.map_or(true, |note_count| {
 				let (zeta, shinies, score_units) = result.analyse(note_count);
@@ -222,11 +221,11 @@ impl ImageAnalyzer {
 			.language(hypertesseract::Language::English)
 			.page_seg_mode(PageSegMode::RawLine)
 			.build()?
-			.recognize_text_cloned_with_conf(&self.interp_crop(
-				ctx,
-				image,
-				ScoreScreen(ScoreScreenRect::Difficulty),
-			)?)?;
+			.recognize_text_cloned_with_conf(
+				&self
+					.interp_crop(ctx, image, ScoreScreen(ScoreScreenRect::Difficulty))?
+					.into_rgba8(),
+			)?;
 
 		let text = text.trim().to_lowercase();
 
@@ -254,21 +253,10 @@ impl ImageAnalyzer {
 		ctx: &UserContext,
 		image: &DynamicImage,
 	) -> Result<ScoreKind, Error> {
-		let (text, conf) = Tesseract::builder()
-			.language(hypertesseract::Language::English)
-			.page_seg_mode(PageSegMode::RawLine)
-			.build()?
-			.recognize_text_cloned_with_conf(&self.interp_crop(ctx, image, PlayKind)?)?;
-
-		let text = text.trim().to_string();
-
-		if conf < 10 && conf != 0 {
-			return Err(format!(
-				"Score kind text is not readable (confidence = {}, text = {}).",
-				conf, text
-			)
-			.into());
-		}
+		let image = self.interp_crop(ctx, image, PlayKind)?;
+		let text = ctx
+			.exo_measurements
+			.recognise(&image, "resultselectasong")?;
 
 		let result = if edit_distance(&text, "Result") < edit_distance(&text, "Select a song") {
 			ScoreKind::ScoreScreen
@@ -291,11 +279,11 @@ impl ImageAnalyzer {
 			.page_seg_mode(PageSegMode::SingleLine)
 			.whitelist_str("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789,.()- ")?
 			.build()?
-			.recognize_text_cloned_with_conf(&self.interp_crop(
-				ctx,
-				image,
-				ScoreScreen(ScoreScreenRect::Title),
-			)?)?;
+			.recognize_text_cloned_with_conf(
+				&self
+					.interp_crop(ctx, image, ScoreScreen(ScoreScreenRect::Title))?
+					.into_rgba8(),
+			)?;
 
 		if conf < 20 && conf != 0 {
 			return Err(format!(
@@ -310,7 +298,7 @@ impl ImageAnalyzer {
 	}
 	// }}}
 	// {{{ Read jacket
-	pub async fn read_jacket<'a>(
+	pub fn read_jacket<'a>(
 		&mut self,
 		ctx: &'a UserContext,
 		image: &mut DynamicImage,
@@ -374,7 +362,11 @@ impl ImageAnalyzer {
 				.whitelist_str("0123456789")?
 				.assume_numeric_input()
 				.build()?
-				.recognize_text_cloned(&self.interp_crop(ctx, image, ScoreScreen(KINDS[i]))?)?;
+				.recognize_text_cloned(
+					&self
+						.interp_crop(ctx, image, ScoreScreen(KINDS[i]))?
+						.into_rgba8(),
+				)?;
 
 			println!("Raw '{}'", text.trim());
 			out[i] = u32::from_str(&text.trim()).unwrap_or(0);
@@ -396,11 +388,11 @@ impl ImageAnalyzer {
 			.whitelist_str("0123456789")?
 			.assume_numeric_input()
 			.build()?
-			.recognize_text_cloned_with_conf(&self.interp_crop(
-				ctx,
-				image,
-				ScoreScreen(ScoreScreenRect::MaxRecall),
-			)?)?;
+			.recognize_text_cloned_with_conf(
+				&self
+					.interp_crop(ctx, image, ScoreScreen(ScoreScreenRect::MaxRecall))?
+					.into_rgba8(),
+			)?;
 
 		let max_recall = u32::from_str_radix(text.trim(), 10)?;
 
