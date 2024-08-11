@@ -1,14 +1,12 @@
 use std::fmt::Display;
-use std::io::Cursor;
 use std::str::FromStr;
-use std::{env, fs};
 
 use hypertesseract::{PageSegMode, Tesseract};
-use image::imageops::{resize, FilterType};
-use image::{DynamicImage, GenericImageView, RgbaImage};
+use image::imageops::FilterType;
+use image::{DynamicImage, GenericImageView};
 use image::{ImageBuffer, Rgba};
 use num::integer::Roots;
-use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage, Timestamp};
+use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage};
 
 use crate::arcaea::chart::{Chart, Difficulty, Song, DIFFICULTY_MENU_PIXEL_COLORS};
 use crate::arcaea::jacket::IMAGE_VEC_DIM;
@@ -16,6 +14,7 @@ use crate::arcaea::score::Score;
 use crate::bitmap::{Color, Rect};
 use crate::context::{Context, Error, UserContext};
 use crate::levenshtein::edit_distance;
+use crate::logs::debug_image_buffer_log;
 use crate::recognition::fuzzy_song_name::guess_chart_name;
 use crate::recognition::ui::{
 	ScoreScreenRect, SongSelectRect, UIMeasurementRect, UIMeasurementRect::*,
@@ -48,25 +47,6 @@ impl ImageAnalyzer {
 
 	// {{{ Crop
 	#[inline]
-	fn should_save_debug_images() -> bool {
-		env::var("SHIMMERING_DEBUG_IMGS")
-			.map(|s| s == "1")
-			.unwrap_or(false)
-	}
-
-	fn save_image(&mut self, image: &RgbaImage) -> Result<(), Error> {
-		self.clear();
-		let mut cursor = Cursor::new(&mut self.bytes);
-		image.write_to(&mut cursor, image::ImageFormat::Png)?;
-
-		if Self::should_save_debug_images() {
-			fs::write(format!("./logs/{}.png", Timestamp::now()), &self.bytes)?;
-		}
-
-		Ok(())
-	}
-
-	#[inline]
 	pub fn crop(&mut self, image: &DynamicImage, rect: Rect) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
 		image
 			.crop_imm(rect.x as u32, rect.y as u32, rect.width, rect.height)
@@ -84,9 +64,7 @@ impl ImageAnalyzer {
 		self.last_rect = Some((ui_rect, rect));
 
 		let result = self.crop(image, rect);
-		if Self::should_save_debug_images() {
-			self.save_image(&result).unwrap();
-		}
+		debug_image_buffer_log(&result)?;
 
 		Ok(result)
 	}
@@ -97,18 +75,17 @@ impl ImageAnalyzer {
 		ctx: &UserContext,
 		image: &DynamicImage,
 		ui_rect: UIMeasurementRect,
-		size: impl FnOnce(Rect) -> (u32, u32),
+		size: (u32, u32),
 	) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, Error> {
 		let rect = ctx.ui_measurements.interpolate(ui_rect, image)?;
-		let size = size(rect);
 		self.last_rect = Some((ui_rect, rect));
 
 		let result = self.crop(image, rect);
-		let result = resize(&result, size.0, size.1, FilterType::Nearest);
+		let result = DynamicImage::ImageRgba8(result)
+			.resize(size.0, size.1, FilterType::Nearest)
+			.into_rgba8();
 
-		if Self::should_save_debug_images() {
-			self.save_image(&result).unwrap();
-		}
+		debug_image_buffer_log(&result)?;
 
 		Ok(result)
 	}
@@ -130,8 +107,7 @@ impl ImageAnalyzer {
 		));
 
 		if let Some((ui_rect, rect)) = self.last_rect {
-			let cropped = self.crop(image, rect);
-			self.save_image(&cropped)?;
+			self.crop(image, rect);
 
 			let bytes = std::mem::take(&mut self.bytes);
 			let error_attachement = CreateAttachment::bytes(bytes, filename);
@@ -161,14 +137,7 @@ impl ImageAnalyzer {
 		note_count: Option<u32>,
 		image: &DynamicImage,
 		kind: ScoreKind,
-	) -> Result<Vec<Score>, Error> {
-		// yes, this was painfully hand-picked
-		let desired_height = 100;
-		let x_scaling_factor = match kind {
-			ScoreKind::SongSelect => 1.0,
-			ScoreKind::ScoreScreen => 0.666,
-		};
-
+	) -> Result<Score, Error> {
 		let image = self.interp_crop_resize(
 			ctx,
 			image,
@@ -176,123 +145,37 @@ impl ImageAnalyzer {
 				ScoreKind::SongSelect => SongSelect(SongSelectRect::Score),
 				ScoreKind::ScoreScreen => ScoreScreen(ScoreScreenRect::Score),
 			},
-			|rect| {
-				(
-					(rect.width as f32 * desired_height as f32 / rect.height as f32
-						* x_scaling_factor) as u32,
-					desired_height,
-				)
-			},
+			(u32::MAX, 100),
 		)?;
 
-		let mut results = vec![];
-		for mode in [
-			PageSegMode::SingleWord,
-			PageSegMode::RawLine,
-			PageSegMode::SingleLine,
-			PageSegMode::SparseText,
-			PageSegMode::SingleBlock,
-		] {
-			let result: Result<_, Error> = try {
-				// {{{ Read score using tesseract
-				let text = Tesseract::builder()
-					.language(hypertesseract::Language::English)
-					.whitelist_str("0123456789'/")?
-					.page_seg_mode(mode)
-					.assume_numeric_input()
-					.build()?
-					.load_image(&image)?
-					.recognize()?
-					.get_text()?;
+		let measurements = match kind {
+			ScoreKind::SongSelect => &ctx.exo_measurements,
+			ScoreKind::ScoreScreen => &ctx.geosans_measurements,
+		};
 
-				let text: String = text
-					.trim()
-					.chars()
-					.map(|char| if char == '/' { '7' } else { char })
-					.filter(|char| *char != ' ' && *char != '\'')
-					.collect();
+		let result = Score(
+			measurements
+				.recognise(&DynamicImage::ImageRgba8(image))?
+				.chars()
+				.filter(|c| *c != '\'')
+				.collect::<String>()
+				.parse()?,
+		);
 
-				let score = u32::from_str_radix(&text, 10)?;
-				Score(score)
-				// }}}
-			};
-
-			match result {
-				Ok(result) => {
-					results.push(result.0);
-				}
-				Err(err) => {
-					println!("OCR score result error: {}", err);
-				}
-			}
-		}
-
-		// {{{ Score correction
-		// The OCR sometimes fails to read "74" with the arcaea font,
-		// so we try to detect that and fix it
-		loop {
-			let old_stack_len = results.len();
-			println!("Results {:?}", results);
-			results = results
-				.iter()
-				.flat_map(|result| {
-					// If the length is correct, we are good to go!
-					if *result >= 8_000_000 {
-						vec![*result]
-					} else {
-						let mut results = vec![];
-						for i in [0, 1, 3, 4] {
-							let d = 10u32.pow(i);
-							if (*result / d) % 10 == 4 && (*result / d) % 100 != 74 {
-								let n = d * 10;
-								results.push((*result / n) * n * 10 + 7 * n + (*result % n));
-							}
-						}
-
-						results
-					}
-				})
-				.collect();
-
-			if old_stack_len == results.len() {
-				break;
-			}
-		}
-		// }}}
 		// {{{ Return score if consensus exists
 		// 1. Discard scores that are known to be impossible
-		let mut results: Vec<_> = results
-			.into_iter()
-			.filter(|result| {
-				8_000_000 <= *result
-					&& *result <= 10_010_000
-					&& note_count
-						.map(|note_count| {
-							let (zeta, shinies, score_units) = Score(*result).analyse(note_count);
-							8_000_000 <= zeta.0
-								&& zeta.0 <= 10_000_000 && shinies <= note_count
-								&& score_units <= 2 * note_count
-						})
-						.unwrap_or(true)
-			})
-			.map(|r| Score(r))
-			.collect();
-		println!("Results {:?}", results);
-
-		// 2. Look for consensus
-		for result in results.iter() {
-			if results.iter().filter(|e| **e == *result).count() > results.len() / 2 {
-				return Ok(vec![*result]);
-			}
+		if result.0 <= 10_010_000
+			&& note_count.map_or(true, |note_count| {
+				let (zeta, shinies, score_units) = result.analyse(note_count);
+				8_000_000 <= zeta.0
+					&& zeta.0 <= 10_000_000
+					&& shinies <= note_count
+					&& score_units <= 2 * note_count
+			}) {
+			Ok(result)
+		} else {
+			Err(format!("Score {result} is not vaild").into())
 		}
-		// }}}
-
-		// If there's no consensus, we return everything
-		results.sort();
-		results.dedup();
-		println!("Results {:?}", results);
-
-		Ok(results)
 	}
 	// }}}
 	// {{{ Read difficulty
@@ -335,24 +218,25 @@ impl ImageAnalyzer {
 			return Ok(min.1);
 		}
 
-		let mut ocr = Tesseract::builder()
+		let (text, conf) = Tesseract::builder()
 			.language(hypertesseract::Language::English)
 			.page_seg_mode(PageSegMode::RawLine)
-			.build()?;
+			.build()?
+			.recognize_text_cloned_with_conf(&self.interp_crop(
+				ctx,
+				image,
+				ScoreScreen(ScoreScreenRect::Difficulty),
+			)?)?;
 
-		ocr.load_image(&self.interp_crop(ctx, image, ScoreScreen(ScoreScreenRect::Difficulty))?)?
-			.recognize()?;
-
-		let text: &str = &ocr.get_text()?;
 		let text = text.trim().to_lowercase();
 
-		// let conf = t.mean_text_conf();
-		// if conf < 10 && conf != 0 {
-		// 	Err(format!(
-		// 		"Difficulty text is not readable (confidence = {}, text = {}).",
-		// 		conf, text
-		// 	))?;
-		// }
+		if conf < 10 && conf != 0 {
+			return Err(format!(
+				"Difficulty text is not readable (confidence = {}, text = {}).",
+				conf, text
+			)
+			.into());
+		}
 
 		let difficulty = Difficulty::DIFFICULTIES
 			.iter()
@@ -370,23 +254,21 @@ impl ImageAnalyzer {
 		ctx: &UserContext,
 		image: &DynamicImage,
 	) -> Result<ScoreKind, Error> {
-		let text = Tesseract::builder()
+		let (text, conf) = Tesseract::builder()
 			.language(hypertesseract::Language::English)
 			.page_seg_mode(PageSegMode::RawLine)
 			.build()?
-			.load_image(&self.interp_crop(ctx, image, PlayKind)?)?
-			.recognize()?
-			.get_text()?
-			.trim()
-			.to_string();
+			.recognize_text_cloned_with_conf(&self.interp_crop(ctx, image, PlayKind)?)?;
 
-		// let conf = t.mean_text_conf();
-		// if conf < 10 && conf != 0 {
-		// 	Err(format!(
-		// 		"Score kind text is not readable (confidence = {}, text = {}).",
-		// 		conf, text
-		// 	))?;
-		// }
+		let text = text.trim().to_string();
+
+		if conf < 10 && conf != 0 {
+			return Err(format!(
+				"Score kind text is not readable (confidence = {}, text = {}).",
+				conf, text
+			)
+			.into());
+		}
 
 		let result = if edit_distance(&text, "Result") < edit_distance(&text, "Select a song") {
 			ScoreKind::ScoreScreen
@@ -404,23 +286,25 @@ impl ImageAnalyzer {
 		image: &DynamicImage,
 		difficulty: Difficulty,
 	) -> Result<(&'a Song, &'a Chart), Error> {
-		let text = Tesseract::builder()
+		let (text, conf) = Tesseract::builder()
 			.language(hypertesseract::Language::English)
 			.page_seg_mode(PageSegMode::SingleLine)
 			.whitelist_str("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789,.()- ")?
 			.build()?
-			.load_image(&self.interp_crop(ctx, image, ScoreScreen(ScoreScreenRect::Title))?)?
-			.recognize()?
-			.get_text()?;
+			.recognize_text_cloned_with_conf(&self.interp_crop(
+				ctx,
+				image,
+				ScoreScreen(ScoreScreenRect::Title),
+			)?)?;
 
-		// let conf = t.mean_text_conf();
-		// if conf < 20 && conf != 0 {
-		// 	Err(format!(
-		// 		"Title text is not readable (confidence = {}, text = {}).",
-		// 		conf,
-		// 		raw_text.trim()
-		// 	))?;
-		// }
+		if conf < 20 && conf != 0 {
+			return Err(format!(
+				"Title text is not readable (confidence = {}, text = {}).",
+				conf,
+				text.trim()
+			)
+			.into());
+		}
 
 		guess_chart_name(&text, &ctx.song_cache, Some(difficulty), false)
 	}
@@ -478,23 +362,19 @@ impl ImageAnalyzer {
 		ctx: &UserContext,
 		image: &DynamicImage,
 	) -> Result<(u32, u32, u32), Error> {
-		let mut ocr = Tesseract::builder()
-			.language(hypertesseract::Language::English)
-			.page_seg_mode(PageSegMode::SparseText)
-			.whitelist_str("0123456789")?
-			.assume_numeric_input()
-			.build()?;
-
 		let mut out = [0; 3];
 
 		use ScoreScreenRect::*;
 		static KINDS: [ScoreScreenRect; 3] = [Pure, Far, Lost];
 
 		for i in 0..3 {
-			let text = ocr
-				.load_image(&self.interp_crop(ctx, image, ScoreScreen(KINDS[i]))?)?
-				.recognize()?
-				.get_text()?;
+			let text = Tesseract::builder()
+				.language(hypertesseract::Language::English)
+				.page_seg_mode(PageSegMode::SparseText)
+				.whitelist_str("0123456789")?
+				.assume_numeric_input()
+				.build()?
+				.recognize_text_cloned(&self.interp_crop(ctx, image, ScoreScreen(KINDS[i]))?)?;
 
 			println!("Raw '{}'", text.trim());
 			out[i] = u32::from_str(&text.trim()).unwrap_or(0);
@@ -510,26 +390,28 @@ impl ImageAnalyzer {
 		ctx: &'a UserContext,
 		image: &DynamicImage,
 	) -> Result<u32, Error> {
-		let text = Tesseract::builder()
+		let (text, conf) = Tesseract::builder()
 			.language(hypertesseract::Language::English)
 			.page_seg_mode(PageSegMode::SingleLine)
 			.whitelist_str("0123456789")?
 			.assume_numeric_input()
 			.build()?
-			.load_image(&self.interp_crop(ctx, image, ScoreScreen(ScoreScreenRect::MaxRecall))?)?
-			.recognize()?
-			.get_text()?;
+			.recognize_text_cloned_with_conf(&self.interp_crop(
+				ctx,
+				image,
+				ScoreScreen(ScoreScreenRect::MaxRecall),
+			)?)?;
 
 		let max_recall = u32::from_str_radix(text.trim(), 10)?;
 
-		// let conf = t.mean_text_conf();
-		// if conf < 20 && conf != 0 {
-		// 	Err(format!(
-		// 		"Title text is not readable (confidence = {}, text = {}).",
-		// 		conf,
-		// 		raw_text.trim()
-		// 	))?;
-		// }
+		if conf < 20 && conf != 0 {
+			return Err(format!(
+				"Title text is not readable (confidence = {}, text = {}).",
+				conf,
+				text.trim()
+			)
+			.into());
+		}
 
 		Ok(max_recall)
 	}

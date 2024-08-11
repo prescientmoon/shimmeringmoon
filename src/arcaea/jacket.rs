@@ -22,7 +22,7 @@ pub struct ImageVec {
 
 impl ImageVec {
 	// {{{ (Image => vector) encoding
-	fn from_image(image: &impl GenericImageView<Pixel = Rgba<u8>>) -> ImageVec {
+	fn from_image(image: &impl GenericImageView<Pixel = Rgba<u8>>) -> Self {
 		let mut colors = [0.0; IMAGE_VEC_DIM];
 		let chunk_width = image.width() / SPLIT_FACTOR;
 		let chunk_height = image.height() / SPLIT_FACTOR;
@@ -173,6 +173,16 @@ impl JacketCache {
 							bitmap,
 						});
 					}
+				}
+			}
+
+			for chart in song_cache.charts() {
+				if chart.cached_jacket.is_none() {
+					println!(
+						"No jacket found for '{} [{:?}]'",
+						song_cache.lookup_song(chart.song_id)?.song.title,
+						chart.difficulty
+					)
 				}
 			}
 

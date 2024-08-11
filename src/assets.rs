@@ -19,7 +19,7 @@ pub fn get_assets_dir() -> PathBuf {
 #[inline]
 fn get_font(name: &str) -> RefCell<Face> {
 	let face = FREETYPE_LIB.with(|lib| {
-		lib.new_face(get_assets_dir().join(format!("{}-variable.ttf", name)), 0)
+		lib.new_face(get_assets_dir().join(format!("{}.ttf", name)), 0)
 			.expect(&format!("Could not load {} font", name))
 	});
 	RefCell::new(face)
@@ -27,8 +27,9 @@ fn get_font(name: &str) -> RefCell<Face> {
 
 thread_local! {
 pub static FREETYPE_LIB: Library = Library::init().unwrap();
-pub static SAIRA_FONT: RefCell<Face> = get_font("saira");
-pub static EXO_FONT: RefCell<Face> = get_font("exo");
+pub static SAIRA_FONT: RefCell<Face> = get_font("saira-variable");
+pub static EXO_FONT: RefCell<Face> = get_font("exo-variable");
+pub static GEOSANS_FONT: RefCell<Face> = get_font("geosans-light");
 }
 
 #[inline]

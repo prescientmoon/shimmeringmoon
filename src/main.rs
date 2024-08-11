@@ -11,6 +11,7 @@ mod bitmap;
 mod commands;
 mod context;
 mod levenshtein;
+mod logs;
 mod recognition;
 mod transform;
 mod user;

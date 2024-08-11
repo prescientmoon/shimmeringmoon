@@ -89,6 +89,8 @@ pub struct Song {
 	pub id: u32,
 	pub title: String,
 	pub lowercase_title: String,
+
+	#[allow(dead_code)]
 	pub artist: String,
 
 	pub bpm: String,

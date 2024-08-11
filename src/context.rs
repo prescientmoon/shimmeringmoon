@@ -3,7 +3,9 @@ use std::{fs, path::PathBuf};
 use sqlx::SqlitePool;
 
 use crate::{
-	arcaea::chart::SongCache, arcaea::jacket::JacketCache, recognition::ui::UIMeasurements,
+	arcaea::{chart::SongCache, jacket::JacketCache},
+	assets::{EXO_FONT, GEOSANS_FONT},
+	recognition::{hyperglass::CharMeasurements, ui::UIMeasurements},
 };
 
 // Types used by all command functions
@@ -19,6 +21,9 @@ pub struct UserContext {
 	pub song_cache: SongCache,
 	pub jacket_cache: JacketCache,
 	pub ui_measurements: UIMeasurements,
+
+	pub geosans_measurements: CharMeasurements,
+	pub exo_measurements: CharMeasurements,
 }
 
 impl UserContext {
@@ -30,6 +35,10 @@ impl UserContext {
 		let mut song_cache = SongCache::new(&db).await?;
 		let jacket_cache = JacketCache::new(&data_dir, &mut song_cache)?;
 		let ui_measurements = UIMeasurements::read(&data_dir)?;
+		let geosans_measurements = GEOSANS_FONT
+			.with_borrow_mut(|font| CharMeasurements::from_text(font, "0123456789'", None))?;
+		let exo_measurements = EXO_FONT
+			.with_borrow_mut(|font| CharMeasurements::from_text(font, "0123456789'", Some(700)))?;
 
 		println!("Created user context");
 
@@ -39,6 +48,8 @@ impl UserContext {
 			song_cache,
 			jacket_cache,
 			ui_measurements,
+			geosans_measurements,
+			exo_measurements,
 		})
 	}
 }

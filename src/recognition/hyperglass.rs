@@ -1,0 +1,289 @@
+use freetype::Face;
+use image::{DynamicImage, ImageBuffer, Luma};
+use imageproc::{
+	contrast::{threshold, ThresholdType},
+	region_labelling::{connected_components, Connectivity},
+};
+use num::traits::Euclid;
+
+use crate::{
+	bitmap::{Align, BitmapCanvas, Color, TextStyle},
+	context::Error,
+	logs::{debug_image_buffer_log, debug_image_log},
+};
+
+///! Hyperglass my own specialized OCR system
+
+// {{{ ConponentVec
+/// How many sub-segments to split each side into
+const SPLIT_FACTOR: u32 = 5;
+const IMAGE_VEC_DIM: usize = (SPLIT_FACTOR * SPLIT_FACTOR) as usize;
+
+#[derive(Debug, Clone)]
+struct ComponentVec {
+	chunks: [f32; IMAGE_VEC_DIM],
+}
+
+impl ComponentVec {
+	// {{{ (Component => vector) encoding
+	fn from_component(components: &ComponentsWithBounds, component: u32) -> Result<Self, Error> {
+		let mut chunks = [0.0; IMAGE_VEC_DIM];
+		let bounds = components
+			.bounds
+			.get(component as usize - 1)
+			.and_then(|o| o.as_ref())
+			.ok_or_else(|| "Missing bounds for given connected component")?;
+
+		for i in 0..(SPLIT_FACTOR * SPLIT_FACTOR) {
+			let (iy, ix) = i.div_rem_euclid(&SPLIT_FACTOR);
+
+			let x_start = bounds.x_min + ix * components.max_width / SPLIT_FACTOR;
+			let x_end = bounds.x_min + (ix + 1) * components.max_width / SPLIT_FACTOR;
+			let y_start = bounds.y_min + iy * components.max_height / SPLIT_FACTOR;
+			let y_end = bounds.y_min + (iy + 1) * components.max_height / SPLIT_FACTOR;
+			let mut count = 0;
+
+			for x in x_start..x_end {
+				for y in y_start..y_end {
+					if let Some(p) = components.components.get_pixel_checked(x, y)
+						&& p.0[0] == component
+					{
+						count += 1;
+					}
+				}
+			}
+
+			let size = (x_end + 1 - x_start) * (y_end + 1 - y_start);
+
+			if size == 0 {
+				return Err(format!(
+					"Got zero size for chunk [{x_start},{x_end}]x[{y_start},{y_end}]"
+				)
+				.into());
+			}
+
+			chunks[i as usize] = count as f32 / size as f32;
+
+			// print!("{} ", chunks[i as usize]);
+			// if i % SPLIT_FACTOR == SPLIT_FACTOR - 1 {
+			// 	print!("\n");
+			// }
+		}
+
+		let mut result = Self { chunks };
+		result.normalise();
+		Ok(result)
+	}
+	// }}}
+	// {{{ Distance
+	#[inline]
+	fn distance_squared_to(&self, other: &Self) -> f32 {
+		let mut total = 0.0;
+
+		for i in 0..IMAGE_VEC_DIM {
+			let d = self.chunks[i] - other.chunks[i];
+			total += d * d;
+		}
+
+		total
+	}
+
+	#[inline]
+	fn norm_squared(&self) -> f32 {
+		let mut total = 0.0;
+
+		for i in 0..IMAGE_VEC_DIM {
+			total += self.chunks[i] * self.chunks[i];
+		}
+
+		total
+	}
+
+	#[inline]
+	fn normalise(&mut self) {
+		let len = self.norm_squared().sqrt();
+
+		for i in 0..IMAGE_VEC_DIM {
+			self.chunks[i] /= len;
+		}
+	}
+	// }}}
+}
+// }}}
+// {{{ Component bounds
+#[derive(Clone, Copy)]
+struct ComponentBounds {
+	x_min: u32,
+	y_min: u32,
+	x_max: u32,
+	y_max: u32,
+}
+
+struct ComponentsWithBounds {
+	components: ImageBuffer<Luma<u32>, Vec<u32>>,
+
+	// NOTE: the index is (the id of the component) - 1
+	// This is because the zero component represents the background,
+	// but we don't want to waste a place in this vector.
+	bounds: Vec<Option<ComponentBounds>>,
+
+	max_width: u32,
+	max_height: u32,
+
+	/// Stores the indices of `self.bounds` sorted based on their min position.
+	bounds_by_position: Vec<usize>,
+}
+
+impl ComponentsWithBounds {
+	fn from_image(image: &DynamicImage) -> Result<Self, Error> {
+		let image = threshold(&image.to_luma8(), 100, ThresholdType::Binary);
+		debug_image_buffer_log(&image)?;
+
+		let background = Luma([u8::MAX]);
+		let components = connected_components(&image, Connectivity::Eight, background);
+
+		let mut bounds: Vec<Option<ComponentBounds>> = Vec::new();
+		for x in 0..components.width() {
+			for y in 0..components.height() {
+				// {{{ Retrieve pixel if it's not backround
+				let component = components[(x, y)].0[0];
+				if component == 0 {
+					continue;
+				}
+
+				let index = component as usize - 1;
+				if index >= bounds.len() {
+					bounds.resize(index + 1, None);
+				}
+				// }}}
+				// {{{ Update bounds
+				if let Some(bounds) = (&mut bounds)[index].as_mut() {
+					bounds.x_min = bounds.x_min.min(x);
+					bounds.x_max = bounds.x_max.max(x);
+					bounds.y_min = bounds.y_min.min(y);
+					bounds.y_max = bounds.y_max.max(y);
+				} else {
+					bounds[index] = Some(ComponentBounds {
+						x_min: x,
+						x_max: x,
+						y_min: y,
+						y_max: y,
+					});
+				}
+				// }}}
+			}
+		}
+
+		// {{{ Remove components that are too large
+		for bound in &mut bounds {
+			if bound.map_or(false, |b| (b.x_max - b.x_min) >= 9 * image.width() / 10) {
+				*bound = None;
+			}
+		}
+		// }}}
+		// {{{ Compute max width/height
+		let max_width = bounds
+			.iter()
+			.filter_map(|o| o.as_ref())
+			.map(|b| b.x_max - b.x_min)
+			.max()
+			.ok_or_else(|| "No connected components found")?;
+		let max_height = bounds
+			.iter()
+			.filter_map(|o| o.as_ref())
+			.map(|b| b.y_max - b.y_min)
+			.max()
+			.ok_or_else(|| "No connected components found")?;
+		// }}}
+
+		let mut bounds_by_position: Vec<usize> = (0..(bounds.len()))
+			.filter(|i| bounds[*i].is_some())
+			.collect();
+		bounds_by_position.sort_by_key(|i| bounds[*i].unwrap().x_min);
+
+		Ok(Self {
+			components,
+			bounds,
+			max_width,
+			max_height,
+			bounds_by_position,
+		})
+	}
+}
+// }}}
+// {{{ Char measurements
+pub struct CharMeasurements {
+	chars: Vec<(char, ComponentVec)>,
+}
+
+impl CharMeasurements {
+	// {{{ Creation
+	pub fn from_text(face: &mut Face, string: &str, weight: Option<u32>) -> Result<Self, Error> {
+		// These are bad estimates lol
+		let char_w = 35;
+		let char_h = 60;
+
+		let mut canvas = BitmapCanvas::new(10 + char_w * string.len() as u32, char_h + 10);
+		canvas.text(
+			(5, 5),
+			face,
+			TextStyle {
+				stroke: None,
+				drop_shadow: None,
+				align: (Align::Start, Align::Start),
+				size: char_h,
+				color: Color::BLACK,
+				weight: None,
+			},
+			&string,
+		)?;
+		let buffer = ImageBuffer::from_raw(canvas.width, canvas.height(), canvas.buffer.to_vec())
+			.ok_or_else(|| "Failed to turn buffer into canvas")?;
+		let image = DynamicImage::ImageRgb8(buffer);
+
+		debug_image_log(&image)?;
+
+		let components = ComponentsWithBounds::from_image(&image)?;
+
+		let mut chars = Vec::with_capacity(string.len());
+		for (i, char) in string.chars().enumerate() {
+			chars.push((
+				char,
+				ComponentVec::from_component(
+					&components,
+					components.bounds_by_position[i] as u32 + 1,
+				)?,
+			))
+		}
+
+		Ok(Self { chars })
+	}
+	// }}}
+	// {{{ Recognition
+	pub fn recognise(&self, image: &DynamicImage) -> Result<String, Error> {
+		let components = ComponentsWithBounds::from_image(image)?;
+		let mut result = String::new();
+		for i in &components.bounds_by_position {
+			let vec = ComponentVec::from_component(&components, *i as u32 + 1)?;
+
+			let best_match = self
+				.chars
+				.iter()
+				.map(|(i, v)| (*i, v, v.distance_squared_to(&vec)))
+				.min_by(|(_, _, d1), (_, _, d2)| {
+					d1.partial_cmp(d2).expect("NaN distance encountered")
+				})
+				.map(|(i, _, d)| (d.sqrt(), i))
+				.ok_or_else(|| "No chars in cache")?;
+
+			// println!("char '{}', distance {}", best_match.1, best_match.0);
+			if best_match.0 <= (IMAGE_VEC_DIM * 10) as f32 {
+				result.push(best_match.1);
+			}
+		}
+
+		Ok(result)
+	}
+	// }}}
+}
+// }}}

@@ -307,7 +307,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 				font,
 				crate::bitmap::TextStyle {
 					size: 25,
-					weight: 800,
+					weight: Some(800),
 					color: Color::WHITE,
 					align: (Align::Center, Align::Center),
 					stroke: None,
@@ -327,7 +327,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 			let initial_size = 24;
 			let mut style = crate::bitmap::TextStyle {
 				size: initial_size,
-				weight: 800,
+				weight: Some(800),
 				color: Color::WHITE,
 				align: (Align::Start, Align::Center),
 				stroke: Some((Color::BLACK, 1.5)),
@@ -404,7 +404,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 				font,
 				crate::bitmap::TextStyle {
 					size: 25,
-					weight: 600,
+					weight: Some(600),
 					color: Color::from_rgb_int(0xffffff),
 					align: (Align::Center, Align::Center),
 					stroke: None,
@@ -442,7 +442,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 				font,
 				crate::bitmap::TextStyle {
 					size: 23,
-					weight: 800,
+					weight: Some(800),
 					color: Color::WHITE,
 					align: (Align::Start, Align::Center),
 					stroke: Some((Color::BLACK, 1.5)),
@@ -490,7 +490,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 				font,
 				crate::bitmap::TextStyle {
 					size: if status == 'M' { 30 } else { 36 },
-					weight: if status == 'M' { 800 } else { 500 },
+					weight: Some(if status == 'M' { 800 } else { 500 }),
 					color: Color::WHITE,
 					align: (Align::Center, Align::Center),
 					stroke: None,
@@ -526,7 +526,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 				font,
 				crate::bitmap::TextStyle {
 					size: 30,
-					weight: 650,
+					weight: Some(650),
 					color: Color::from_rgb_int(0x203C6B),
 					align: (Align::Center, Align::Center),
 					stroke: Some((Color::WHITE, 1.5)),
@@ -540,7 +540,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 		EXO_FONT.with_borrow_mut(|font| -> Result<(), Error> {
 			let mut style = crate::bitmap::TextStyle {
 				size: 12,
-				weight: 600,
+				weight: Some(600),
 				color: Color::WHITE,
 				align: (Align::Center, Align::Center),
 				stroke: None,
@@ -556,7 +556,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 			)?;
 
 			style.size = 25;
-			style.weight = 700;
+			style.weight = Some(700);
 
 			drawer.text(
 				top_left_area,

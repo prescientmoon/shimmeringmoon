@@ -11,8 +11,9 @@ num = "0.4.3"
 plotters = { git="https://github.com/starlitcanopy/plotters.git", rev="986cd959362a2dbec8d1b25670fd083b904d7b8c", features=["bitmap_backend"] }
 poise = "0.6.1"
 sqlx = { version = "0.8.0", features = ["sqlite", "runtime-tokio", "chrono"] }
-hypertesseract = { features=["image"], git="https://github.com/BlueGhostGH/hypertesseract.git", rev="78dd8ab" }
+hypertesseract = { features=["image"], git="https://github.com/BlueGhostGH/hypertesseract.git", rev="4e05063" }
 tokio = {version="1.38.0", features=["rt-multi-thread"]}
+imageproc = "0.25.0"
 
 [profile.dev.package."*"]
 opt-level = 3

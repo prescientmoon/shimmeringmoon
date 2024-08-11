@@ -81,7 +81,7 @@ pub async fn magic(
 					};
 
 					edit_reply!(ctx, handle, "Image {}: reading score", i + 1).await?;
-					let score_possibilities = analyzer.read_score(
+					let score = analyzer.read_score(
 						ctx.data(),
 						Some(chart.note_count),
 						&ocr_image,
@@ -89,17 +89,11 @@ pub async fn magic(
 					)?;
 
 					// {{{ Build play
-					let (score, maybe_fars, score_warning) = Score::resolve_ambiguities(
-						score_possibilities,
+					let maybe_fars = Score::resolve_distibution_ambiguities(
+						score,
 						note_distribution,
 						chart.note_count,
-					)
-					.map_err(|err| {
-						format!(
-							"Error occurred when disambiguating scores for '{}' [{:?}] by {}: {}",
-							song.title, difficulty, song.artist, err
-						)
-					})?;
+					);
 
 					let play = CreatePlay::new(score, &chart, &user)
 						.with_attachment(file)
@@ -110,13 +104,9 @@ pub async fn magic(
 					// }}}
 					// }}}
 					// {{{ Deliver embed
-					let (mut embed, attachment) = play
+					let (embed, attachment) = play
 						.to_embed(&ctx.data().db, &user, &song, &chart, i, None)
 						.await?;
-
-					if let Some(warning) = score_warning {
-						embed = embed.description(warning);
-					}
 
 					embeds.push(embed);
 					attachments.extend(attachment);
@@ -139,9 +129,11 @@ pub async fn magic(
 
 		handle.delete(ctx).await?;
 
-		ctx.channel_id()
-			.send_files(ctx.http(), attachments, CreateMessage::new().embeds(embeds))
-			.await?;
+		if embeds.len() > 0 {
+			ctx.channel_id()
+				.send_files(ctx.http(), attachments, CreateMessage::new().embeds(embeds))
+				.await?;
+		}
 	}
 
 	Ok(())

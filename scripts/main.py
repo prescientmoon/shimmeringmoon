@@ -52,7 +52,7 @@ def import_charts_from_csv():
                 [note_design, level, cc, note_count] = charts[i * 4 : (i + 1) * 4]
                 if note_design == "N/A":
                     continue
-                chart_count += 2
+                chart_count += 1
 
                 [difficulty, level] = level.split(" ")
 

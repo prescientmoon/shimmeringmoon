@@ -140,7 +140,7 @@ fn float_to_ft_fixed(f: f32) -> i64 {
 #[derive(Debug, Clone, Copy)]
 pub struct TextStyle {
 	pub size: u32,
-	pub weight: u32,
+	pub weight: Option<u32>,
 	pub color: Color,
 	pub align: (Align, Align),
 	pub stroke: Option<(Color, f32)>,
@@ -154,6 +154,11 @@ pub struct BitmapCanvas {
 }
 
 impl BitmapCanvas {
+	#[inline]
+	pub fn height(&self) -> u32 {
+		self.buffer.len() as u32 / 3 / self.width
+	}
+
 	// {{{ Draw pixel
 	pub fn set_pixel(&mut self, pos: (u32, u32), color: Color) {
 		let index = 3 * (pos.1 * self.width + pos.0) as usize;
@@ -169,7 +174,7 @@ impl BitmapCanvas {
 	// {{{ Draw RBG image
 	/// Draws a bitmap image
 	pub fn blit_rbg(&mut self, pos: Position, (iw, ih): (u32, u32), src: &[u8]) {
-		let height = self.buffer.len() as u32 / 3 / self.width;
+		let height = self.height();
 		for dx in 0..iw {
 			for dy in 0..ih {
 				let x = pos.0 + dx as i32;
@@ -190,7 +195,7 @@ impl BitmapCanvas {
 	// {{{ Draw RGBA image
 	/// Draws a bitmap image taking care of the alpha channel.
 	pub fn blit_rbga(&mut self, pos: Position, (iw, ih): (u32, u32), src: &[u8]) {
-		let height = self.buffer.len() as u32 / 3 / self.width;
+		let height = self.height();
 		for dx in 0..iw {
 			for dy in 0..ih {
 				let x = pos.0 + dx as i32;
@@ -212,7 +217,7 @@ impl BitmapCanvas {
 	// {{{ Fill
 	/// Fill with solid color
 	pub fn fill(&mut self, pos: Position, (iw, ih): (u32, u32), color: Color) {
-		let height = self.buffer.len() as u32 / 3 / self.width;
+		let height = self.height();
 		for dx in 0..iw {
 			for dy in 0..ih {
 				let x = pos.0 + dx as i32;
@@ -233,23 +238,25 @@ impl BitmapCanvas {
 		text: &str,
 	) -> Result<(Position, Rect, Vec<(i64, Glyph)>), Error> {
 		// {{{ Control weight
-		unsafe {
-			let raw = face.raw_mut() as *mut _;
-			let slice = [(style.weight as i64) << 16];
+		if let Some(weight) = style.weight {
+			unsafe {
+				let raw = face.raw_mut() as *mut _;
+				let slice = [(weight as i64) << 16];
 
-			// {{{ Debug logging
-			// let mut amaster = 0 as *mut FT_MM_Var;
-			// FT_Get_MM_Var(raw, &mut amaster as *mut _);
-			// println!("{:?}", *amaster);
-			// println!("{:?}", *(*amaster).axis);
-			// println!("{:?}", *(*amaster).namedstyle);
-			// }}}
+				// {{{ Debug logging
+				// let mut amaster = 0 as *mut FT_MM_Var;
+				// FT_Get_MM_Var(raw, &mut amaster as *mut _);
+				// println!("{:?}", *amaster);
+				// println!("{:?}", *(*amaster).axis);
+				// println!("{:?}", *(*amaster).namedstyle);
+				// }}}
 
-			// Set variable weight
-			let err = FT_Set_Var_Design_Coordinates(raw, 3, slice.as_ptr());
-			if err != FT_Err_Ok {
-				let err: FtResult<_> = Err(err.into());
-				err?;
+				// Set variable weight
+				let err = FT_Set_Var_Design_Coordinates(raw, 3, slice.as_ptr());
+				if err != FT_Err_Ok {
+					let err: FtResult<_> = Err(err.into());
+					err?;
+				}
 			}
 		}
 		// }}}
@@ -418,7 +425,7 @@ impl BitmapCanvas {
 
 	#[inline]
 	pub fn new(width: u32, height: u32) -> Self {
-		let buffer = vec![u8::MAX; 8 * 3 * (width * height) as usize].into_boxed_slice();
+		let buffer = vec![u8::MAX; 3 * (width * height) as usize].into_boxed_slice();
 		Self { buffer, width }
 	}
 }
