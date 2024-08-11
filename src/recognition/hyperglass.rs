@@ -10,7 +10,7 @@
 //!    or other artifacts).
 //! 4. Sort the components by x-position.
 //! 5. Compute the largest width & height of the connected components.
-//! 5. Split each component (more precisely, start at it's top-left corner and
+//! 5. Split each component (more precisely, start at its top-left corner and
 //!    split an area equal to the aforementioned width & height) into a grid of
 //!    N^2 chunks (N=5 at the moment), and use that to generate a vector who's
 //!    elements represent the percentage of black pixels in each chunk which
