@@ -6,10 +6,9 @@
 //! allows for a convenient way to throw images into a `logs` directory with
 //! a simple env var.
 
-use std::{env, ops::Deref};
+use std::{env, ops::Deref, sync::OnceLock, time::Instant};
 
 use image::{DynamicImage, EncodableLayout, ImageBuffer, PixelWithColorType};
-use poise::serenity_prelude::Timestamp;
 
 use crate::context::Error;
 
@@ -21,9 +20,18 @@ fn should_save_debug_images() -> bool {
 }
 
 #[inline]
+fn get_startup_time() -> Instant {
+	static CELL: OnceLock<Instant> = OnceLock::new();
+	*CELL.get_or_init(|| Instant::now())
+}
+
+#[inline]
 pub fn debug_image_log(image: &DynamicImage) -> Result<(), Error> {
 	if should_save_debug_images() {
-		image.save(format!("./logs/{}.png", Timestamp::now()))?;
+		image.save(format!(
+			"./logs/{:0>15}.png",
+			get_startup_time().elapsed().as_nanos()
+		))?;
 	}
 
 	Ok(())
@@ -37,7 +45,10 @@ where
 	C: Deref<Target = [P::Subpixel]>,
 {
 	if should_save_debug_images() {
-		image.save(format!("./logs/{}.png", Timestamp::now()))?;
+		image.save(format!(
+			"./logs/{:0>15}.png",
+			get_startup_time().elapsed().as_nanos()
+		))?;
 	}
 
 	Ok(())

@@ -1,4 +1,4 @@
-//! Hyperglass my own specialized OCR system, created as a result of my
+//! Hyperglass is my own specialized OCR system, created as a result of my
 //! annoyance with how unreliable tesseract is. Assuming we know the font,
 //! OCR should be almost perfect, even when faced with stange kerning. This is
 //! what this module achieves!
@@ -158,8 +158,12 @@ struct ComponentsWithBounds {
 }
 
 impl ComponentsWithBounds {
-	fn from_image(image: &DynamicImage) -> Result<Self, Error> {
-		let image = threshold(&image.to_luma8(), 100, ThresholdType::Binary);
+	fn from_image(image: &DynamicImage, binarisation_threshold: u8) -> Result<Self, Error> {
+		let image = threshold(
+			&image.to_luma8(),
+			binarisation_threshold,
+			ThresholdType::Binary,
+		);
 		debug_image_buffer_log(&image)?;
 
 		let background = Luma([u8::MAX]);
@@ -168,7 +172,7 @@ impl ComponentsWithBounds {
 		let mut bounds: Vec<Option<ComponentBounds>> = Vec::new();
 		for x in 0..components.width() {
 			for y in 0..components.height() {
-				// {{{ Retrieve pixel if it's not backround
+				// {{{ Retrieve pixel if it's not background
 				let component = components[(x, y)].0[0];
 				if component == 0 {
 					continue;
@@ -254,7 +258,7 @@ impl CharMeasurements {
 
 		debug_image_log(&image)?;
 
-		let components = ComponentsWithBounds::from_image(&image)?;
+		let components = ComponentsWithBounds::from_image(&image, 100)?;
 
 		// {{{ Compute max width/height
 		let max_width = components
@@ -293,9 +297,16 @@ impl CharMeasurements {
 	}
 	// }}}
 	// {{{ Recognition
-	pub fn recognise(&self, image: &DynamicImage, whitelist: &str) -> Result<String, Error> {
-		let components = timed!("from_image", { ComponentsWithBounds::from_image(image)? });
-		let mut result = String::new();
+	pub fn recognise(
+		&self,
+		image: &DynamicImage,
+		whitelist: &str,
+		binarisation_threshold: Option<u8>,
+	) -> Result<String, Error> {
+		let components = timed!("from_image", {
+			ComponentsWithBounds::from_image(image, binarisation_threshold.unwrap_or(100))?
+		});
+		let mut result = String::with_capacity(components.bounds.len());
 
 		let max_height = components
 			.bounds

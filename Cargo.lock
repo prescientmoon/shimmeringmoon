@@ -2605,6 +2605,7 @@ dependencies = [
  "num",
  "plotters",
  "poise",
+ "rand",
  "sqlx",
  "tokio",
 ]

@@ -1,5 +1,4 @@
 use std::fmt::Display;
-use std::str::FromStr;
 
 use hypertesseract::{PageSegMode, Tesseract};
 use image::imageops::FilterType;
@@ -154,7 +153,7 @@ impl ImageAnalyzer {
 		let result = timed!("full recognition", {
 			Score(
 				measurements
-					.recognise(&image, "0123456789'")?
+					.recognise(&image, "0123456789'", None)?
 					.chars()
 					.filter(|c| *c != '\'')
 					.collect::<String>()
@@ -182,6 +181,7 @@ impl ImageAnalyzer {
 		&mut self,
 		ctx: &UserContext,
 		image: &DynamicImage,
+		grayscale_image: &DynamicImage,
 		kind: ScoreKind,
 	) -> Result<Difficulty, Error> {
 		if kind == ScoreKind::SongSelect {
@@ -202,10 +202,6 @@ impl ImageAnalyzer {
 						)
 						.unwrap();
 
-					// rect.width = 100;
-					// rect.height = 100;
-					// self.crop_image_to_bytes(image, rect).unwrap();
-
 					let image_color = image.get_pixel(rect.x as u32, rect.y as u32);
 					let image_color = Color::from_bytes(image_color.0);
 
@@ -217,25 +213,15 @@ impl ImageAnalyzer {
 			return Ok(min.1);
 		}
 
-		let (text, conf) = Tesseract::builder()
-			.language(hypertesseract::Language::English)
-			.page_seg_mode(PageSegMode::RawLine)
-			.build()?
-			.recognize_text_cloned_with_conf(
-				&self
-					.interp_crop(ctx, image, ScoreScreen(ScoreScreenRect::Difficulty))?
-					.into_rgba8(),
-			)?;
+		let image = self.interp_crop(
+			ctx,
+			grayscale_image,
+			ScoreScreen(ScoreScreenRect::Difficulty),
+		)?;
 
-		let text = text.trim().to_lowercase();
-
-		if conf < 10 && conf != 0 {
-			return Err(format!(
-				"Difficulty text is not readable (confidence = {}, text = {}).",
-				conf, text
-			)
-			.into());
-		}
+		let text =
+			ctx.exo_measurements
+				.recognise(&image, "PASTPRESENTFUTUREETERNALBEYOND", None)?;
 
 		let difficulty = Difficulty::DIFFICULTIES
 			.iter()
@@ -256,7 +242,7 @@ impl ImageAnalyzer {
 		let image = self.interp_crop(ctx, image, PlayKind)?;
 		let text = ctx
 			.exo_measurements
-			.recognise(&image, "resultselectasong")?;
+			.recognise(&image, "resultselectasong", None)?;
 
 		let result = if edit_distance(&text, "Result") < edit_distance(&text, "Select a song") {
 			ScoreKind::ScoreScreen
@@ -356,21 +342,13 @@ impl ImageAnalyzer {
 		static KINDS: [ScoreScreenRect; 3] = [Pure, Far, Lost];
 
 		for i in 0..3 {
-			let text = Tesseract::builder()
-				.language(hypertesseract::Language::English)
-				.page_seg_mode(PageSegMode::SparseText)
-				.whitelist_str("0123456789")?
-				.assume_numeric_input()
-				.build()?
-				.recognize_text_cloned(
-					&self
-						.interp_crop(ctx, image, ScoreScreen(KINDS[i]))?
-						.into_rgba8(),
-				)?;
-
-			println!("Raw '{}'", text.trim());
-			out[i] = u32::from_str(&text.trim()).unwrap_or(0);
+			let image = self.interp_crop(ctx, image, ScoreScreen(KINDS[i]))?;
+			out[i] = ctx
+				.exo_measurements
+				.recognise(&image, "0123456789", Some(30))?
+				.parse()?;
 		}
+
 		println!("Ditribution {out:?}");
 
 		Ok((out[0], out[1], out[2]))
@@ -382,28 +360,11 @@ impl ImageAnalyzer {
 		ctx: &'a UserContext,
 		image: &DynamicImage,
 	) -> Result<u32, Error> {
-		let (text, conf) = Tesseract::builder()
-			.language(hypertesseract::Language::English)
-			.page_seg_mode(PageSegMode::SingleLine)
-			.whitelist_str("0123456789")?
-			.assume_numeric_input()
-			.build()?
-			.recognize_text_cloned_with_conf(
-				&self
-					.interp_crop(ctx, image, ScoreScreen(ScoreScreenRect::MaxRecall))?
-					.into_rgba8(),
-			)?;
-
-		let max_recall = u32::from_str_radix(text.trim(), 10)?;
-
-		if conf < 20 && conf != 0 {
-			return Err(format!(
-				"Title text is not readable (confidence = {}, text = {}).",
-				conf,
-				text.trim()
-			)
-			.into());
-		}
+		let image = self.interp_crop(ctx, image, ScoreScreen(ScoreScreenRect::MaxRecall))?;
+		let max_recall = ctx
+			.exo_measurements
+			.recognise(&image, "0123456789", None)?
+			.parse()?;
 
 		Ok(max_recall)
 	}

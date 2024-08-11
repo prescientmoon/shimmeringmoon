@@ -7,6 +7,7 @@ use crate::recognition::recognize::{ImageAnalyzer, ScoreKind};
 use crate::user::{discord_it_to_discord_user, User};
 use crate::{edit_reply, get_user, timed};
 use image::DynamicImage;
+use poise::serenity_prelude::futures::future::join_all;
 use poise::serenity_prelude::CreateMessage;
 use poise::{serenity_prelude as serenity, CreateReply};
 use sqlx::query;
@@ -34,128 +35,132 @@ pub async fn magic(
 
 	if files.len() == 0 {
 		ctx.reply("No images found attached to message").await?;
-	} else {
-		let mut embeds = Vec::with_capacity(files.len());
-		let mut attachments = Vec::with_capacity(files.len());
-		let handle = ctx
-			.reply(format!("Processed 0/{} scores", files.len()))
+		return Ok(());
+	}
+
+	let mut embeds = Vec::with_capacity(files.len());
+	let mut attachments = Vec::with_capacity(files.len());
+	let handle = ctx
+		.reply(format!("Processed 0/{} scores", files.len()))
+		.await?;
+
+	let mut analyzer = ImageAnalyzer::default();
+
+	// {{{ Download files
+	let download_tasks = files
+		.iter()
+		.filter(|file| file.dimensions().is_some())
+		.map(|file| async move { (file, file.download().await) });
+
+	let downloaded = timed!("dowload_files", { join_all(download_tasks).await });
+
+	if downloaded.len() < files.len() {
+		ctx.reply("One or more of the attached files are not images!")
 			.await?;
+	}
+	// }}}
 
-		let mut analyzer = ImageAnalyzer::default();
+	for (i, (file, bytes)) in downloaded.into_iter().enumerate() {
+		let bytes = bytes?;
 
-		for (i, file) in files.iter().enumerate() {
-			let start = Instant::now();
-			if let Some(_) = file.dimensions() {
-				let bytes = timed!("file download", { file.download().await? });
-				let mut image = timed!("decode image", { image::load_from_memory(&bytes)? });
-				let mut grayscale_image = timed!("grayscale image", {
-					DynamicImage::ImageLuma8(image.to_luma8())
-				});
-				// image = image.resize(1024, 1024, FilterType::Nearest);
+		let start = Instant::now();
+		// {{{ Preapare image
+		let mut image = timed!("decode image", { image::load_from_memory(&bytes)? });
+		let mut grayscale_image = timed!("grayscale image", {
+			DynamicImage::ImageLuma8(image.to_luma8())
+		});
+		// image = image.resize(1024, 1024, FilterType::Nearest);
+		// }}}
 
-				let result: Result<(), Error> = try {
-					// {{{ Detection
+		let result: Result<(), Error> = try {
+			// {{{ Detection
 
-					// edit_reply!(ctx, handle, "Image {}: reading kind", i + 1).await?;
-					let kind = timed!("read_score_kind", {
-						analyzer.read_score_kind(ctx.data(), &grayscale_image)?
-					});
+			// edit_reply!(ctx, handle, "Image {}: reading kind", i + 1).await?;
+			let kind = timed!("read_score_kind", {
+				analyzer.read_score_kind(ctx.data(), &grayscale_image)?
+			});
 
-					// edit_reply!(ctx, handle, "Image {}: reading difficulty", i + 1).await?;
-					// Do not use `ocr_image` because this reads the colors
-					let difficulty = timed!("read_difficulty", {
-						analyzer.read_difficulty(ctx.data(), &image, kind)?
-					});
+			// edit_reply!(ctx, handle, "Image {}: reading difficulty", i + 1).await?;
+			// Do not use `ocr_image` because this reads the colors
+			let difficulty = timed!("read_difficulty", {
+				analyzer.read_difficulty(ctx.data(), &image, &grayscale_image, kind)?
+			});
 
-					// edit_reply!(ctx, handle, "Image {}: reading jacket", i + 1).await?;
-					let (song, chart) = timed!("read_jacket", {
-						analyzer.read_jacket(ctx.data(), &mut image, kind, difficulty)?
-					});
+			// edit_reply!(ctx, handle, "Image {}: reading jacket", i + 1).await?;
+			let (song, chart) = timed!("read_jacket", {
+				analyzer.read_jacket(ctx.data(), &mut image, kind, difficulty)?
+			});
 
-					let (note_distribution, max_recall) = match kind {
-						ScoreKind::ScoreScreen => {
-							edit_reply!(ctx, handle, "Image {}: reading distribution", i + 1)
-								.await?;
-							let note_distribution =
-								Some(analyzer.read_distribution(ctx.data(), &grayscale_image)?);
-
-							edit_reply!(ctx, handle, "Image {}: reading max recall", i + 1).await?;
-							let max_recall =
-								Some(analyzer.read_max_recall(ctx.data(), &grayscale_image)?);
-
-							(note_distribution, max_recall)
-						}
-						ScoreKind::SongSelect => (None, None),
-					};
-
-					grayscale_image.invert();
-
-					// edit_reply!(ctx, handle, "Image {}: reading score", i + 1).await?;
-					let score = timed!("read_score", {
-						analyzer.read_score(
-							ctx.data(),
-							Some(chart.note_count),
-							&grayscale_image,
-							kind,
-						)?
-					});
-
-					// {{{ Build play
-					let maybe_fars = Score::resolve_distibution_ambiguities(
-						score,
-						note_distribution,
-						chart.note_count,
-					);
-
-					let play = CreatePlay::new(score, &chart, &user)
-						.with_attachment(file)
-						.with_fars(maybe_fars)
-						.with_max_recall(max_recall)
-						.save(&ctx.data())
-						.await?;
-					// }}}
-					// }}}
-					// {{{ Deliver embed
-
-					let (embed, attachment) = timed!("to embed", {
-						play.to_embed(&ctx.data().db, &user, &song, &chart, i, None)
-							.await?
-					});
-
-					embeds.push(embed);
-					attachments.extend(attachment);
-					// }}}
-				};
-
-				if let Err(err) = result {
-					analyzer
-						.send_discord_error(ctx, &image, &file.filename, err)
-						.await?;
+			let max_recall = match kind {
+				ScoreKind::ScoreScreen => {
+					// edit_reply!(ctx, handle, "Image {}: reading max recall", i + 1).await?;
+					Some(analyzer.read_max_recall(ctx.data(), &grayscale_image)?)
 				}
-			} else {
-				ctx.reply("One of the attached files is not an image!")
-					.await?;
-				continue;
-			}
-			let took = start.elapsed();
+				ScoreKind::SongSelect => None,
+			};
 
-			edit_reply!(
-				ctx,
-				handle,
-				"Processed {}/{} scores. Last score took {took:?} to process.",
-				i + 1,
-				files.len()
-			)
-			.await?;
-		}
+			grayscale_image.invert();
+			let note_distribution = match kind {
+				ScoreKind::ScoreScreen => {
+					// edit_reply!(ctx, handle, "Image {}: reading distribution", i + 1).await?;
+					Some(analyzer.read_distribution(ctx.data(), &grayscale_image)?)
+				}
+				ScoreKind::SongSelect => None,
+			};
 
-		handle.delete(ctx).await?;
+			// edit_reply!(ctx, handle, "Image {}: reading score", i + 1).await?;
+			let score = timed!("read_score", {
+				analyzer.read_score(ctx.data(), Some(chart.note_count), &grayscale_image, kind)?
+			});
 
-		if embeds.len() > 0 {
-			ctx.channel_id()
-				.send_files(ctx.http(), attachments, CreateMessage::new().embeds(embeds))
+			// {{{ Build play
+			let maybe_fars =
+				Score::resolve_distibution_ambiguities(score, note_distribution, chart.note_count);
+
+			let play = CreatePlay::new(score, &chart, &user)
+				.with_attachment(file)
+				.with_fars(maybe_fars)
+				.with_max_recall(max_recall)
+				.save(&ctx.data())
+				.await?;
+			// }}}
+			// }}}
+			// {{{ Deliver embed
+
+			let (embed, attachment) = timed!("to embed", {
+				play.to_embed(&ctx.data().db, &user, &song, &chart, i, None)
+					.await?
+			});
+
+			embeds.push(embed);
+			attachments.extend(attachment);
+			// }}}
+		};
+
+		if let Err(err) = result {
+			analyzer
+				.send_discord_error(ctx, &image, &file.filename, err)
 				.await?;
 		}
+
+		let took = start.elapsed();
+
+		edit_reply!(
+			ctx,
+			handle,
+			"Processed {}/{} scores. Last score took {took:?} to process.",
+			i + 1,
+			files.len()
+		)
+		.await?;
+	}
+
+	handle.delete(ctx).await?;
+
+	if embeds.len() > 0 {
+		ctx.channel_id()
+			.send_files(ctx.http(), attachments, CreateMessage::new().embeds(embeds))
+			.await?;
 	}
 
 	Ok(())

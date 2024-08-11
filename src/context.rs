@@ -39,7 +39,11 @@ impl UserContext {
 		let geosans_measurements = GEOSANS_FONT
 			.with_borrow_mut(|font| CharMeasurements::from_text(font, "0123456789'", None))?;
 		let exo_measurements = EXO_FONT.with_borrow_mut(|font| {
-			CharMeasurements::from_text(font, "0123456789'abcdefghijklmnopqrstuvwxyz", Some(700))
+			CharMeasurements::from_text(
+				font,
+				"0123456789'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+				Some(700),
+			)
 		})?;
 
 		println!("Created user context");

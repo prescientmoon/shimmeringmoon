@@ -14,6 +14,7 @@ sqlx = { version = "0.8.0", features = ["sqlite", "runtime-tokio", "chrono"] }
 hypertesseract = { features=["image"], git="https://github.com/BlueGhostGH/hypertesseract.git", rev="4e05063" }
 tokio = {version="1.38.0", features=["rt-multi-thread"]}
 imageproc = "0.25.0"
+rand = "0.8.5"
 
 [profile.dev.package."*"]
 opt-level = 3

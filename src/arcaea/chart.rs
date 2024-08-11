@@ -21,7 +21,7 @@ impl Difficulty {
 
 	pub const DIFFICULTY_SHORTHANDS: [&'static str; 5] = ["PST", "PRS", "FTR", "ETR", "BYD"];
 	pub const DIFFICULTY_STRINGS: [&'static str; 5] =
-		["past", "present", "future", "eternal", "beyond"];
+		["PAST", "PRESENT", "FUTURE", "ETERNAL", "BEYOND"];
 
 	#[inline]
 	pub fn to_index(self) -> usize {
