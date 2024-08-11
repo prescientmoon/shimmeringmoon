@@ -1,3 +1,11 @@
+//! This module implements my own bitmap and layout based system.
+//!
+//! I created those as a result to my annoyance of how bad / limited
+//! plotters is at rendering text and creating layouts in a clean manner.
+//!
+//! There's still stuff to be implemented here, like a cache for glyphs and
+//! whatnot, but this does run pretty stably for the b30 renderer.
+
 use freetype::{
 	bitmap::PixelMode,
 	face::{KerningMode, LoadFlag},

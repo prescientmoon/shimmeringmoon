@@ -1,3 +1,11 @@
+//! One of the goals of the bot is to never save user-images to disk (for
+//! performance and safety reasons), opting to perform operations in-memory
+//! instead.
+//!
+//! While great in practice, this makes debugging much harder. This module
+//! allows for a convenient way to throw images into a `logs` directory with
+//! a simple env var.
+
 use std::{env, ops::Deref};
 
 use image::{DynamicImage, EncodableLayout, ImageBuffer, PixelWithColorType};

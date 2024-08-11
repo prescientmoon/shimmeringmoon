@@ -1,3 +1,26 @@
+//! Hyperglass my own specialized OCR system, created as a result of my
+//! annoyance with how unreliable tesseract is. Assuming we know the font,
+//! OCR should be almost perfect, even when faced with stange kerning. This is
+//! what this module achieves!
+//!
+//! The algorithm is pretty simple:
+//! 1. Find the connected components (i.e., "black areas") in the image.
+//! 2. Finds the bounding box of each connected component.
+//! 3. Discard connected components which are too large (these are likely bars,
+//!    or other artifacts).
+//! 4. Sort the components by x-position.
+//! 5. Compute the largest width & height of the connected components.
+//! 5. Split each component (more precisely, start at it's top-left corner and
+//!    split an area equal to the aforementioned width & height) into a grid of
+//!    N^2 chunks (N=5 at the moment), and use that to generate a vector who's
+//!    elements represent the percentage of black pixels in each chunk which
+//!    belong to the connected component at hand.
+//! 6. Normalise the vectors to remain font-weight independent.
+//! 7. Find the nearest neighbour of each vector among a list of precomputed
+//!    vectors for the font in the image, thus reconstructing the string! The
+//!    aforementioned precomputed vectors are generated using almost the exact
+//!    procedure described in steps 1-6, except the images are generated at
+//!    startup using my very own bitmap rendering module (`crate::bitmap`).
 use freetype::Face;
 use image::{DynamicImage, ImageBuffer, Luma};
 use imageproc::{
@@ -11,8 +34,6 @@ use crate::{
 	context::Error,
 	logs::{debug_image_buffer_log, debug_image_log},
 };
-
-///! Hyperglass my own specialized OCR system
 
 // {{{ ConponentVec
 /// How many sub-segments to split each side into

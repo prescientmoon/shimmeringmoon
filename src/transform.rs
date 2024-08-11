@@ -1,3 +1,10 @@
+//! This file implements the "rotation as shearing" algorithm,
+//! which can rotate images without making use of any trigonometric
+//! functions (or working with floats altogether, if you don't care
+//! about antialiasing).
+//!
+//! For more information, consult this article: https://www.ocf.berkeley.edu/~fricke/projects/israel/paeth/rotation_by_shearing.html
+
 use image::{DynamicImage, GenericImage, GenericImageView};
 
 use crate::bitmap::{Position, Rect};
@@ -28,7 +35,7 @@ pub fn xshear(image: &mut DynamicImage, rect: Rect, center: Position, shear: f32
 	}
 }
 
-/// Performs a horizontal shear operation, without performing anti-aliasing
+/// Performs a vertical shear operation, without performing anti-aliasing
 pub fn yshear(image: &mut DynamicImage, rect: Rect, center: Position, shear: f32) {
 	let height = rect.height as i32;
 	for x in rect.x..rect.x + rect.width as i32 {

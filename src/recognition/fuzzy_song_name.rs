@@ -1,3 +1,15 @@
+//! This module implements a clunky but reliable way of fuzzy-finding an arcaea
+//! chart names. This algorithm is left-biased, in case the right half of the
+//! name is being covered by character arc.
+//!
+//! This module also makes use of an
+//! extra shorthand system, with shorthands defined in the repo in
+//! `data/shorthands.csv` and imported by `scripts/main.py`. The shorthands are
+//! useful for non-ascii song names, or when trying to bridge the gap to how
+//! the game supposedly refers to some names internally (I do *not* use any
+//! databases extracted from the game, but this is still useful for having a
+//! "canonical" way to refer to some weirdly-named charts).
+
 use crate::arcaea::chart::{Chart, Difficulty, Song, SongCache};
 use crate::context::{Error, UserContext};
 use crate::levenshtein::edit_distance_with;

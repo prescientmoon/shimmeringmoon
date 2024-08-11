@@ -1,4 +1,6 @@
-// Modified version of https://docs.rs/edit-distance/latest/src/edit_distance/lib.rs.html#1-76
+//! Modified version of https://docs.rs/edit-distance/latest/src/edit_distance/lib.rs.html#1-76
+//! The primary modification is providing a no-allocation variant
+//! for efficient consecutive calls.
 
 /// Similar to `edit_distance`, but takes in a preallocated vec so consecutive calls are efficient.
 pub fn edit_distance_with(a: &str, b: &str, cur: &mut Vec<usize>) -> usize {
