@@ -9,6 +9,7 @@ use crate::context::{Context, Error};
 pub struct User {
 	pub id: u32,
 	pub discord_id: String,
+	pub is_pookie: bool,
 }
 
 impl User {
@@ -22,6 +23,7 @@ impl User {
 		Ok(User {
 			id: user.id as u32,
 			discord_id: user.discord_id,
+			is_pookie: user.is_pookie,
 		})
 	}
 
@@ -33,6 +35,7 @@ impl User {
 		Ok(User {
 			id: user.id as u32,
 			discord_id: user.discord_id,
+			is_pookie: user.is_pookie,
 		})
 	}
 }

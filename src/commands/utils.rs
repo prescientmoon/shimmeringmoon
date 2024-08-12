@@ -17,6 +17,17 @@ macro_rules! get_user {
 }
 
 #[macro_export]
+macro_rules! assert_is_pookie {
+	($ctx:expr, $user:expr) => {{
+		if !$user.is_pookie {
+			$ctx.reply("This feature is reserved for my pookies. Sowwy :3")
+				.await?;
+			return Ok(());
+		}
+	}};
+}
+
+#[macro_export]
 macro_rules! reply_errors {
 	($ctx:expr, $value:expr) => {
 		match $value {

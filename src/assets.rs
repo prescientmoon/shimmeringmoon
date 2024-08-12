@@ -1,9 +1,9 @@
-use std::{cell::RefCell, env::var, path::PathBuf, str::FromStr, sync::OnceLock};
+use std::{cell::RefCell, env::var, path::PathBuf, str::FromStr, sync::OnceLock, thread::LocalKey};
 
 use freetype::{Face, Library};
 use image::{imageops::FilterType, ImageBuffer, Rgb, Rgba};
 
-use crate::arcaea::chart::Difficulty;
+use crate::{arcaea::chart::Difficulty, timed};
 
 #[inline]
 pub fn get_data_dir() -> PathBuf {
@@ -18,24 +18,51 @@ pub fn get_assets_dir() -> PathBuf {
 
 #[inline]
 fn get_font(name: &str) -> RefCell<Face> {
-	let face = FREETYPE_LIB.with(|lib| {
-		lib.new_face(get_assets_dir().join(format!("{}.ttf", name)), 0)
-			.expect(&format!("Could not load {} font", name))
+	let face = timed!(format!("load font \"{name}\""), {
+		FREETYPE_LIB.with(|lib| {
+			lib.new_face(get_assets_dir().join(name), 0)
+				.expect(&format!("Could not load {} font", name))
+		})
 	});
 	RefCell::new(face)
 }
 
 thread_local! {
 pub static FREETYPE_LIB: Library = Library::init().unwrap();
-pub static SAIRA_FONT: RefCell<Face> = get_font("saira-variable");
-pub static EXO_FONT: RefCell<Face> = get_font("exo-variable");
-pub static GEOSANS_FONT: RefCell<Face> = get_font("geosans-light");
+pub static SAIRA_FONT: RefCell<Face> = get_font("saira-variable.ttf");
+pub static EXO_FONT: RefCell<Face> = get_font("exo-variable.ttf");
+pub static GEOSANS_FONT: RefCell<Face> = get_font("geosans-light.ttf");
+pub static KAZESAWA_FONT: RefCell<Face> = get_font("kazesawa-regular.ttf");
+pub static KAZESAWA_BOLD_FONT: RefCell<Face> = get_font("kazesawa-bold.ttf");
+pub static NOTO_SANS_FONT: RefCell<Face> = get_font("noto-sans.ttf");
+pub static ARIAL_FONT: RefCell<Face> = get_font("arial.ttf");
+pub static UNI_FONT: RefCell<Face> = get_font("unifont.otf");
+}
+
+#[inline]
+pub fn with_font<T>(
+	primary: &'static LocalKey<RefCell<Face>>,
+	f: impl FnOnce(&mut [&mut Face]) -> T,
+) -> T {
+	UNI_FONT.with_borrow_mut(|uni| {
+		// NOTO_SANS_FONT.with_borrow_mut(|noto| {
+		// ARIAL_FONT.with_borrow_mut(|arial| {
+		primary.with_borrow_mut(|primary| f(&mut [primary, uni]))
+		// })
+		// })
+	})
 }
 
 #[inline]
 pub fn should_skip_jacket_art() -> bool {
 	static CELL: OnceLock<bool> = OnceLock::new();
 	*CELL.get_or_init(|| var("SHIMMERING_NO_JACKETS").unwrap_or_default() == "1")
+}
+
+#[inline]
+pub fn should_blur_jacket_art() -> bool {
+	static CELL: OnceLock<bool> = OnceLock::new();
+	*CELL.get_or_init(|| var("SHIMMERING_BLUR_JACKETS").unwrap_or_default() == "1")
 }
 
 pub fn get_b30_background() -> &'static ImageBuffer<Rgb<u8>, Vec<u8>> {
@@ -46,8 +73,8 @@ pub fn get_b30_background() -> &'static ImageBuffer<Rgb<u8>, Vec<u8>> {
 
 		raw_b30_background
 			.resize(
-				3 * raw_b30_background.width(),
-				3 * raw_b30_background.height(),
+				8 * raw_b30_background.width(),
+				8 * raw_b30_background.height(),
 				FilterType::Lanczos3,
 			)
 			.blur(7.0)

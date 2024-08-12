@@ -4,7 +4,7 @@ use sqlx::SqlitePool;
 
 use crate::{
 	arcaea::{chart::SongCache, jacket::JacketCache},
-	assets::{EXO_FONT, GEOSANS_FONT},
+	assets::{EXO_FONT, GEOSANS_FONT, KAZESAWA_BOLD_FONT, KAZESAWA_FONT},
 	recognition::{hyperglass::CharMeasurements, ui::UIMeasurements},
 };
 
@@ -24,6 +24,9 @@ pub struct UserContext {
 
 	pub geosans_measurements: CharMeasurements,
 	pub exo_measurements: CharMeasurements,
+	// TODO: do we really need both after I've fixed the bug in the ocr code?
+	pub kazesawa_measurements: CharMeasurements,
+	pub kazesawa_bold_measurements: CharMeasurements,
 }
 
 impl UserContext {
@@ -36,15 +39,16 @@ impl UserContext {
 		let jacket_cache = JacketCache::new(&data_dir, &mut song_cache)?;
 		let ui_measurements = UIMeasurements::read(&data_dir)?;
 
+		static WHITELIST: &str = "0123456789'abcdefghklmnopqrstuvwxyzABCDEFGHIJKLMNOPRSTUVWXYZ";
+
 		let geosans_measurements = GEOSANS_FONT
-			.with_borrow_mut(|font| CharMeasurements::from_text(font, "0123456789'", None))?;
-		let exo_measurements = EXO_FONT.with_borrow_mut(|font| {
-			CharMeasurements::from_text(
-				font,
-				"0123456789'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-				Some(700),
-			)
-		})?;
+			.with_borrow_mut(|font| CharMeasurements::from_text(font, WHITELIST, None))?;
+		let kazesawa_measurements = KAZESAWA_FONT
+			.with_borrow_mut(|font| CharMeasurements::from_text(font, WHITELIST, None))?;
+		let kazesawa_bold_measurements = KAZESAWA_BOLD_FONT
+			.with_borrow_mut(|font| CharMeasurements::from_text(font, WHITELIST, None))?;
+		let exo_measurements = EXO_FONT
+			.with_borrow_mut(|font| CharMeasurements::from_text(font, WHITELIST, Some(700)))?;
 
 		println!("Created user context");
 
@@ -56,6 +60,8 @@ impl UserContext {
 			ui_measurements,
 			geosans_measurements,
 			exo_measurements,
+			kazesawa_measurements,
+			kazesawa_bold_measurements,
 		})
 	}
 }

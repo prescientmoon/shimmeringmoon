@@ -134,14 +134,13 @@ impl ImageAnalyzer {
 		kind: ScoreKind,
 	) -> Result<Score, Error> {
 		let image = timed!("interp_crop_resize", {
-			self.interp_crop_resize(
+			self.interp_crop(
 				ctx,
 				image,
 				match kind {
 					ScoreKind::SongSelect => SongSelect(SongSelectRect::Score),
 					ScoreKind::ScoreScreen => ScoreScreen(ScoreScreenRect::Score),
 				},
-				(u32::MAX, 100),
 			)?
 		});
 
@@ -219,9 +218,11 @@ impl ImageAnalyzer {
 			ScoreScreen(ScoreScreenRect::Difficulty),
 		)?;
 
-		let text =
-			ctx.exo_measurements
-				.recognise(&image, "PASTPRESENTFUTUREETERNALBEYOND", None)?;
+		let text = ctx.kazesawa_bold_measurements.recognise(
+			&image,
+			"PASTPRESENTFUTUREETERNALBEYOND",
+			None,
+		)?;
 
 		let difficulty = Difficulty::DIFFICULTIES
 			.iter()
@@ -241,10 +242,10 @@ impl ImageAnalyzer {
 	) -> Result<ScoreKind, Error> {
 		let image = self.interp_crop(ctx, image, PlayKind)?;
 		let text = ctx
-			.exo_measurements
-			.recognise(&image, "resultselectasong", None)?;
+			.kazesawa_measurements
+			.recognise(&image, "ResultSelectaSong ", None)?;
 
-		let result = if edit_distance(&text, "Result") < edit_distance(&text, "Select a song") {
+		let result = if edit_distance(&text, "Result") < edit_distance(&text, "SelectaSong") {
 			ScoreKind::ScoreScreen
 		} else {
 			ScoreKind::SongSelect
@@ -344,7 +345,7 @@ impl ImageAnalyzer {
 		for i in 0..3 {
 			let image = self.interp_crop(ctx, image, ScoreScreen(KINDS[i]))?;
 			out[i] = ctx
-				.exo_measurements
+				.kazesawa_bold_measurements
 				.recognise(&image, "0123456789", Some(30))?
 				.parse()?;
 		}

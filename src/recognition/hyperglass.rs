@@ -234,24 +234,24 @@ impl CharMeasurements {
 	// {{{ Creation
 	pub fn from_text(face: &mut Face, string: &str, weight: Option<u32>) -> Result<Self, Error> {
 		// These are bad estimates lol
-		let char_w = 35;
-		let char_h = 60;
+		let style = TextStyle {
+			stroke: None,
+			drop_shadow: None,
+			align: (Align::Start, Align::Start),
+			size: 60,
+			color: Color::BLACK,
+			// TODO: do we want to use the weight hint for resilience?
+			weight,
+		};
+		let padding = (5, 5);
+		let planned = BitmapCanvas::plan_text_rendering(padding, &mut [face], style, &string)?;
 
-		let mut canvas = BitmapCanvas::new(10 + char_w * string.len() as u32, char_h + 10);
-		canvas.text(
-			(5, 5),
-			face,
-			TextStyle {
-				stroke: None,
-				drop_shadow: None,
-				align: (Align::Start, Align::Start),
-				size: char_h,
-				color: Color::BLACK,
-				// TODO: do we want to use the weight hint for resilience?
-				weight,
-			},
-			&string,
-		)?;
+		let mut canvas = BitmapCanvas::new(
+			(planned.0 .0) as u32 + planned.1.width + 2 * padding.0 as u32,
+			(planned.0 .1) as u32 + planned.1.height + 2 * padding.0 as u32,
+		);
+
+		canvas.text(padding, &mut [face], style, &string)?;
 		let buffer = ImageBuffer::from_raw(canvas.width, canvas.height(), canvas.buffer.to_vec())
 			.ok_or_else(|| "Failed to turn buffer into canvas")?;
 		let image = DynamicImage::ImageRgb8(buffer);
@@ -332,8 +332,8 @@ impl CharMeasurements {
 				.map(|(i, _, d)| (d.sqrt(), i))
 				.ok_or_else(|| "No chars in cache")?;
 
-			// println!("char '{}', distance {}", best_match.1, best_match.0);
-			if best_match.0 <= (IMAGE_VEC_DIM * 10) as f32 {
+			println!("char '{}', distance {}", best_match.1, best_match.0);
+			if best_match.0 <= 1.0 {
 				result.push(best_match.1);
 			}
 		}

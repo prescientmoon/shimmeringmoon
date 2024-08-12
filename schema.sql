@@ -1,9 +1,10 @@
 # {{{ users
+# }}}
 create table IF NOT EXISTS users (
     id INTEGER NOT NULL PRIMARY KEY,
-    discord_id TEXT UNIQUE NOT NULL
+    discord_id TEXT UNIQUE NOT NULL,
+    is_pookie BOOL NOT NULL DEFAULT 0
 );
-# }}}
 # {{{ songs
 CREATE TABLE IF NOT EXISTS songs (
     id INTEGER NOT NULL PRIMARY KEY,

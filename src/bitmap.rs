@@ -9,8 +9,8 @@
 use freetype::{
 	bitmap::PixelMode,
 	face::{KerningMode, LoadFlag},
-	ffi::{FT_Err_Ok, FT_Set_Var_Design_Coordinates, FT_GLYPH_BBOX_PIXELS},
-	Bitmap, BitmapGlyph, Face, FtResult, Glyph, StrokerLineCap, StrokerLineJoin,
+	ffi::{FT_Set_Var_Design_Coordinates, FT_GLYPH_BBOX_PIXELS},
+	Bitmap, BitmapGlyph, Face, Glyph, StrokerLineCap, StrokerLineJoin,
 };
 use image::GenericImage;
 use num::traits::Euclid;
@@ -88,6 +88,11 @@ impl Rect {
 	#[inline]
 	pub fn from_image(image: &impl GenericImage) -> Self {
 		Self::new(0, 0, image.width(), image.height())
+	}
+
+	#[inline]
+	pub fn scaled(&self, scale: u32) -> Self {
+		Self::new(self.x, self.y, self.width * scale, self.height * scale)
 	}
 
 	#[inline]
@@ -180,22 +185,29 @@ impl BitmapCanvas {
 	}
 	// }}}
 	// {{{ Draw RBG image
-	/// Draws a bitmap image
 	pub fn blit_rbg(&mut self, pos: Position, (iw, ih): (u32, u32), src: &[u8]) {
-		let height = self.height();
-		for dx in 0..iw {
-			for dy in 0..ih {
-				let x = pos.0 + dx as i32;
-				let y = pos.1 + dy as i32;
-				if x >= 0 && (x as u32) < self.width && y >= 0 && (y as u32) < height {
-					let r = src[(dx + dy * iw) as usize * 3];
-					let g = src[(dx + dy * iw) as usize * 3 + 1];
-					let b = src[(dx + dy * iw) as usize * 3 + 2];
+		let iw = iw as i32;
+		let ih = ih as i32;
+		let width = self.width as i32;
+		let height = self.height() as i32;
 
-					let color = Color(r, g, b, 0xff);
+		let x_start = 0.max(-pos.0);
+		let y_start = 0.max(-pos.1);
+		let x_end = iw.min(width - pos.0);
+		let y_end = ih.min(height - pos.1);
 
-					self.set_pixel((x as u32, y as u32), color);
-				}
+		for dx in x_start..x_end {
+			for dy in y_start..y_end {
+				let x = pos.0 + dx;
+				let y = pos.1 + dy;
+
+				let r = src[(dx + dy * iw) as usize * 3];
+				let g = src[(dx + dy * iw) as usize * 3 + 1];
+				let b = src[(dx + dy * iw) as usize * 3 + 2];
+
+				let color = Color(r, g, b, 0xff);
+
+				self.set_pixel((x as u32, y as u32), color);
 			}
 		}
 	}
@@ -203,21 +215,67 @@ impl BitmapCanvas {
 	// {{{ Draw RGBA image
 	/// Draws a bitmap image taking care of the alpha channel.
 	pub fn blit_rbga(&mut self, pos: Position, (iw, ih): (u32, u32), src: &[u8]) {
-		let height = self.height();
-		for dx in 0..iw {
-			for dy in 0..ih {
-				let x = pos.0 + dx as i32;
-				let y = pos.1 + dy as i32;
-				if x >= 0 && (x as u32) < self.width && y >= 0 && (y as u32) < height {
-					let r = src[(dx + dy * iw) as usize * 4];
-					let g = src[(dx + dy * iw) as usize * 4 + 1];
-					let b = src[(dx + dy * iw) as usize * 4 + 2];
-					let a = src[(dx + dy * iw) as usize * 4 + 3];
+		let iw = iw as i32;
+		let ih = ih as i32;
+		let width = self.width as i32;
+		let height = self.height() as i32;
 
-					let color = Color(r, g, b, a);
+		let x_start = 0.max(-pos.0);
+		let y_start = 0.max(-pos.1);
+		let x_end = iw.min(width - pos.0);
+		let y_end = ih.min(height - pos.1);
 
-					self.set_pixel((x as u32, y as u32), color);
-				}
+		for dx in x_start..x_end {
+			for dy in y_start..y_end {
+				let x = pos.0 + dx;
+				let y = pos.1 + dy;
+
+				let r = src[(dx + dy * iw) as usize * 4];
+				let g = src[(dx + dy * iw) as usize * 4 + 1];
+				let b = src[(dx + dy * iw) as usize * 4 + 2];
+				let a = src[(dx + dy * iw) as usize * 4 + 3];
+
+				let color = Color(r, g, b, a);
+
+				self.set_pixel((x as u32, y as u32), color);
+			}
+		}
+	}
+	// }}}
+	// {{{ Draw scaled up RBG image
+	pub fn blit_rbg_scaled_up(
+		&mut self,
+		pos: Position,
+		(iw, ih): (u32, u32),
+		src: &[u8],
+		scale: u32,
+	) {
+		let scale = scale as i32;
+
+		let iw = iw as i32;
+		let ih = ih as i32;
+		let width = self.width as i32;
+		let height = self.height() as i32;
+
+		let x_start = pos.0.max(0);
+		let y_start = pos.1.max(0);
+		let x_end = (pos.0 + iw * scale).min(width);
+		let y_end = (pos.1 + ih * scale).min(height);
+
+		for x in x_start..x_end {
+			for y in y_start..y_end {
+				// NOTE: I could instead keep separate counters.
+				// It would introduce an additional if statement,
+				// but would not perform division.
+				let dx = (x - pos.0) / scale;
+				let dy = (y - pos.1) / scale;
+				let r = src[(dx + dy * iw) as usize * 3];
+				let g = src[(dx + dy * iw) as usize * 3 + 1];
+				let b = src[(dx + dy * iw) as usize * 3 + 2];
+
+				let color = Color(r, g, b, 0xff);
+
+				self.set_pixel((x as u32, y as u32), color);
 			}
 		}
 	}
@@ -239,53 +297,72 @@ impl BitmapCanvas {
 	// }}}
 	// {{{ Draw text
 	pub fn plan_text_rendering(
-		&mut self,
 		pos: Position,
-		face: &mut Face,
+		faces: &mut [&mut Face],
 		style: TextStyle,
 		text: &str,
 	) -> Result<(Position, Rect, Vec<(i64, Glyph)>), Error> {
 		// {{{ Control weight
 		if let Some(weight) = style.weight {
-			unsafe {
-				let raw = face.raw_mut() as *mut _;
-				let slice = [(weight as i64) << 16];
+			for face in faces.iter_mut() {
+				unsafe {
+					let raw = face.raw_mut() as *mut _;
+					let slice = [(weight as i64) << 16];
 
-				// {{{ Debug logging
-				// let mut amaster = 0 as *mut FT_MM_Var;
-				// FT_Get_MM_Var(raw, &mut amaster as *mut _);
-				// println!("{:?}", *amaster);
-				// println!("{:?}", *(*amaster).axis);
-				// println!("{:?}", *(*amaster).namedstyle);
-				// }}}
+					// {{{ Debug logging
+					// let mut amaster = 0 as *mut FT_MM_Var;
+					// FT_Get_MM_Var(raw, &mut amaster as *mut _);
+					// println!("{:?}", *amaster);
+					// println!("{:?}", *(*amaster).axis);
+					// println!("{:?}", *(*amaster).namedstyle);
+					// }}}
 
-				// Set variable weight
-				let err = FT_Set_Var_Design_Coordinates(raw, 3, slice.as_ptr());
-				if err != FT_Err_Ok {
-					let err: FtResult<_> = Err(err.into());
-					err?;
+					// Set variable weight
+					let _err = FT_Set_Var_Design_Coordinates(raw, 3, slice.as_ptr());
+					// Some fonts are not variable, so we just ignore errors :/
+					// if err != FT_Err_Ok {
+					// 	let err: FtResult<_> = Err(err.into());
+					// 	err?;
+					// }
 				}
 			}
 		}
 		// }}}
 
-		face.set_char_size((style.size << 6) as isize, 0, 0, 0)?;
+		for face in faces.iter_mut() {
+			face.set_char_size((style.size << 6) as isize, 0, 0, 0)?;
+		}
 
 		// {{{ Compute layout
 		let mut pen_x = 0;
-		let kerning = face.has_kerning();
+		let kerning: Vec<_> = faces.iter().map(|f| f.has_kerning()).collect();
 		let mut previous = None;
 		let mut data = Vec::new();
 
 		for c in text.chars() {
-			let glyph_index = face
-				.get_char_index(c as usize)
-				.ok_or_else(|| format!("Could not get glyph index for char {:?}", c))?;
+			let c = match c {
+				'～' => '~',
+				c => c,
+			};
 
-			if let Some(previous) = previous
-				&& kerning
+			let (face_index, glyph_index) = faces
+				.iter()
+				.enumerate()
+				.find_map(|(i, face)| {
+					let glyph_index = face.get_char_index(c as usize)?;
+					Some((i, glyph_index))
+				})
+				.ok_or_else(|| {
+					format!("Could not get glyph index for char '{}' in \"{}\"", c, text)
+				})?;
+
+			let face = &mut faces[face_index];
+			if let Some((prev_face_index, prev_glyth_index)) = previous
+				&& prev_face_index == face_index
+				&& kerning[face_index]
 			{
-				let delta = face.get_kerning(previous, glyph_index, KerningMode::KerningDefault)?;
+				let delta =
+					face.get_kerning(prev_glyth_index, glyph_index, KerningMode::KerningDefault)?;
 				pen_x += delta.x >> 6; // we shift to get rid of sub-pixel accuracy
 			}
 
@@ -293,7 +370,7 @@ impl BitmapCanvas {
 
 			data.push((pen_x, face.glyph().get_glyph()?));
 			pen_x += face.glyph().advance().x >> 6;
-			previous = Some(glyph_index);
+			previous = Some((face_index, glyph_index));
 		}
 
 		// }}}
@@ -345,11 +422,11 @@ impl BitmapCanvas {
 	pub fn text(
 		&mut self,
 		pos: Position,
-		face: &mut Face,
+		faces: &mut [&mut Face],
 		style: TextStyle,
 		text: &str,
 	) -> Result<(), Error> {
-		let (pos, bbox, data) = self.plan_text_rendering(pos, face, style, text)?;
+		let (pos, bbox, data) = Self::plan_text_rendering(pos, faces, style, text)?;
 
 		// {{{ Render glyphs
 		for (pos_x, glyph) in &data {
@@ -620,12 +697,14 @@ impl LayoutManager {
 }
 
 impl LayoutDrawer {
+	#[inline]
 	pub fn new(layout: LayoutManager, canvas: BitmapCanvas) -> Self {
 		Self { layout, canvas }
 	}
 
 	// {{{ Drawing
 	// {{{ Draw pixel
+	#[inline]
 	pub fn set_pixel(&mut self, id: LayoutBoxId, pos: (u32, u32), color: Color) {
 		let pos = self
 			.layout
@@ -634,14 +713,28 @@ impl LayoutDrawer {
 	}
 	// }}}
 	// {{{ Draw RGB image
-	/// Draws a bitmap image
+	#[inline]
 	pub fn blit_rbg(&mut self, id: LayoutBoxId, pos: Position, dims: (u32, u32), src: &[u8]) {
 		let pos = self.layout.position_relative_to(id, pos);
 		self.canvas.blit_rbg(pos, dims, src);
 	}
+
+	#[inline]
+	pub fn blit_rbg_scaled_up(
+		&mut self,
+		id: LayoutBoxId,
+		pos: Position,
+		dims: (u32, u32),
+		src: &[u8],
+		scale: u32,
+	) {
+		let pos = self.layout.position_relative_to(id, pos);
+		self.canvas.blit_rbg_scaled_up(pos, dims, src, scale);
+	}
 	// }}}
 	// {{{ Draw RGBA image
 	/// Draws a bitmap image taking care of the alpha channel.
+	#[inline]
 	pub fn blit_rbga(&mut self, id: LayoutBoxId, pos: Position, dims: (u32, u32), src: &[u8]) {
 		let pos = self.layout.position_relative_to(id, pos);
 		self.canvas.blit_rbga(pos, dims, src);
@@ -649,6 +742,7 @@ impl LayoutDrawer {
 	// }}}
 	// {{{ Fill
 	/// Fills with solid color
+	#[inline]
 	pub fn fill(&mut self, id: LayoutBoxId, color: Color) {
 		let current = self.layout.lookup(id);
 		self.canvas.fill(
@@ -660,16 +754,17 @@ impl LayoutDrawer {
 	// }}}
 	// {{{ Draw text
 	/// Render text
+	#[inline]
 	pub fn text(
 		&mut self,
 		id: LayoutBoxId,
 		pos: Position,
-		face: &mut Face,
+		faces: &mut [&mut Face],
 		style: TextStyle,
 		text: &str,
 	) -> Result<(), Error> {
 		let pos = self.layout.position_relative_to(id, pos);
-		self.canvas.text(pos, face, style, text)
+		self.canvas.text(pos, faces, style, text)
 	}
 	// }}}
 	// }}}

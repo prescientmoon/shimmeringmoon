@@ -5,7 +5,7 @@ use num::Integer;
 
 use crate::{
 	arcaea::chart::{Difficulty, Jacket, SongCache},
-	assets::{get_assets_dir, should_skip_jacket_art},
+	assets::{get_assets_dir, should_blur_jacket_art, should_skip_jacket_art},
 	context::Error,
 	recognition::fuzzy_song_name::guess_chart_name,
 };
@@ -149,12 +149,14 @@ impl JacketCache {
 
 					let image = image::load_from_memory(contents)?;
 					jacket_vectors.push((song_id, ImageVec::from_image(&image)));
+					let mut image =
+						image.resize(BITMAP_IMAGE_SIZE, BITMAP_IMAGE_SIZE, FilterType::Nearest);
 
-					let bitmap: &'static _ = Box::leak(Box::new(
-						image
-							.resize(BITMAP_IMAGE_SIZE, BITMAP_IMAGE_SIZE, FilterType::Nearest)
-							.into_rgb8(),
-					));
+					if should_blur_jacket_art() {
+						image = image.blur(20.0);
+					}
+
+					let bitmap: &'static _ = Box::leak(Box::new(image.into_rgb8()));
 
 					if name == "base" {
 						// Inefficiently iterates over everything, but it's fine for ~1k entries

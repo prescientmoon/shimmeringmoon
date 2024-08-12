@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use chrono::DateTime;
-use image::{ImageBuffer, Rgb};
+use image::{DynamicImage, ImageBuffer, Rgb};
 use plotters::{
 	backend::{BitMapBackend, PixelFormat, RGBPixel},
 	chart::{ChartBuilder, LabelAreaPosition},
@@ -19,20 +19,22 @@ use sqlx::query_as;
 use crate::{
 	arcaea::{
 		jacket::BITMAP_IMAGE_SIZE,
-		play::{compute_b30_ptt, get_b30_plays, DbPlay},
+		play::{compute_b30_ptt, get_best_plays, DbPlay},
 		score::Score,
 	},
+	assert_is_pookie,
 	assets::{
 		get_b30_background, get_count_background, get_difficulty_background, get_grade_background,
 		get_name_backgound, get_ptt_emblem, get_score_background, get_status_background,
-		get_top_backgound, EXO_FONT,
+		get_top_backgound, with_font, EXO_FONT,
 	},
 	bitmap::{Align, BitmapCanvas, Color, LayoutDrawer, LayoutManager, Rect},
 	context::{Context, Error},
 	get_user,
+	logs::debug_image_log,
 	recognition::fuzzy_song_name::guess_song_and_chart,
 	reply_errors,
-	user::discord_it_to_discord_user,
+	user::{discord_it_to_discord_user, User},
 };
 
 // {{{ Stats
@@ -40,7 +42,7 @@ use crate::{
 #[poise::command(
 	prefix_command,
 	slash_command,
-	subcommands("chart", "b30"),
+	subcommands("chart", "b30", "bany"),
 	subcommand_required
 )]
 pub async fn stats(_ctx: Context<'_>) -> Result<(), Error> {
@@ -229,15 +231,28 @@ pub async fn plot(
 	Ok(())
 }
 // }}}
-// {{{ B30
-/// Show the 30 best scores
-#[poise::command(prefix_command, slash_command)]
-pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
-	let user = get_user!(&ctx);
+// {{{ Render best plays
+async fn best_plays(
+	ctx: &Context<'_>,
+	user: &User,
+	grid_size: (u32, u32),
+	require_full: bool,
+) -> Result<(), Error> {
 	let user_ctx = ctx.data();
 	let plays = reply_errors!(
 		ctx,
-		get_b30_plays(&user_ctx.db, &user_ctx.song_cache, &user).await?
+		get_best_plays(
+			&user_ctx.db,
+			&user_ctx.song_cache,
+			&user,
+			if require_full {
+				grid_size.0 * grid_size.1
+			} else {
+				grid_size.0 * (grid_size.1.max(1) - 1)
+			} as usize,
+			(grid_size.0 * grid_size.1) as usize
+		)
+		.await?
 	);
 
 	// {{{ Layout
@@ -258,7 +273,8 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 	let bottom_in_area = layout.margin_xy(bottom_area, -20, -7);
 	let item_area = layout.glue_horizontally(top_area, bottom_area);
 	let item_with_margin = layout.margin_xy(item_area, 22, 17);
-	let (item_grid, item_origins) = layout.repeated_evenly(item_with_margin, (5, 6));
+	let (item_grid, item_origins) =
+		layout.repeated_evenly(item_with_margin, (grid_size.0, grid_size.1));
 	let root = layout.margin_uniform(item_grid, 30);
 	// }}}
 	// {{{ Rendering prep
@@ -271,15 +287,21 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 	// {{{ Render background
 	let bg = get_b30_background();
 
-	drawer.blit_rbg(
+	let scale = (drawer.layout.width(root) as f32 / bg.width() as f32)
+		.max(drawer.layout.height(root) as f32 / bg.height() as f32)
+		.max(1.0)
+		.ceil() as u32;
+
+	drawer.blit_rbg_scaled_up(
 		root,
 		// Align the center of the image with the center of the root
-		Rect::from_image(bg).align(
+		Rect::from_image(bg).scaled(scale).align(
 			(Align::Center, Align::Center),
 			drawer.layout.lookup(root).center(),
 		),
 		bg.dimensions(),
 		bg.as_raw(),
+		scale,
 	);
 	// }}}
 
@@ -291,7 +313,11 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 		let top_bg = get_top_backgound();
 		drawer.blit_rbg(top_area, (0, 0), top_bg.dimensions(), top_bg);
 
-		let (play, song, chart) = &plays[i];
+		let (play, song, chart) = if let Some(item) = plays.get(i) {
+			item
+		} else {
+			break;
+		};
 
 		// {{{ Display index
 		let bg = get_count_background();
@@ -299,12 +325,11 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 
 		// Draw background
 		drawer.blit_rbga(item_area, (-8, jacket_margin as i32), bg.dimensions(), bg);
-
-		EXO_FONT.with_borrow_mut(|font| {
+		with_font(&EXO_FONT, |faces| {
 			drawer.text(
 				item_area,
 				(bg_center.0 - 12, bg_center.1 - 3 + jacket_margin),
-				font,
+				faces,
 				crate::bitmap::TextStyle {
 					size: 25,
 					weight: Some(800),
@@ -323,7 +348,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 		drawer.blit_rbg(bottom_area, (0, 0), bg.dimensions(), bg.as_raw());
 
 		// Draw text
-		EXO_FONT.with_borrow_mut(|font| {
+		with_font(&EXO_FONT, |faces| {
 			let initial_size = 24;
 			let mut style = crate::bitmap::TextStyle {
 				size: initial_size,
@@ -334,9 +359,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 				drop_shadow: None,
 			};
 
-			while drawer
-				.canvas
-				.plan_text_rendering((0, 0), font, style, &song.title)?
+			while BitmapCanvas::plan_text_rendering((0, 0), faces, style, &song.title)?
 				.1
 				.width >= drawer.layout.width(bottom_in_area)
 			{
@@ -350,7 +373,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 			drawer.text(
 				bottom_in_area,
 				(0, drawer.layout.height(bottom_in_area) as i32 / 2),
-				font,
+				faces,
 				style,
 				&song.title,
 			)
@@ -397,11 +420,11 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 
 		let diff_area_center = diff_bg_area.center();
 
-		EXO_FONT.with_borrow_mut(|font| {
+		with_font(&EXO_FONT, |faces| {
 			drawer.text(
 				jacket_with_border,
 				(diff_area_center.0 + x_offset, diff_area_center.1),
-				font,
+				faces,
 				crate::bitmap::TextStyle {
 					size: 25,
 					weight: Some(600),
@@ -432,14 +455,14 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 		);
 		// }}}
 		// {{{ Display score text
-		EXO_FONT.with_borrow_mut(|font| {
+		with_font(&EXO_FONT, |faces| {
 			drawer.text(
 				jacket_area,
 				(
 					score_bg_pos.0 + 5,
 					score_bg_pos.1 + score_bg.height() as i32 / 2,
 				),
-				font,
+				faces,
 				crate::bitmap::TextStyle {
 					size: 23,
 					weight: Some(800),
@@ -470,7 +493,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 		);
 		// }}}
 		// {{{ Display status text
-		EXO_FONT.with_borrow_mut(|font| {
+		with_font(&EXO_FONT, |faces| {
 			let status = play
 				.short_status(chart)
 				.ok_or_else(|| format!("Could not get status for score {}", play.score))?;
@@ -487,7 +510,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 			drawer.text(
 				jacket_area,
 				(center.0 + x_offset, center.1),
-				font,
+				faces,
 				crate::bitmap::TextStyle {
 					size: if status == 'M' { 30 } else { 36 },
 					weight: Some(if status == 'M' { 800 } else { 500 }),
@@ -516,14 +539,14 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 		);
 		// }}}
 		// {{{ Display grade text
-		EXO_FONT.with_borrow_mut(|font| {
+		with_font(&EXO_FONT, |faces| {
 			let grade = play.score.grade();
 			let center = grade_bg_area.center();
 
 			drawer.text(
 				top_left_area,
 				(center.0, center.1),
-				font,
+				faces,
 				crate::bitmap::TextStyle {
 					size: 30,
 					weight: Some(650),
@@ -537,7 +560,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 		})?;
 		// }}}
 		// {{{ Display rating text
-		EXO_FONT.with_borrow_mut(|font| -> Result<(), Error> {
+		with_font(&EXO_FONT, |faces| -> Result<(), Error> {
 			let mut style = crate::bitmap::TextStyle {
 				size: 12,
 				weight: Some(600),
@@ -550,7 +573,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 			drawer.text(
 				top_left_area,
 				(top_left_center, 73),
-				font,
+				faces,
 				style,
 				"POTENTIAL",
 			)?;
@@ -561,7 +584,7 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 			drawer.text(
 				top_left_area,
 				(top_left_center, 94),
-				font,
+				faces,
 				style,
 				&format!("{:.2}", play.score.play_rating_f32(chart.chart_constant)),
 			)?;
@@ -582,11 +605,18 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 	}
 
 	let mut out_buffer = Vec::new();
-	let image: ImageBuffer<Rgb<u8>, _> =
-		ImageBuffer::from_raw(width, height, drawer.canvas.buffer).unwrap();
+	let mut image = DynamicImage::ImageRgb8(
+		ImageBuffer::from_raw(width, height, drawer.canvas.buffer.into_vec()).unwrap(),
+	);
+
+	debug_image_log(&image)?;
+
+	if image.height() > 4096 {
+		image = image.resize(4096, 4096, image::imageops::FilterType::Nearest);
+	}
 
 	let mut cursor = Cursor::new(&mut out_buffer);
-	image.write_to(&mut cursor, image::ImageFormat::Png)?;
+	image.write_to(&mut cursor, image::ImageFormat::WebP)?;
 
 	let reply = CreateReply::default()
 		.attachment(CreateAttachment::bytes(out_buffer, "b30.png"))
@@ -597,5 +627,20 @@ pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
 	ctx.send(reply).await?;
 
 	Ok(())
+}
+// }}}
+// {{{ B30
+/// Show the 30 best scores
+#[poise::command(prefix_command, slash_command, user_cooldown = 30)]
+pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
+	let user = get_user!(&ctx);
+	best_plays(&ctx, &user, (5, 6), true).await
+}
+
+#[poise::command(prefix_command, slash_command, hide_in_help, global_cooldown = 5)]
+pub async fn bany(ctx: Context<'_>, width: u32, height: u32) -> Result<(), Error> {
+	let user = get_user!(&ctx);
+	assert_is_pookie!(ctx, user);
+	best_plays(&ctx, &user, (width, height), false).await
 }
 // }}}

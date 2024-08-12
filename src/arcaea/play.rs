@@ -356,10 +356,12 @@ impl Play {
 // {{{ General functions
 pub type PlayCollection<'a> = Vec<(Play, &'a Song, &'a Chart)>;
 
-pub async fn get_b30_plays<'a>(
+pub async fn get_best_plays<'a>(
 	db: &SqlitePool,
 	song_cache: &'a SongCache,
 	user: &User,
+	min_amount: usize,
+	max_amount: usize,
 ) -> Result<Result<PlayCollection<'a>, &'static str>, Error> {
 	// {{{ DB data fetching
 	let plays: Vec<DbPlay> = query_as(
@@ -378,7 +380,7 @@ pub async fn get_b30_plays<'a>(
 	.await?;
 	// }}}
 
-	if plays.len() < 30 {
+	if plays.len() < min_amount {
 		return Ok(Err("Not enough plays found"));
 	}
 
@@ -395,7 +397,7 @@ pub async fn get_b30_plays<'a>(
 		.collect::<Result<Vec<_>, Error>>()?;
 
 	plays.sort_by_key(|(play, _, chart)| -play.score.play_rating(chart.chart_constant));
-	plays.truncate(30);
+	plays.truncate(max_amount);
 	// }}}
 
 	Ok(Ok(plays))
@@ -407,6 +409,6 @@ pub fn compute_b30_ptt(plays: &PlayCollection<'_>) -> i32 {
 		.iter()
 		.map(|(play, _, chart)| play.score.play_rating(chart.chart_constant))
 		.sum::<i32>()
-		/ 30
+		/ plays.len() as i32
 }
 // }}}
