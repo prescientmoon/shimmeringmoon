@@ -333,7 +333,7 @@ impl CharMeasurements {
 				.ok_or_else(|| "No chars in cache")?;
 
 			println!("char '{}', distance {}", best_match.1, best_match.0);
-			if best_match.0 <= 1.0 {
+			if best_match.0 <= 0.75 {
 				result.push(best_match.1);
 			}
 		}

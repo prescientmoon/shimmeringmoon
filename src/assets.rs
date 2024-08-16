@@ -1,7 +1,7 @@
 use std::{cell::RefCell, env::var, path::PathBuf, str::FromStr, sync::OnceLock, thread::LocalKey};
 
 use freetype::{Face, Library};
-use image::{imageops::FilterType, ImageBuffer, Rgb, Rgba};
+use image::{ImageBuffer, Rgb, Rgba};
 
 use crate::{arcaea::chart::Difficulty, timed};
 
@@ -55,93 +55,100 @@ pub fn with_font<T>(
 
 #[inline]
 pub fn should_skip_jacket_art() -> bool {
-	static CELL: OnceLock<bool> = OnceLock::new();
-	*CELL.get_or_init(|| var("SHIMMERING_NO_JACKETS").unwrap_or_default() == "1")
+	var("SHIMMERING_NO_JACKETS").unwrap_or_default() == "1"
 }
 
 #[inline]
 pub fn should_blur_jacket_art() -> bool {
-	static CELL: OnceLock<bool> = OnceLock::new();
-	*CELL.get_or_init(|| var("SHIMMERING_BLUR_JACKETS").unwrap_or_default() == "1")
+	var("SHIMMERING_BLUR_JACKETS").unwrap_or_default() == "1"
 }
 
 pub fn get_b30_background() -> &'static ImageBuffer<Rgb<u8>, Vec<u8>> {
 	static CELL: OnceLock<ImageBuffer<Rgb<u8>, Vec<u8>>> = OnceLock::new();
 	CELL.get_or_init(|| {
-		let raw_b30_background = image::open(get_assets_dir().join("b30_background.jpg"))
-			.expect("Could not open b30 background");
+		timed!("load_b30_background", {
+			let raw_b30_background = image::open(get_assets_dir().join("b30_background.jpg"))
+				.expect("Could not open b30 background");
 
-		raw_b30_background
-			.resize(
-				8 * raw_b30_background.width(),
-				8 * raw_b30_background.height(),
-				FilterType::Lanczos3,
-			)
-			.blur(7.0)
-			.into_rgb8()
+			raw_b30_background.blur(7.0).into_rgb8()
+		})
 	})
 }
 
 pub fn get_count_background() -> &'static ImageBuffer<Rgba<u8>, Vec<u8>> {
 	static CELL: OnceLock<ImageBuffer<Rgba<u8>, Vec<u8>>> = OnceLock::new();
 	CELL.get_or_init(|| {
-		image::open(get_assets_dir().join("count_background.png"))
-			.expect("Could not open count background")
-			.into_rgba8()
+		timed!("load_count_backound", {
+			image::open(get_assets_dir().join("count_background.png"))
+				.expect("Could not open count background")
+				.into_rgba8()
+		})
 	})
 }
 
 pub fn get_score_background() -> &'static ImageBuffer<Rgba<u8>, Vec<u8>> {
 	static CELL: OnceLock<ImageBuffer<Rgba<u8>, Vec<u8>>> = OnceLock::new();
 	CELL.get_or_init(|| {
-		image::open(get_assets_dir().join("score_background.png"))
-			.expect("Could not open score background")
-			.into_rgba8()
+		timed!("load_score_background", {
+			image::open(get_assets_dir().join("score_background.png"))
+				.expect("Could not open score background")
+				.into_rgba8()
+		})
 	})
 }
 
 pub fn get_status_background() -> &'static ImageBuffer<Rgba<u8>, Vec<u8>> {
 	static CELL: OnceLock<ImageBuffer<Rgba<u8>, Vec<u8>>> = OnceLock::new();
 	CELL.get_or_init(|| {
-		image::open(get_assets_dir().join("status_background.png"))
-			.expect("Could not open status background")
-			.into_rgba8()
+		timed!("load_status_background", {
+			image::open(get_assets_dir().join("status_background.png"))
+				.expect("Could not open status background")
+				.into_rgba8()
+		})
 	})
 }
 
 pub fn get_grade_background() -> &'static ImageBuffer<Rgba<u8>, Vec<u8>> {
 	static CELL: OnceLock<ImageBuffer<Rgba<u8>, Vec<u8>>> = OnceLock::new();
 	CELL.get_or_init(|| {
-		image::open(get_assets_dir().join("grade_background.png"))
-			.expect("Could not open grade background")
-			.into_rgba8()
+		timed!("load_grade_background", {
+			image::open(get_assets_dir().join("grade_background.png"))
+				.expect("Could not open grade background")
+				.into_rgba8()
+		})
 	})
 }
 
 pub fn get_top_backgound() -> &'static ImageBuffer<Rgb<u8>, Vec<u8>> {
 	static CELL: OnceLock<ImageBuffer<Rgb<u8>, Vec<u8>>> = OnceLock::new();
 	CELL.get_or_init(|| {
-		image::open(get_assets_dir().join("top_background.png"))
-			.expect("Could not open top background")
-			.into_rgb8()
+		timed!("load_top_background", {
+			image::open(get_assets_dir().join("top_background.png"))
+				.expect("Could not open top background")
+				.into_rgb8()
+		})
 	})
 }
 
 pub fn get_name_backgound() -> &'static ImageBuffer<Rgb<u8>, Vec<u8>> {
 	static CELL: OnceLock<ImageBuffer<Rgb<u8>, Vec<u8>>> = OnceLock::new();
 	CELL.get_or_init(|| {
-		image::open(get_assets_dir().join("name_background.png"))
-			.expect("Could not open name background")
-			.into_rgb8()
+		timed!("load_name_background", {
+			image::open(get_assets_dir().join("name_background.png"))
+				.expect("Could not open name background")
+				.into_rgb8()
+		})
 	})
 }
 
 pub fn get_ptt_emblem() -> &'static ImageBuffer<Rgba<u8>, Vec<u8>> {
 	static CELL: OnceLock<ImageBuffer<Rgba<u8>, Vec<u8>>> = OnceLock::new();
 	CELL.get_or_init(|| {
-		image::open(get_assets_dir().join("ptt_emblem.png"))
-			.expect("Could not open ptt emblem")
-			.into_rgba8()
+		timed!("load_ptt_emblem", {
+			image::open(get_assets_dir().join("ptt_emblem.png"))
+				.expect("Could not open ptt emblem")
+				.into_rgba8()
+		})
 	})
 }
 
@@ -150,14 +157,16 @@ pub fn get_difficulty_background(
 ) -> &'static ImageBuffer<Rgba<u8>, Vec<u8>> {
 	static CELL: OnceLock<[ImageBuffer<Rgba<u8>, Vec<u8>>; 5]> = OnceLock::new();
 	&CELL.get_or_init(|| {
-		let assets_dir = get_assets_dir();
-		Difficulty::DIFFICULTY_SHORTHANDS.map(|shorthand| {
-			image::open(assets_dir.join(format!("diff_{}.png", shorthand.to_lowercase())))
-				.expect(&format!(
-					"Could not get background for difficulty {:?}",
-					shorthand
-				))
-				.into_rgba8()
+		timed!("load_difficulty_background", {
+			let assets_dir = get_assets_dir();
+			Difficulty::DIFFICULTY_SHORTHANDS.map(|shorthand| {
+				image::open(assets_dir.join(format!("diff_{}.png", shorthand.to_lowercase())))
+					.expect(&format!(
+						"Could not get background for difficulty {:?}",
+						shorthand
+					))
+					.into_rgba8()
+			})
 		})
 	})[difficulty.to_index()]
 }

@@ -11,7 +11,7 @@ use crate::context::{Error, UserContext};
 use crate::user::User;
 
 use super::chart::SongCache;
-use super::score::Score;
+use super::score::{Score, ScoringSystem};
 
 // {{{ Create play
 #[derive(Debug, Clone)]
@@ -127,7 +127,7 @@ pub struct DbPlay {
 
 impl DbPlay {
 	#[inline]
-	pub fn to_play(self) -> Play {
+	pub fn into_play(self) -> Play {
 		Play {
 			id: self.id as u32,
 			chart_id: self.chart_id as u32,
@@ -175,6 +175,20 @@ pub struct Play {
 }
 
 impl Play {
+	// {{{ Query the underlying score
+	#[inline]
+	pub fn score(&self, system: ScoringSystem) -> Score {
+		match system {
+			ScoringSystem::Standard => self.score,
+			ScoringSystem::EX => self.zeta_score,
+		}
+	}
+
+	#[inline]
+	pub fn play_rating(&self, system: ScoringSystem, chart_constant: u32) -> i32 {
+		self.score(system).play_rating(chart_constant)
+	}
+	// }}}
 	// {{{ Play => distribution
 	pub fn distribution(&self, note_count: u32) -> Option<(u32, u32, u32, u32)> {
 		if let Some(fars) = self.far_notes {
@@ -278,7 +292,8 @@ impl Play {
 				song.title, chart.difficulty
 			)
 		})?
-		.map(|p| p.to_play());
+		.map(|p| p.into_play());
+
 		let prev_score = prev_play.as_ref().map(|p| p.score);
 		let prev_zeta_score = prev_play.as_ref().map(|p| p.zeta_score);
 		// }}}
@@ -360,9 +375,10 @@ pub async fn get_best_plays<'a>(
 	db: &SqlitePool,
 	song_cache: &'a SongCache,
 	user: &User,
+	scoring_system: ScoringSystem,
 	min_amount: usize,
 	max_amount: usize,
-) -> Result<Result<PlayCollection<'a>, &'static str>, Error> {
+) -> Result<Result<PlayCollection<'a>, String>, Error> {
 	// {{{ DB data fetching
 	let plays: Vec<DbPlay> = query_as(
 		"
@@ -381,7 +397,10 @@ pub async fn get_best_plays<'a>(
 	// }}}
 
 	if plays.len() < min_amount {
-		return Ok(Err("Not enough plays found"));
+		return Ok(Err(format!(
+			"Not enough plays found ({} out of a minimum of {min_amount})",
+			plays.len()
+		)));
 	}
 
 	// {{{ B30 computation
@@ -390,13 +409,13 @@ pub async fn get_best_plays<'a>(
 	let mut plays: Vec<(Play, &Song, &Chart)> = plays
 		.into_iter()
 		.map(|play| {
-			let play = play.to_play();
+			let play = play.into_play();
 			let (song, chart) = song_cache.lookup_chart(play.chart_id)?;
 			Ok((play, song, chart))
 		})
 		.collect::<Result<Vec<_>, Error>>()?;
 
-	plays.sort_by_key(|(play, _, chart)| -play.score.play_rating(chart.chart_constant));
+	plays.sort_by_key(|(play, _, chart)| -play.play_rating(scoring_system, chart.chart_constant));
 	plays.truncate(max_amount);
 	// }}}
 
@@ -404,11 +423,12 @@ pub async fn get_best_plays<'a>(
 }
 
 #[inline]
-pub fn compute_b30_ptt(plays: &PlayCollection<'_>) -> i32 {
+pub fn compute_b30_ptt(scoring_system: ScoringSystem, plays: &PlayCollection<'_>) -> i32 {
 	plays
 		.iter()
-		.map(|(play, _, chart)| play.score.play_rating(chart.chart_constant))
+		.map(|(play, _, chart)| play.play_rating(scoring_system, chart.chart_constant))
 		.sum::<i32>()
-		/ plays.len() as i32
+		.checked_div(plays.len() as i32)
+		.unwrap_or(0)
 }
 // }}}

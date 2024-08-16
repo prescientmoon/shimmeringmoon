@@ -6,6 +6,21 @@ use crate::context::Error;
 
 use super::chart::Chart;
 
+// {{{ Scoring system
+#[derive(Debug, Clone, Copy, poise::ChoiceParameter)]
+pub enum ScoringSystem {
+	Standard,
+
+	// Inspired by sdvx's EX-scoring
+	EX,
+}
+
+impl Default for ScoringSystem {
+	fn default() -> Self {
+		Self::Standard
+	}
+}
+// }}}
 // {{{ Grade
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Grade {
@@ -140,7 +155,7 @@ impl Score {
 			if play_rating >= prev_play_rating {
 				write!(buffer, " (+{:.2})", play_rating - prev_play_rating)?;
 			} else {
-				write!(buffer, " (-{:.2})", play_rating - prev_play_rating)?;
+				write!(buffer, " ({:.2})", play_rating - prev_play_rating)?;
 			}
 		}
 

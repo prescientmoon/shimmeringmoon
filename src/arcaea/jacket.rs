@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::{fs, io::Cursor, path::PathBuf};
 
 use image::{imageops::FilterType, GenericImageView, Rgba};
 use num::Integer;
@@ -153,9 +153,17 @@ impl JacketCache {
 						image.resize(BITMAP_IMAGE_SIZE, BITMAP_IMAGE_SIZE, FilterType::Nearest);
 
 					if should_blur_jacket_art() {
-						image = image.blur(20.0);
+						image = image.blur(40.0);
 					}
 
+					let encoded_pic = {
+						let mut processed_pic = Vec::new();
+						image.write_to(
+							&mut Cursor::new(&mut processed_pic),
+							image::ImageFormat::Jpeg,
+						)?;
+						processed_pic.leak()
+					};
 					let bitmap: &'static _ = Box::leak(Box::new(image.into_rgb8()));
 
 					if name == "base" {
@@ -163,7 +171,7 @@ impl JacketCache {
 						for chart in song_cache.charts_mut() {
 							if chart.song_id == song_id && chart.cached_jacket.is_none() {
 								chart.cached_jacket = Some(Jacket {
-									raw: contents,
+									raw: encoded_pic,
 									bitmap,
 								});
 							}
@@ -171,7 +179,7 @@ impl JacketCache {
 					} else if difficulty.is_some() {
 						let chart = song_cache.lookup_chart_mut(chart_id).unwrap();
 						chart.cached_jacket = Some(Jacket {
-							raw: contents,
+							raw: encoded_pic,
 							bitmap,
 						});
 					}

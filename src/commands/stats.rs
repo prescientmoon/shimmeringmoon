@@ -20,7 +20,7 @@ use crate::{
 	arcaea::{
 		jacket::BITMAP_IMAGE_SIZE,
 		play::{compute_b30_ptt, get_best_plays, DbPlay},
-		score::Score,
+		score::{Score, ScoringSystem},
 	},
 	assert_is_pookie,
 	assets::{
@@ -92,7 +92,7 @@ pub async fn best(
 			song.title, chart.difficulty
 		)
 	})?
-	.to_play();
+	.into_play();
 
 	let (embed, attachment) = play
 		.to_embed(
@@ -117,11 +117,13 @@ pub async fn best(
 #[poise::command(prefix_command, slash_command)]
 pub async fn plot(
 	ctx: Context<'_>,
+	scoring_system: Option<ScoringSystem>,
 	#[rest]
 	#[description = "Name of chart to show (difficulty at the end)"]
 	name: String,
 ) -> Result<(), Error> {
 	let user = get_user!(&ctx);
+	let scoring_system = scoring_system.unwrap_or_default();
 
 	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
 
@@ -152,7 +154,12 @@ pub async fn plot(
 
 	let min_time = plays.iter().map(|p| p.created_at).min().unwrap();
 	let max_time = plays.iter().map(|p| p.created_at).max().unwrap();
-	let mut min_score = plays.iter().map(|p| p.score).min().unwrap();
+	let mut min_score = plays
+		.iter()
+		.map(|p| p.clone().into_play().score(scoring_system))
+		.min()
+		.unwrap()
+		.0 as i64;
 
 	if min_score > 9_900_000 {
 		min_score = 9_800_000;
@@ -202,20 +209,26 @@ pub async fn plot(
 			.draw()?;
 
 		let mut points: Vec<_> = plays
-			.iter()
-			.map(|play| (play.created_at.and_utc().timestamp_millis(), play.score))
+			.into_iter()
+			.map(|play| {
+				(
+					play.created_at.and_utc().timestamp_millis(),
+					play.into_play().score(scoring_system),
+				)
+			})
 			.collect();
 
 		points.sort();
 		points.dedup();
 
-		chart.draw_series(LineSeries::new(points.iter().map(|(t, s)| (*t, *s)), &BLUE))?;
+		chart.draw_series(LineSeries::new(
+			points.iter().map(|(t, s)| (*t, s.0 as i64)),
+			&BLUE,
+		))?;
 
-		chart.draw_series(
-			points
-				.iter()
-				.map(|(t, s)| Circle::new((*t, *s), 3, plotters::style::Color::filled(&BLUE))),
-		)?;
+		chart.draw_series(points.iter().map(|(t, s)| {
+			Circle::new((*t, s.0 as i64), 3, plotters::style::Color::filled(&BLUE))
+		}))?;
 		root.present()?;
 	}
 
@@ -235,6 +248,7 @@ pub async fn plot(
 async fn best_plays(
 	ctx: &Context<'_>,
 	user: &User,
+	scoring_system: ScoringSystem,
 	grid_size: (u32, u32),
 	require_full: bool,
 ) -> Result<(), Error> {
@@ -245,10 +259,11 @@ async fn best_plays(
 			&user_ctx.db,
 			&user_ctx.song_cache,
 			&user,
+			scoring_system,
 			if require_full {
 				grid_size.0 * grid_size.1
 			} else {
-				grid_size.0 * (grid_size.1.max(1) - 1)
+				grid_size.0 * (grid_size.1.max(1) - 1) + 1
 			} as usize,
 			(grid_size.0 * grid_size.1) as usize
 		)
@@ -471,7 +486,7 @@ async fn best_plays(
 					stroke: Some((Color::BLACK, 1.5)),
 					drop_shadow: None,
 				},
-				&format!("{:0>10}", format!("{}", play.score)),
+				&format!("{:0>10}", format!("{}", play.score(scoring_system))),
 			)
 		})?;
 		// }}}
@@ -494,9 +509,12 @@ async fn best_plays(
 		// }}}
 		// {{{ Display status text
 		with_font(&EXO_FONT, |faces| {
-			let status = play
-				.short_status(chart)
-				.ok_or_else(|| format!("Could not get status for score {}", play.score))?;
+			let status = play.short_status(chart).ok_or_else(|| {
+				format!(
+					"Could not get status for score {}",
+					play.score(scoring_system)
+				)
+			})?;
 
 			let x_offset = match status {
 				'P' => 2,
@@ -540,7 +558,7 @@ async fn best_plays(
 		// }}}
 		// {{{ Display grade text
 		with_font(&EXO_FONT, |faces| {
-			let grade = play.score.grade();
+			let grade = play.score(scoring_system).grade();
 			let center = grade_bg_area.center();
 
 			drawer.text(
@@ -586,7 +604,10 @@ async fn best_plays(
 				(top_left_center, 94),
 				faces,
 				style,
-				&format!("{:.2}", play.score.play_rating_f32(chart.chart_constant)),
+				&format!(
+					"{:.2}",
+					play.play_rating(scoring_system, chart.chart_constant) as f32 / 100.0
+				),
 			)?;
 
 			Ok(())
@@ -622,7 +643,7 @@ async fn best_plays(
 		.attachment(CreateAttachment::bytes(out_buffer, "b30.png"))
 		.content(format!(
 			"Your ptt is {:.2}",
-			compute_b30_ptt(&plays) as f32 / 100.0
+			compute_b30_ptt(scoring_system, &plays) as f32 / 100.0
 		));
 	ctx.send(reply).await?;
 
@@ -632,15 +653,34 @@ async fn best_plays(
 // {{{ B30
 /// Show the 30 best scores
 #[poise::command(prefix_command, slash_command, user_cooldown = 30)]
-pub async fn b30(ctx: Context<'_>) -> Result<(), Error> {
+pub async fn b30(ctx: Context<'_>, scoring_system: Option<ScoringSystem>) -> Result<(), Error> {
 	let user = get_user!(&ctx);
-	best_plays(&ctx, &user, (5, 6), true).await
+	best_plays(
+		&ctx,
+		&user,
+		scoring_system.unwrap_or_default(),
+		(5, 6),
+		true,
+	)
+	.await
 }
 
 #[poise::command(prefix_command, slash_command, hide_in_help, global_cooldown = 5)]
-pub async fn bany(ctx: Context<'_>, width: u32, height: u32) -> Result<(), Error> {
+pub async fn bany(
+	ctx: Context<'_>,
+	scoring_system: Option<ScoringSystem>,
+	width: u32,
+	height: u32,
+) -> Result<(), Error> {
 	let user = get_user!(&ctx);
 	assert_is_pookie!(ctx, user);
-	best_plays(&ctx, &user, (width, height), false).await
+	best_plays(
+		&ctx,
+		&user,
+		scoring_system.unwrap_or_default(),
+		(width, height),
+		false,
+	)
+	.await
 }
 // }}}
