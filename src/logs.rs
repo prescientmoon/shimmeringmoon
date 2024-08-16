@@ -6,17 +6,22 @@
 //! allows for a convenient way to throw images into a `logs` directory with
 //! a simple env var.
 
-use std::{env, ops::Deref, sync::OnceLock, time::Instant};
+use std::{env, ops::Deref, path::PathBuf, sync::OnceLock, time::Instant};
 
 use image::{DynamicImage, EncodableLayout, ImageBuffer, PixelWithColorType};
 
-use crate::context::Error;
+use crate::{assets::get_path, context::Error};
 
 #[inline]
 fn should_save_debug_images() -> bool {
 	env::var("SHIMMERING_DEBUG_IMGS")
 		.map(|s| s == "1")
 		.unwrap_or(false)
+}
+
+#[inline]
+fn get_log_dir() -> PathBuf {
+	get_path("SHIMMERING_LOG_DIR")
 }
 
 #[inline]
@@ -28,10 +33,10 @@ fn get_startup_time() -> Instant {
 #[inline]
 pub fn debug_image_log(image: &DynamicImage) -> Result<(), Error> {
 	if should_save_debug_images() {
-		image.save(format!(
-			"./logs/{:0>15}.png",
+		image.save(get_log_dir().join(format!(
+			"{:0>15}.png",
 			get_startup_time().elapsed().as_nanos()
-		))?;
+		)))?;
 	}
 
 	Ok(())
@@ -45,10 +50,10 @@ where
 	C: Deref<Target = [P::Subpixel]>,
 {
 	if should_save_debug_images() {
-		image.save(format!(
+		image.save(get_log_dir().join(format!(
 			"./logs/{:0>15}.png",
 			get_startup_time().elapsed().as_nanos()
-		))?;
+		)))?;
 	}
 
 	Ok(())

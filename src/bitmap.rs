@@ -12,7 +12,7 @@ use freetype::{
 	ffi::{FT_Set_Var_Design_Coordinates, FT_GLYPH_BBOX_PIXELS},
 	Bitmap, BitmapGlyph, Face, Glyph, StrokerLineCap, StrokerLineJoin,
 };
-use image::GenericImage;
+use image::{GenericImage, RgbImage, RgbaImage};
 use num::traits::Euclid;
 
 use crate::{assets::FREETYPE_LIB, context::Error};
@@ -184,7 +184,8 @@ impl BitmapCanvas {
 			((alpha * color.2 as u32 + (255 - alpha) * self.buffer[index + 2] as u32) / 255) as u8;
 	}
 	// }}}
-	// {{{ Draw RBG image
+	// {{{ Draw RGB image
+	/// Draws a bitmap image with no alpha channel.
 	pub fn blit_rbg(&mut self, pos: Position, (iw, ih): (u32, u32), src: &[u8]) {
 		let iw = iw as i32;
 		let ih = ih as i32;
@@ -242,8 +243,8 @@ impl BitmapCanvas {
 		}
 	}
 	// }}}
-	// {{{ Draw scaled up RBG image
-	pub fn blit_rbg_scaled_up(
+	// {{{ Draw scaled up RBGA image
+	pub fn blit_rbga_scaled_up(
 		&mut self,
 		pos: Position,
 		(iw, ih): (u32, u32),
@@ -269,11 +270,12 @@ impl BitmapCanvas {
 				// but would not perform division.
 				let dx = (x - pos.0) / scale;
 				let dy = (y - pos.1) / scale;
-				let r = src[(dx + dy * iw) as usize * 3];
-				let g = src[(dx + dy * iw) as usize * 3 + 1];
-				let b = src[(dx + dy * iw) as usize * 3 + 2];
+				let r = src[(dx + dy * iw) as usize * 4];
+				let g = src[(dx + dy * iw) as usize * 4 + 1];
+				let b = src[(dx + dy * iw) as usize * 4 + 2];
+				let a = src[(dx + dy * iw) as usize * 4 + 3];
 
-				let color = Color(r, g, b, 0xff);
+				let color = Color(r, g, b, a);
 
 				self.set_pixel((x as u32, y as u32), color);
 			}
@@ -712,11 +714,21 @@ impl LayoutDrawer {
 		self.canvas.set_pixel((pos.0 as u32, pos.1 as u32), color);
 	}
 	// }}}
-	// {{{ Draw RGB image
+	// {{{ Draw images
+	/// Draws a bitmap image taking with no alpha channel.
 	#[inline]
-	pub fn blit_rbg(&mut self, id: LayoutBoxId, pos: Position, dims: (u32, u32), src: &[u8]) {
+	pub fn blit_rbg(&mut self, id: LayoutBoxId, pos: Position, image: &RgbImage) {
 		let pos = self.layout.position_relative_to(id, pos);
-		self.canvas.blit_rbg(pos, dims, src);
+		self.canvas
+			.blit_rbg(pos, image.dimensions(), image.as_raw());
+	}
+
+	/// Draws a bitmap image taking care of the alpha channel.
+	#[inline]
+	pub fn blit_rbga(&mut self, id: LayoutBoxId, pos: Position, image: &RgbaImage) {
+		let pos = self.layout.position_relative_to(id, pos);
+		self.canvas
+			.blit_rbga(pos, image.dimensions(), image.as_raw());
 	}
 
 	#[inline]
@@ -729,15 +741,7 @@ impl LayoutDrawer {
 		scale: u32,
 	) {
 		let pos = self.layout.position_relative_to(id, pos);
-		self.canvas.blit_rbg_scaled_up(pos, dims, src, scale);
-	}
-	// }}}
-	// {{{ Draw RGBA image
-	/// Draws a bitmap image taking care of the alpha channel.
-	#[inline]
-	pub fn blit_rbga(&mut self, id: LayoutBoxId, pos: Position, dims: (u32, u32), src: &[u8]) {
-		let pos = self.layout.position_relative_to(id, pos);
-		self.canvas.blit_rbga(pos, dims, src);
+		self.canvas.blit_rbga_scaled_up(pos, dims, src, scale);
 	}
 	// }}}
 	// {{{ Fill

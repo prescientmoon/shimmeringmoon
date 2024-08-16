@@ -1,11 +1,11 @@
-use std::{fs, io::Cursor, path::PathBuf};
+use std::{fs, io::Cursor};
 
 use image::{imageops::FilterType, GenericImageView, Rgba};
 use num::Integer;
 
 use crate::{
 	arcaea::chart::{Difficulty, Jacket, SongCache},
-	assets::{get_assets_dir, should_blur_jacket_art, should_skip_jacket_art},
+	assets::{get_asset_dir, should_blur_jacket_art, should_skip_jacket_art},
 	context::Error,
 	recognition::fuzzy_song_name::guess_chart_name,
 };
@@ -80,17 +80,9 @@ pub struct JacketCache {
 impl JacketCache {
 	// {{{ Generate
 	// This is a bit inefficient (using a hash set), but only runs once
-	pub fn new(data_dir: &PathBuf, song_cache: &mut SongCache) -> Result<Self, Error> {
-		let jacket_dir = data_dir.join("jackets");
-
-		if jacket_dir.exists() {
-			fs::remove_dir_all(&jacket_dir).expect("Could not delete jacket dir");
-		}
-
-		fs::create_dir_all(&jacket_dir).expect("Could not create jacket dir");
-
+	pub fn new(song_cache: &mut SongCache) -> Result<Self, Error> {
 		let jacket_vectors = if should_skip_jacket_art() {
-			let path = get_assets_dir().join("placeholder_jacket.jpg");
+			let path = get_asset_dir().join("placeholder_jacket.jpg");
 			let contents: &'static _ = fs::read(path)?.leak();
 			let image = image::load_from_memory(contents)?;
 			let bitmap: &'static _ = Box::leak(Box::new(
@@ -109,7 +101,7 @@ impl JacketCache {
 			Vec::new()
 		} else {
 			let entries =
-				fs::read_dir(data_dir.join("songs")).expect("Couldn't read songs directory");
+				fs::read_dir(get_asset_dir().join("songs")).expect("Couldn't read songs directory");
 			let mut jacket_vectors = vec![];
 
 			for entry in entries {

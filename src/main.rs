@@ -4,6 +4,7 @@
 #![feature(array_try_map)]
 #![feature(async_closure)]
 #![feature(try_blocks)]
+#![feature(thread_local)]
 
 mod arcaea;
 mod assets;
@@ -21,7 +22,7 @@ use assets::get_data_dir;
 use context::{Error, UserContext};
 use poise::serenity_prelude::{self as serenity};
 use sqlx::sqlite::SqlitePoolOptions;
-use std::{env::var, path::PathBuf, str::FromStr, sync::Arc, time::Duration};
+use std::{env::var, sync::Arc, time::Duration};
 
 // {{{ Error handler
 async fn on_error(error: poise::FrameworkError<'_, UserContext, Error>) {
@@ -37,13 +38,10 @@ async fn on_error(error: poise::FrameworkError<'_, UserContext, Error>) {
 
 #[tokio::main]
 async fn main() {
-	let data_dir = get_data_dir();
-	let cache_dir = var("SHIMMERING_CACHE_DIR").expect("Missing `SHIMMERING_CACHE_DIR` env var");
-
 	let pool = SqlitePoolOptions::new()
 		.connect(&format!(
 			"sqlite://{}/db.sqlite",
-			data_dir.to_str().unwrap()
+			get_data_dir().to_str().unwrap()
 		))
 		.await
 		.unwrap();
@@ -89,7 +87,7 @@ async fn main() {
 			Box::pin(async move {
 				println!("Logged in as {}", _ready.user.name);
 				poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-				let ctx = UserContext::new(data_dir, PathBuf::from_str(&cache_dir)?, pool).await?;
+				let ctx = UserContext::new(pool).await?;
 
 				Ok(ctx)
 			})

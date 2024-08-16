@@ -24,9 +24,9 @@ use crate::{
 	},
 	assert_is_pookie,
 	assets::{
-		get_b30_background, get_count_background, get_difficulty_background, get_grade_background,
-		get_name_backgound, get_ptt_emblem, get_score_background, get_status_background,
-		get_top_backgound, with_font, EXO_FONT,
+		get_difficulty_background, with_font, B30_BACKGROUND, COUNT_BACKGROUND, EXO_FONT,
+		GRADE_BACKGROUND, NAME_BACKGROUND, PTT_EMBLEM, SCORE_BACKGROUND, STATUS_BACKGROUND,
+		TOP_BACKGROUND,
 	},
 	bitmap::{Align, BitmapCanvas, Color, LayoutDrawer, LayoutManager, Rect},
 	context::{Context, Error},
@@ -300,7 +300,7 @@ async fn best_plays(
 	let mut drawer = LayoutDrawer::new(layout, canvas);
 	// }}}
 	// {{{ Render background
-	let bg = get_b30_background();
+	let bg = &*B30_BACKGROUND;
 
 	let scale = (drawer.layout.width(root) as f32 / bg.width() as f32)
 		.max(drawer.layout.height(root) as f32 / bg.height() as f32)
@@ -325,8 +325,8 @@ async fn best_plays(
 			.layout
 			.edit_to_relative(item_with_margin, item_grid, origin.0, origin.1);
 
-		let top_bg = get_top_backgound();
-		drawer.blit_rbg(top_area, (0, 0), top_bg.dimensions(), top_bg);
+		let top_bg = &*TOP_BACKGROUND;
+		drawer.blit_rbga(top_area, (0, 0), top_bg);
 
 		let (play, song, chart) = if let Some(item) = plays.get(i) {
 			item
@@ -335,11 +335,11 @@ async fn best_plays(
 		};
 
 		// {{{ Display index
-		let bg = get_count_background();
+		let bg = &*COUNT_BACKGROUND;
 		let bg_center = Rect::from_image(bg).center();
 
 		// Draw background
-		drawer.blit_rbga(item_area, (-8, jacket_margin as i32), bg.dimensions(), bg);
+		drawer.blit_rbga(item_area, (-8, jacket_margin as i32), bg);
 		with_font(&EXO_FONT, |faces| {
 			drawer.text(
 				item_area,
@@ -359,8 +359,8 @@ async fn best_plays(
 		// }}}
 		// {{{ Display chart name
 		// Draw background
-		let bg = get_name_backgound();
-		drawer.blit_rbg(bottom_area, (0, 0), bg.dimensions(), bg.as_raw());
+		let bg = &*NAME_BACKGROUND;
+		drawer.blit_rbga(bottom_area, (0, 0), bg);
 
 		// Draw text
 		with_font(&EXO_FONT, |faces| {
@@ -403,12 +403,7 @@ async fn best_plays(
 		})?;
 
 		drawer.fill(jacket_with_border, Color::from_rgb_int(0x271E35));
-		drawer.blit_rbg(
-			jacket_area,
-			(0, 0),
-			jacket.bitmap.dimensions(),
-			&jacket.bitmap.as_raw(),
-		);
+		drawer.blit_rbg(jacket_area, (0, 0), jacket.bitmap);
 		// }}}
 		// {{{ Display difficulty background
 		let diff_bg = get_difficulty_background(chart.difficulty);
@@ -417,12 +412,7 @@ async fn best_plays(
 			(drawer.layout.width(jacket_with_border) as i32, 0),
 		);
 
-		drawer.blit_rbga(
-			jacket_with_border,
-			diff_bg_area.top_left(),
-			diff_bg.dimensions(),
-			&diff_bg.as_raw(),
-		);
+		drawer.blit_rbga(jacket_with_border, diff_bg_area.top_left(), diff_bg);
 		// }}}
 		// {{{ Display difficulty text
 		let x_offset = if chart.level.ends_with("+") {
@@ -453,7 +443,7 @@ async fn best_plays(
 		})?;
 		// }}}
 		// {{{ Display score background
-		let score_bg = get_score_background();
+		let score_bg = &*SCORE_BACKGROUND;
 		let score_bg_pos = Rect::from_image(score_bg).align(
 			(Align::End, Align::End),
 			(
@@ -462,12 +452,7 @@ async fn best_plays(
 			),
 		);
 
-		drawer.blit_rbga(
-			jacket_area,
-			score_bg_pos,
-			score_bg.dimensions(),
-			&score_bg.as_raw(),
-		);
+		drawer.blit_rbga(jacket_area, score_bg_pos, score_bg);
 		// }}}
 		// {{{ Display score text
 		with_font(&EXO_FONT, |faces| {
@@ -491,7 +476,7 @@ async fn best_plays(
 		})?;
 		// }}}
 		// {{{ Display status background
-		let status_bg = get_status_background();
+		let status_bg = &*STATUS_BACKGROUND;
 		let status_bg_area = Rect::from_image(status_bg).align_whole(
 			(Align::Center, Align::Center),
 			(
@@ -500,12 +485,7 @@ async fn best_plays(
 			),
 		);
 
-		drawer.blit_rbga(
-			jacket_area,
-			status_bg_area.top_left(),
-			status_bg.dimensions(),
-			&status_bg.as_raw(),
-		);
+		drawer.blit_rbga(jacket_area, status_bg_area.top_left(), status_bg);
 		// }}}
 		// {{{ Display status text
 		with_font(&EXO_FONT, |faces| {
@@ -543,18 +523,13 @@ async fn best_plays(
 		// }}}
 		// {{{ Display grade background
 		let top_left_center = (drawer.layout.width(top_left_area) as i32 + jacket_margin) / 2;
-		let grade_bg = get_grade_background();
+		let grade_bg = &*GRADE_BACKGROUND;
 		let grade_bg_area = Rect::from_image(grade_bg).align_whole(
 			(Align::Center, Align::Center),
 			(top_left_center, jacket_margin + 140),
 		);
 
-		drawer.blit_rbga(
-			top_area,
-			grade_bg_area.top_left(),
-			grade_bg.dimensions(),
-			&grade_bg.as_raw(),
-		);
+		drawer.blit_rbga(top_area, grade_bg_area.top_left(), grade_bg);
 		// }}}
 		// {{{ Display grade text
 		with_font(&EXO_FONT, |faces| {
@@ -614,13 +589,12 @@ async fn best_plays(
 		})?;
 		// }}}
 		// {{{ Display ptt emblem
-		let ptt_emblem = get_ptt_emblem();
+		let ptt_emblem = &*PTT_EMBLEM;
 		drawer.blit_rbga(
 			top_left_area,
 			Rect::from_image(ptt_emblem)
 				.align((Align::Center, Align::Center), (top_left_center, 115)),
-			ptt_emblem.dimensions(),
-			ptt_emblem.as_raw(),
+			ptt_emblem,
 		);
 		// }}}
 	}

@@ -1,10 +1,10 @@
-use std::{fs, path::PathBuf};
+use std::fs;
 
 use sqlx::SqlitePool;
 
 use crate::{
 	arcaea::{chart::SongCache, jacket::JacketCache},
-	assets::{EXO_FONT, GEOSANS_FONT, KAZESAWA_BOLD_FONT, KAZESAWA_FONT},
+	assets::{get_data_dir, EXO_FONT, GEOSANS_FONT, KAZESAWA_BOLD_FONT, KAZESAWA_FONT},
 	recognition::{hyperglass::CharMeasurements, ui::UIMeasurements},
 };
 
@@ -14,9 +14,6 @@ pub type Context<'a> = poise::Context<'a, UserContext, Error>;
 
 // Custom user data passed to all command functions
 pub struct UserContext {
-	#[allow(dead_code)]
-	pub data_dir: PathBuf,
-
 	pub db: SqlitePool,
 	pub song_cache: SongCache,
 	pub jacket_cache: JacketCache,
@@ -31,14 +28,14 @@ pub struct UserContext {
 
 impl UserContext {
 	#[inline]
-	pub async fn new(data_dir: PathBuf, cache_dir: PathBuf, db: SqlitePool) -> Result<Self, Error> {
-		fs::create_dir_all(&cache_dir)?;
-		fs::create_dir_all(&data_dir)?;
+	pub async fn new(db: SqlitePool) -> Result<Self, Error> {
+		fs::create_dir_all(get_data_dir())?;
 
 		let mut song_cache = SongCache::new(&db).await?;
-		let jacket_cache = JacketCache::new(&data_dir, &mut song_cache)?;
-		let ui_measurements = UIMeasurements::read(&data_dir)?;
+		let jacket_cache = JacketCache::new(&mut song_cache)?;
+		let ui_measurements = UIMeasurements::read()?;
 
+		// {{{ Font measurements
 		static WHITELIST: &str = "0123456789'abcdefghklmnopqrstuvwxyzABCDEFGHIJKLMNOPRSTUVWXYZ";
 
 		let geosans_measurements = GEOSANS_FONT
@@ -49,11 +46,11 @@ impl UserContext {
 			.with_borrow_mut(|font| CharMeasurements::from_text(font, WHITELIST, None))?;
 		let exo_measurements = EXO_FONT
 			.with_borrow_mut(|font| CharMeasurements::from_text(font, WHITELIST, Some(700)))?;
+		// }}}
 
 		println!("Created user context");
 
 		Ok(Self {
-			data_dir,
 			db,
 			song_cache,
 			jacket_cache,

@@ -1,8 +1,8 @@
-use std::{fs, path::PathBuf};
+use std::fs;
 
 use image::GenericImage;
 
-use crate::{bitmap::Rect, context::Error};
+use crate::{assets::get_config_dir, bitmap::Rect, context::Error};
 
 // {{{ Rects
 #[derive(Debug, Clone, Copy)]
@@ -94,11 +94,11 @@ pub struct UIMeasurements {
 
 impl UIMeasurements {
 	// {{{ Read
-	pub fn read(data_dir: &PathBuf) -> Result<Self, Error> {
+	pub fn read() -> Result<Self, Error> {
 		let mut measurements = Vec::new();
 		let mut measurement = UIMeasurement::default();
 
-		let path = data_dir.join("ui.txt");
+		let path = get_config_dir().join("ui.txt");
 		let contents = fs::read_to_string(path)?;
 
 		// {{{ Parse measurement file
