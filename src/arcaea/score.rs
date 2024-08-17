@@ -24,18 +24,18 @@ impl Default for ScoringSystem {
 // {{{ Grade
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Grade {
-	EXP,
-	EX,
-	AA,
-	A,
-	B,
-	C,
 	D,
+	C,
+	B,
+	A,
+	AA,
+	EX,
+	EXP,
 }
 
 impl Grade {
-	pub const GRADE_STRINGS: [&'static str; 7] = ["EX+", "EX", "AA", "A", "B", "C", "D"];
-	pub const GRADE_SHORTHANDS: [&'static str; 7] = ["exp", "ex", "aa", "a", "b", "c", "d"];
+	pub const GRADE_STRINGS: [&'static str; 7] = ["D", "C", "B", "A", "AA", "EX", "EX+"];
+	pub const GRADE_SHORTHANDS: [&'static str; 7] = ["d", "c", "b", "a", "aa", "ex", "exp"];
 
 	#[inline]
 	pub fn to_index(self) -> usize {
@@ -266,6 +266,12 @@ impl Score {
 		}
 
 		Ok(buffer)
+	}
+	// }}}
+	// {{{ PM detection
+	#[inline]
+	pub fn is_pm(&self) -> bool {
+		self.0 >= 10_000_000
 	}
 	// }}}
 }

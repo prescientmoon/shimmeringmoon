@@ -1,26 +1,19 @@
 use std::io::Cursor;
 
-use chrono::DateTime;
-use image::{DynamicImage, ImageBuffer, Rgb};
-use plotters::{
-	backend::{BitMapBackend, PixelFormat, RGBPixel},
-	chart::{ChartBuilder, LabelAreaPosition},
-	drawing::IntoDrawingArea,
-	element::Circle,
-	series::LineSeries,
-	style::{IntoFont, TextStyle, BLUE, WHITE},
-};
+use image::{DynamicImage, ImageBuffer};
 use poise::{
-	serenity_prelude::{CreateAttachment, CreateMessage},
+	serenity_prelude::{CreateAttachment, CreateEmbed},
 	CreateReply,
 };
-use sqlx::query_as;
+use sqlx::query;
 
 use crate::{
 	arcaea::{
+		achievement::GoalStats,
+		chart::Level,
 		jacket::BITMAP_IMAGE_SIZE,
-		play::{compute_b30_ptt, get_best_plays, DbPlay},
-		score::{Score, ScoringSystem},
+		play::{compute_b30_ptt, get_best_plays},
+		score::ScoringSystem,
 	},
 	assert_is_pookie,
 	assets::{
@@ -32,9 +25,8 @@ use crate::{
 	context::{Context, Error},
 	get_user,
 	logs::debug_image_log,
-	recognition::fuzzy_song_name::guess_song_and_chart,
 	reply_errors,
-	user::{discord_it_to_discord_user, User},
+	user::User,
 };
 
 // {{{ Stats
@@ -42,205 +34,10 @@ use crate::{
 #[poise::command(
 	prefix_command,
 	slash_command,
-	subcommands("chart", "b30", "bany"),
+	subcommands("meta", "b30", "bany"),
 	subcommand_required
 )]
 pub async fn stats(_ctx: Context<'_>) -> Result<(), Error> {
-	Ok(())
-}
-// }}}
-// {{{ Chart
-/// Chart-related stats
-#[poise::command(
-	prefix_command,
-	slash_command,
-	subcommands("best", "plot"),
-	subcommand_required
-)]
-pub async fn chart(_ctx: Context<'_>) -> Result<(), Error> {
-	Ok(())
-}
-// }}}
-// {{{ Best score
-/// Show the best score on a given chart
-#[poise::command(prefix_command, slash_command)]
-pub async fn best(
-	ctx: Context<'_>,
-	#[rest]
-	#[description = "Name of chart to show (difficulty at the end)"]
-	name: String,
-) -> Result<(), Error> {
-	let user = get_user!(&ctx);
-
-	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
-	let play = query_as!(
-		DbPlay,
-		"
-        SELECT * FROM plays
-        WHERE user_id=?
-        AND chart_id=?
-        ORDER BY score DESC
-    ",
-		user.id,
-		chart.id
-	)
-	.fetch_one(&ctx.data().db)
-	.await
-	.map_err(|_| {
-		format!(
-			"Could not find any scores for {} [{:?}]",
-			song.title, chart.difficulty
-		)
-	})?
-	.into_play();
-
-	let (embed, attachment) = play
-		.to_embed(
-			&ctx.data().db,
-			&user,
-			&song,
-			&chart,
-			0,
-			Some(&discord_it_to_discord_user(&ctx, &user.discord_id).await?),
-		)
-		.await?;
-
-	ctx.channel_id()
-		.send_files(ctx.http(), attachment, CreateMessage::new().embed(embed))
-		.await?;
-
-	Ok(())
-}
-// }}}
-// {{{ Score plot
-/// Show the best score on a given chart
-#[poise::command(prefix_command, slash_command)]
-pub async fn plot(
-	ctx: Context<'_>,
-	scoring_system: Option<ScoringSystem>,
-	#[rest]
-	#[description = "Name of chart to show (difficulty at the end)"]
-	name: String,
-) -> Result<(), Error> {
-	let user = get_user!(&ctx);
-	let scoring_system = scoring_system.unwrap_or_default();
-
-	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
-
-	// SAFETY: we limit the amount of plotted plays to 1000.
-	let plays = query_as!(
-		DbPlay,
-		"
-      SELECT * FROM plays
-      WHERE user_id=?
-      AND chart_id=?
-      ORDER BY created_at ASC
-      LIMIT 1000
-    ",
-		user.id,
-		chart.id
-	)
-	.fetch_all(&ctx.data().db)
-	.await?;
-
-	if plays.len() == 0 {
-		ctx.reply(format!(
-			"No plays found on {} [{:?}]",
-			song.title, chart.difficulty
-		))
-		.await?;
-		return Ok(());
-	}
-
-	let min_time = plays.iter().map(|p| p.created_at).min().unwrap();
-	let max_time = plays.iter().map(|p| p.created_at).max().unwrap();
-	let mut min_score = plays
-		.iter()
-		.map(|p| p.clone().into_play().score(scoring_system))
-		.min()
-		.unwrap()
-		.0 as i64;
-
-	if min_score > 9_900_000 {
-		min_score = 9_800_000;
-	} else if min_score > 9_800_000 {
-		min_score = 9_800_000;
-	} else if min_score > 9_500_000 {
-		min_score = 9_500_000;
-	} else {
-		min_score = 9_000_000
-	};
-
-	let max_score = 10_010_000;
-	let width = 1024;
-	let height = 768;
-
-	let mut buffer = vec![u8::MAX; RGBPixel::PIXEL_SIZE * (width * height) as usize];
-
-	{
-		let root = BitMapBackend::with_buffer(&mut buffer, (width, height)).into_drawing_area();
-
-		let mut chart = ChartBuilder::on(&root)
-			.margin(25)
-			.caption(
-				format!("{} [{:?}]", song.title, chart.difficulty),
-				("sans-serif", 40),
-			)
-			.set_label_area_size(LabelAreaPosition::Left, 100)
-			.set_label_area_size(LabelAreaPosition::Bottom, 40)
-			.build_cartesian_2d(
-				min_time.and_utc().timestamp_millis()..max_time.and_utc().timestamp_millis(),
-				min_score..max_score,
-			)?;
-
-		chart
-			.configure_mesh()
-			.light_line_style(WHITE)
-			.y_label_formatter(&|s| format!("{}", Score(*s as u32)))
-			.y_desc("Score")
-			.x_label_formatter(&|d| {
-				format!(
-					"{}",
-					DateTime::from_timestamp_millis(*d).unwrap().date_naive()
-				)
-			})
-			.y_label_style(TextStyle::from(("sans-serif", 20).into_font()))
-			.x_label_style(TextStyle::from(("sans-serif", 20).into_font()))
-			.draw()?;
-
-		let mut points: Vec<_> = plays
-			.into_iter()
-			.map(|play| {
-				(
-					play.created_at.and_utc().timestamp_millis(),
-					play.into_play().score(scoring_system),
-				)
-			})
-			.collect();
-
-		points.sort();
-		points.dedup();
-
-		chart.draw_series(LineSeries::new(
-			points.iter().map(|(t, s)| (*t, s.0 as i64)),
-			&BLUE,
-		))?;
-
-		chart.draw_series(points.iter().map(|(t, s)| {
-			Circle::new((*t, s.0 as i64), 3, plotters::style::Color::filled(&BLUE))
-		}))?;
-		root.present()?;
-	}
-
-	let image: ImageBuffer<Rgb<u8>, _> = ImageBuffer::from_raw(width, height, buffer).unwrap();
-
-	let mut buffer = Vec::new();
-	let mut cursor = Cursor::new(&mut buffer);
-	image.write_to(&mut cursor, image::ImageFormat::Png)?;
-
-	let reply = CreateReply::default().attachment(CreateAttachment::bytes(buffer, "plot.png"));
-	ctx.send(reply).await?;
-
 	Ok(())
 }
 // }}}
@@ -415,9 +212,10 @@ async fn best_plays(
 		drawer.blit_rbga(jacket_with_border, diff_bg_area.top_left(), diff_bg);
 		// }}}
 		// {{{ Display difficulty text
-		let x_offset = if chart.level.ends_with("+") {
+		let level_text = Level::LEVEL_STRINGS[chart.level.to_index()];
+		let x_offset = if level_text.ends_with("+") {
 			3
-		} else if chart.level == "11" {
+		} else if chart.level == Level::Eleven {
 			-2
 		} else {
 			0
@@ -438,7 +236,7 @@ async fn best_plays(
 					stroke: None,
 					drop_shadow: None,
 				},
-				&chart.level,
+				level_text,
 			)
 		})?;
 		// }}}
@@ -656,5 +454,72 @@ pub async fn bany(
 		false,
 	)
 	.await
+}
+// }}}
+// {{{ Meta
+/// Show stats about the bot itself.
+#[poise::command(prefix_command, slash_command, user_cooldown = 1)]
+async fn meta(ctx: Context<'_>) -> Result<(), Error> {
+	let user = get_user!(&ctx);
+	let song_count = query!("SELECT count() as count FROM songs")
+		.fetch_one(&ctx.data().db)
+		.await?
+		.count;
+
+	let chart_count = query!("SELECT count() as count FROM charts")
+		.fetch_one(&ctx.data().db)
+		.await?
+		.count;
+
+	let users_count = query!("SELECT count() as count FROM users")
+		.fetch_one(&ctx.data().db)
+		.await?
+		.count;
+
+	let pookie_count = query!(
+		"
+      SELECT count() as count 
+      FROM users 
+      WHERE is_pookie=1
+    "
+	)
+	.fetch_one(&ctx.data().db)
+	.await?
+	.count;
+
+	let play_count = query!("SELECT count() as count FROM plays")
+		.fetch_one(&ctx.data().db)
+		.await?
+		.count;
+
+	let your_play_count = query!(
+		"
+        SELECT count() as count 
+        FROM plays 
+        WHERE user_id=?
+    ",
+		user.id
+	)
+	.fetch_one(&ctx.data().db)
+	.await?
+	.count;
+
+	let embed = CreateEmbed::default()
+		.title("Bot statistics")
+		.field("Songs", format!("{song_count}"), true)
+		.field("Charts", format!("{chart_count}"), true)
+		.field("Users", format!("{users_count}"), true)
+		.field("Pookies", format!("{pookie_count}"), true)
+		.field("Plays", format!("{play_count}"), true)
+		.field("Your plays", format!("{your_play_count}"), true);
+
+	ctx.send(CreateReply::default().embed(embed)).await?;
+
+	println!(
+		"{:?}",
+		GoalStats::make(ctx.data(), &user, ScoringSystem::Standard).await?
+	);
+
+	Ok(())
 }
 // }}}

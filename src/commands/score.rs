@@ -117,11 +117,11 @@ pub async fn magic(
 			let maybe_fars =
 				Score::resolve_distibution_ambiguities(score, note_distribution, chart.note_count);
 
-			let play = CreatePlay::new(score, &chart, &user)
+			let play = CreatePlay::new(score, &chart)
 				.with_attachment(file)
 				.with_fars(maybe_fars)
 				.with_max_recall(max_recall)
-				.save(&ctx.data())
+				.save(&ctx.data(), &user)
 				.await?;
 			// }}}
 			// }}}

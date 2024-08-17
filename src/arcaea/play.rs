@@ -4,7 +4,7 @@ use num::traits::Euclid;
 use poise::serenity_prelude::{
 	Attachment, AttachmentId, CreateAttachment, CreateEmbed, CreateEmbedAuthor, Timestamp,
 };
-use sqlx::{query_as, SqlitePool};
+use sqlx::{query, query_as, SqlitePool};
 
 use crate::arcaea::chart::{Chart, Song};
 use crate::context::{Error, UserContext};
@@ -17,7 +17,6 @@ use super::score::{Score, ScoringSystem};
 #[derive(Debug, Clone)]
 pub struct CreatePlay {
 	chart_id: u32,
-	user_id: u32,
 	discord_attachment_id: Option<AttachmentId>,
 
 	// Actual score data
@@ -27,26 +26,18 @@ pub struct CreatePlay {
 	// Optional score details
 	max_recall: Option<u32>,
 	far_notes: Option<u32>,
-
-	// Creation data
-	creation_ptt: Option<u32>,
-	creation_zeta_ptt: Option<u32>,
 }
 
 impl CreatePlay {
 	#[inline]
-	pub fn new(score: Score, chart: &Chart, user: &User) -> Self {
+	pub fn new(score: Score, chart: &Chart) -> Self {
 		Self {
 			chart_id: chart.id,
-			user_id: user.id,
 			discord_attachment_id: None,
 			score,
 			zeta_score: score.to_zeta(chart.note_count as u32),
 			max_recall: None,
 			far_notes: None,
-			// TODO: populate these
-			creation_ptt: None,
-			creation_zeta_ptt: None,
 		}
 	}
 
@@ -69,8 +60,10 @@ impl CreatePlay {
 	}
 
 	// {{{ Save
-	pub async fn save(self, ctx: &UserContext) -> Result<Play, Error> {
+	pub async fn save(self, ctx: &UserContext, user: &User) -> Result<Play, Error> {
 		let attachment_id = self.discord_attachment_id.map(|i| i.get() as i64);
+
+		// {{{ Save current data to play
 		let play = sqlx::query!(
 			"
         INSERT INTO plays(
@@ -80,7 +73,7 @@ impl CreatePlay {
         VALUES(?,?,?,?,?,?,?)
         RETURNING id, created_at
       ",
-			self.user_id,
+			user.id,
 			self.chart_id,
 			attachment_id,
 			self.score.0,
@@ -90,19 +83,55 @@ impl CreatePlay {
 		)
 		.fetch_one(&ctx.db)
 		.await?;
+		// }}}
+		// {{{ Update creation ptt data
+		let creation_ptt = get_best_plays(
+			&ctx.db,
+			&ctx.song_cache,
+			user,
+			ScoringSystem::Standard,
+			30,
+			30,
+		)
+		.await?
+		.ok()
+		.map(|plays| compute_b30_ptt(ScoringSystem::Standard, &plays));
+
+		let creation_zeta_ptt =
+			get_best_plays(&ctx.db, &ctx.song_cache, user, ScoringSystem::EX, 30, 30)
+				.await?
+				.ok()
+				.map(|plays| compute_b30_ptt(ScoringSystem::EX, &plays));
+
+		query!(
+			"
+        UPDATE plays 
+        SET 
+          creation_ptt=?,
+          creation_zeta_ptt=?
+        WHERE 
+          id=?
+      ",
+			creation_ptt,
+			creation_zeta_ptt,
+			play.id
+		)
+		.execute(&ctx.db)
+		.await?;
+		// }}}
 
 		Ok(Play {
 			id: play.id as u32,
 			created_at: play.created_at,
 			chart_id: self.chart_id,
-			user_id: self.user_id,
+			user_id: user.id,
 			discord_attachment_id: self.discord_attachment_id,
 			score: self.score,
 			zeta_score: self.zeta_score,
 			max_recall: self.max_recall,
 			far_notes: self.far_notes,
-			creation_ptt: self.creation_ptt,
-			creation_zeta_ptt: self.creation_zeta_ptt,
+			creation_ptt,
+			creation_zeta_ptt,
 		})
 	}
 	// }}}
@@ -140,8 +169,8 @@ impl DbPlay {
 			discord_attachment_id: self
 				.discord_attachment_id
 				.and_then(|s| AttachmentId::from_str(&s).ok()),
-			creation_ptt: self.creation_ptt.map(|r| r as u32),
-			creation_zeta_ptt: self.creation_zeta_ptt.map(|r| r as u32),
+			creation_ptt: self.creation_ptt.map(|r| r as i32),
+			creation_zeta_ptt: self.creation_zeta_ptt.map(|r| r as i32),
 		}
 	}
 }
@@ -167,11 +196,10 @@ pub struct Play {
 	// Creation data
 	pub created_at: chrono::NaiveDateTime,
 
-	#[allow(unused)]
-	pub creation_ptt: Option<u32>,
-
-	#[allow(unused)]
-	pub creation_zeta_ptt: Option<u32>,
+	#[allow(dead_code)]
+	pub creation_ptt: Option<i32>,
+	#[allow(dead_code)]
+	pub creation_zeta_ptt: Option<i32>,
 }
 
 impl Play {

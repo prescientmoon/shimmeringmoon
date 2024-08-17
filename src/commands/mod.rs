@@ -19,6 +19,7 @@ pub async fn help(
 		command.as_deref(),
 		poise::builtins::HelpConfiguration {
 			extra_text_at_bottom: "For additional support, message @prescientmoon",
+			show_subcommands: true,
 			..Default::default()
 		},
 	)

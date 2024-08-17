@@ -1,4 +1,4 @@
-use std::{num::NonZeroU16, path::PathBuf};
+use std::{fmt::Display, num::NonZeroU16, path::PathBuf};
 
 use image::{ImageBuffer, Rgb};
 use sqlx::SqlitePool;
@@ -43,6 +43,16 @@ impl TryFrom<String> for Difficulty {
 	}
 }
 
+impl Display for Difficulty {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(
+			f,
+			"{}",
+			Self::DIFFICULTY_SHORTHANDS[self.to_index()].to_lowercase()
+		)
+	}
+}
+
 pub const DIFFICULTY_MENU_PIXEL_COLORS: [Color; Difficulty::DIFFICULTIES.len()] = [
 	Color::from_rgb_int(0xAAE5F7),
 	Color::from_rgb_int(0xBFDD85),
@@ -50,6 +60,79 @@ pub const DIFFICULTY_MENU_PIXEL_COLORS: [Color; Difficulty::DIFFICULTIES.len()] 
 	Color::from_rgb_int(0xC4B7D3),
 	Color::from_rgb_int(0xF89AAC),
 ];
+// }}}
+// {{{ Level
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Level {
+	Unknown,
+	One,
+	Two,
+	Three,
+	Four,
+	Five,
+	Six,
+	Seven,
+	SevenP,
+	Eight,
+	EightP,
+	Nine,
+	NineP,
+	Ten,
+	TenP,
+	Eleven,
+	Twelve,
+}
+
+impl Level {
+	pub const LEVELS: [Self; 17] = [
+		Self::Unknown,
+		Self::One,
+		Self::Two,
+		Self::Three,
+		Self::Four,
+		Self::Five,
+		Self::Six,
+		Self::Seven,
+		Self::SevenP,
+		Self::Eight,
+		Self::EightP,
+		Self::Nine,
+		Self::NineP,
+		Self::Ten,
+		Self::TenP,
+		Self::Eleven,
+		Self::Twelve,
+	];
+
+	pub const LEVEL_STRINGS: [&'static str; 17] = [
+		"?", "1", "2", "3", "4", "5", "6", "7", "7+", "8", "8+", "9", "9+", "10", "10+", "11", "12",
+	];
+
+	#[inline]
+	pub fn to_index(self) -> usize {
+		self as usize
+	}
+}
+
+impl Display for Level {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", Self::LEVEL_STRINGS[self.to_index()])
+	}
+}
+
+impl TryFrom<String> for Level {
+	type Error = String;
+
+	fn try_from(value: String) -> Result<Self, Self::Error> {
+		for (i, s) in Self::LEVEL_STRINGS.iter().enumerate() {
+			if value == **s {
+				return Ok(Self::LEVELS[i]);
+			}
+		}
+
+		Err(format!("Cannot convert {} to a level", value))
+	}
+}
 // }}}
 // {{{ Side
 #[derive(Debug, Clone, Copy)]
@@ -113,7 +196,7 @@ pub struct Chart {
 	pub note_design: Option<String>,
 
 	pub difficulty: Difficulty,
-	pub level: String, // TODO: this could become an enum
+	pub level: Level,
 
 	pub note_count: u32,
 	pub chart_constant: u32,
@@ -253,7 +336,7 @@ impl SongCache {
 				song_id: chart.song_id as u32,
 				shorthand: chart.shorthand,
 				difficulty: Difficulty::try_from(chart.difficulty)?,
-				level: chart.level,
+				level: Level::try_from(chart.level)?,
 				chart_constant: chart.chart_constant as u32,
 				note_count: chart.note_count as u32,
 				cached_jacket: None,
