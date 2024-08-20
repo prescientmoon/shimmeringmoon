@@ -42,11 +42,6 @@ CREATE TABLE IF NOT EXISTS plays (
     discord_attachment_id TEXT,
 
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    creation_ptt INTEGER,
-    creation_zeta_ptt INTEGER,
-
-    score INTEGER NOT NULL,
-    zeta_score INTEGER NOT NULL,
 
     max_recall INTEGER,
     far_notes INTEGER,
@@ -62,7 +57,7 @@ CREATE TABLE IF NOT EXISTS scores (
 
    score INTEGER NOT NULL,
    creation_ptt INTEGER,
-   scoring_system NOT NULL CHECK (scoring_system IN ('standard', 'ex')),
+   scoring_system NOT NULL CHECK (scoring_system IN ('standard', 'sdf', 'ex')),
 
    FOREIGN KEY (play_id) REFERENCES plays(id),
    UNIQUE(play_id, scoring_system)

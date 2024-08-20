@@ -14,15 +14,21 @@ use super::{
 pub enum ScoringSystem {
 	Standard,
 
-	// Inspired by sdvx's EX-scoring
+	/// Forgives up to 9 missed shinies, then uses EX scoring.
+	/// PMs correspond to SDPMs.
+	SDF,
+
+	/// Inspired by sdvx's EX-scoring.
+	/// PMs correspond to MPMs.
 	EX,
 }
 
 impl ScoringSystem {
-	pub const SCORING_SYSTEMS: [Self; 2] = [Self::Standard, Self::EX];
+	pub const SCORING_SYSTEMS: [Self; 3] = [Self::Standard, Self::SDF, Self::EX];
 
 	/// Values used inside sqlite
-	pub const SCORING_SYSTEM_DB_STRINGS: [&'static str; 2] = ["standard", "ex"];
+	pub const SCORING_SYSTEM_DB_STRINGS: [&'static str; Self::SCORING_SYSTEMS.len()] =
+		["standard", "sdf", "ex"];
 
 	#[inline]
 	pub fn to_index(self) -> usize {
@@ -95,11 +101,7 @@ impl Score {
 	/// Remove the contribution made by shinies to a score.
 	#[inline]
 	pub fn forget_shinies(self, note_count: u32) -> Self {
-		Self(
-			(Self::increment(note_count) * Rational64::from_integer(self.units(note_count) as i64))
-				.floor()
-				.to_integer() as u32,
-		)
+		Self(self.0 - self.shinies(note_count))
 	}
 
 	/// Compute a score without making a distinction between shinies and pures. That is, the given
@@ -147,9 +149,14 @@ impl Score {
 	pub fn convert_to(self, scoring_system: ScoringSystem, chart: &Chart) -> Self {
 		match scoring_system {
 			ScoringSystem::Standard => self,
+			ScoringSystem::SDF => {
+				let shinies = self.shinies(chart.note_count);
+				Self(self.0 + 9.min(chart.note_count - shinies)).to_zeta(chart.note_count)
+			}
 			ScoringSystem::EX => self.to_zeta(chart.note_count),
 		}
 	}
+
 	// }}}
 	// {{{ Score => Play rating
 	#[inline]
