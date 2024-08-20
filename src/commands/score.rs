@@ -1,11 +1,11 @@
 use std::time::Instant;
 
-use crate::arcaea::play::{CreatePlay, Play};
+use crate::arcaea::play::CreatePlay;
 use crate::arcaea::score::Score;
 use crate::context::{Context, Error};
 use crate::recognition::recognize::{ImageAnalyzer, ScoreKind};
 use crate::user::{discord_it_to_discord_user, User};
-use crate::{edit_reply, get_user, timed};
+use crate::{edit_reply, get_user, play_from_db_record, timed};
 use image::DynamicImage;
 use poise::serenity_prelude::futures::future::join_all;
 use poise::serenity_prelude::CreateMessage;
@@ -117,11 +117,11 @@ pub async fn magic(
 			let maybe_fars =
 				Score::resolve_distibution_ambiguities(score, note_distribution, chart.note_count);
 
-			let play = CreatePlay::new(score, &chart)
+			let play = CreatePlay::new(score)
 				.with_attachment(file)
 				.with_fars(maybe_fars)
 				.with_max_recall(max_recall)
-				.save(&ctx.data(), &user)
+				.save(&ctx.data(), &user, &chart)
 				.await?;
 			// }}}
 			// }}}
@@ -220,12 +220,16 @@ pub async fn show(
 		let res = query!(
 			"
         SELECT 
-          p.id,p.chart_id,p.user_id,p.score,p.zeta_score,
-          p.max_recall,p.created_at,p.far_notes,
+          p.id, p.chart_id, p.user_id, p.created_at,
+          p.max_recall, p.far_notes, s.score,
           u.discord_id
-        FROM plays p 
+        FROM plays p
+        JOIN scores s ON s.play_id = p.id
         JOIN users u ON p.user_id = u.id
-        WHERE p.id=?
+        WHERE s.scoring_system='standard'
+        AND p.id=?
+        ORDER BY s.score DESC
+        LIMIT 1
       ",
 			id
 		)
@@ -233,24 +237,12 @@ pub async fn show(
 		.await
 		.map_err(|_| format!("Could not find play with id {}", id))?;
 
-		let play = Play {
-			id: res.id as u32,
-			chart_id: res.chart_id as u32,
-			user_id: res.user_id as u32,
-			score: Score(res.score as u32),
-			zeta_score: Score(res.zeta_score as u32),
-			max_recall: res.max_recall.map(|r| r as u32),
-			far_notes: res.far_notes.map(|r| r as u32),
-			created_at: res.created_at,
-			discord_attachment_id: None,
-			creation_ptt: None,
-			creation_zeta_ptt: None,
-		};
+		let (song, chart) = ctx.data().song_cache.lookup_chart(res.chart_id as u32)?;
+		let play = play_from_db_record!(chart, res);
 
 		let author = discord_it_to_discord_user(&ctx, &res.discord_id).await?;
 		let user = User::by_id(&ctx.data().db, play.user_id).await?;
 
-		let (song, chart) = ctx.data().song_cache.lookup_chart(play.chart_id)?;
 		let (embed, attachment) = play
 			.to_embed(&ctx.data().db, &user, song, chart, i, Some(&author))
 			.await?;

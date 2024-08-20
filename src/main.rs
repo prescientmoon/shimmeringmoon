@@ -5,6 +5,7 @@
 #![feature(async_closure)]
 #![feature(try_blocks)]
 #![feature(thread_local)]
+#![feature(generic_arg_infer)]
 
 mod arcaea;
 mod assets;
@@ -18,6 +19,7 @@ mod time;
 mod transform;
 mod user;
 
+use arcaea::play::generate_missing_scores;
 use assets::get_data_dir;
 use context::{Error, UserContext};
 use poise::serenity_prelude::{self as serenity};
@@ -88,6 +90,12 @@ async fn main() {
 				println!("Logged in as {}", _ready.user.name);
 				poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 				let ctx = UserContext::new(pool).await?;
+
+				if var("SHIMMERING_REGEN_SCORES").unwrap_or_default() == "1" {
+					timed!("generate_missing_scores", {
+						generate_missing_scores(&ctx).await?;
+					});
+				}
 
 				Ok(ctx)
 			})

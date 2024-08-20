@@ -1,41 +1,42 @@
-use std::str::FromStr;
+use std::array;
 
+use chrono::NaiveDateTime;
+use chrono::Utc;
 use num::traits::Euclid;
+use num::CheckedDiv;
+use num::Rational32;
+use num::Zero;
 use poise::serenity_prelude::{
 	Attachment, AttachmentId, CreateAttachment, CreateEmbed, CreateEmbedAuthor, Timestamp,
 };
-use sqlx::{query, query_as, SqlitePool};
+use sqlx::query_as;
+use sqlx::{query, SqlitePool};
 
 use crate::arcaea::chart::{Chart, Song};
 use crate::context::{Error, UserContext};
 use crate::user::User;
 
 use super::chart::SongCache;
+use super::rating::{rating_as_fixed, rating_as_float};
 use super::score::{Score, ScoringSystem};
 
 // {{{ Create play
 #[derive(Debug, Clone)]
 pub struct CreatePlay {
-	chart_id: u32,
 	discord_attachment_id: Option<AttachmentId>,
 
-	// Actual score data
+	// Scoring details
 	score: Score,
-	zeta_score: Score,
-
-	// Optional score details
 	max_recall: Option<u32>,
 	far_notes: Option<u32>,
 }
 
 impl CreatePlay {
 	#[inline]
-	pub fn new(score: Score, chart: &Chart) -> Self {
+	pub fn new(score: Score) -> Self {
 		Self {
-			chart_id: chart.id,
 			discord_attachment_id: None,
 			score,
-			zeta_score: score.to_zeta(chart.note_count as u32),
 			max_recall: None,
 			far_notes: None,
 		}
@@ -60,24 +61,22 @@ impl CreatePlay {
 	}
 
 	// {{{ Save
-	pub async fn save(self, ctx: &UserContext, user: &User) -> Result<Play, Error> {
+	pub async fn save(self, ctx: &UserContext, user: &User, chart: &Chart) -> Result<Play, Error> {
 		let attachment_id = self.discord_attachment_id.map(|i| i.get() as i64);
 
 		// {{{ Save current data to play
 		let play = sqlx::query!(
 			"
         INSERT INTO plays(
-        user_id,chart_id,discord_attachment_id,
-        score,zeta_score,max_recall,far_notes
+            user_id,chart_id,discord_attachment_id,
+            max_recall,far_notes
         )
-        VALUES(?,?,?,?,?,?,?)
+        VALUES(?,?,?,?,?)
         RETURNING id, created_at
       ",
 			user.id,
-			self.chart_id,
+			chart.id,
 			attachment_id,
-			self.score.0,
-			self.zeta_score.0,
 			self.max_recall,
 			self.far_notes
 		)
@@ -85,93 +84,88 @@ impl CreatePlay {
 		.await?;
 		// }}}
 		// {{{ Update creation ptt data
-		let creation_ptt = get_best_plays(
-			&ctx.db,
-			&ctx.song_cache,
-			user,
-			ScoringSystem::Standard,
-			30,
-			30,
-		)
-		.await?
-		.ok()
-		.map(|plays| compute_b30_ptt(ScoringSystem::Standard, &plays));
-
-		let creation_zeta_ptt =
-			get_best_plays(&ctx.db, &ctx.song_cache, user, ScoringSystem::EX, 30, 30)
+		let scores = ScoreCollection::from_standard_score(self.score, chart);
+		for system in ScoringSystem::SCORING_SYSTEMS {
+			let i = system.to_index();
+			let plays = get_best_plays(&ctx.db, &ctx.song_cache, user.id, system, 30, 30, None)
 				.await?
-				.ok()
-				.map(|plays| compute_b30_ptt(ScoringSystem::EX, &plays));
+				.ok();
 
-		query!(
-			"
-        UPDATE plays 
-        SET 
-          creation_ptt=?,
-          creation_zeta_ptt=?
-        WHERE 
-          id=?
-      ",
-			creation_ptt,
-			creation_zeta_ptt,
-			play.id
-		)
-		.execute(&ctx.db)
-		.await?;
+			let creation_ptt: Option<_> = try { rating_as_fixed(compute_b30_ptt(system, &plays?)) };
+
+			query!(
+				"
+          INSERT INTO scores(play_id, score, creation_ptt, scoring_system)
+          VALUES (?,?,?,?)
+        ",
+				play.id,
+				scores.0[i].0,
+				creation_ptt,
+				ScoringSystem::SCORING_SYSTEM_DB_STRINGS[i]
+			)
+			.execute(&ctx.db)
+			.await?;
+		}
+
 		// }}}
 
 		Ok(Play {
 			id: play.id as u32,
 			created_at: play.created_at,
-			chart_id: self.chart_id,
+			chart_id: chart.id,
 			user_id: user.id,
-			discord_attachment_id: self.discord_attachment_id,
-			score: self.score,
-			zeta_score: self.zeta_score,
+			scores,
 			max_recall: self.max_recall,
 			far_notes: self.far_notes,
-			creation_ptt,
-			creation_zeta_ptt,
 		})
 	}
 	// }}}
 }
 // }}}
 // {{{ DbPlay
-/// Version of `Play` matching the format sqlx expects
-#[derive(Debug, Clone, sqlx::FromRow)]
+/// Construct a `Play` from a sqlite return record.
+#[macro_export]
+macro_rules! play_from_db_record {
+	($chart:expr, $record:expr) => {{
+		use crate::arcaea::play::{Play, ScoreCollection};
+		use crate::arcaea::score::Score;
+		Play {
+			id: $record.id as u32,
+			chart_id: $record.chart_id as u32,
+			user_id: $record.user_id as u32,
+			scores: ScoreCollection::from_standard_score(Score($record.score as u32), $chart),
+			max_recall: $record.max_recall.map(|r| r as u32),
+			far_notes: $record.far_notes.map(|r| r as u32),
+			created_at: $record.created_at,
+		}
+	}};
+}
+
+/// Typed version of the input to the macro above.
+/// Useful when using the non-macro version of the sqlx functions.
+#[derive(Debug, sqlx::FromRow)]
 pub struct DbPlay {
 	pub id: i64,
 	pub chart_id: i64,
 	pub user_id: i64,
-	pub discord_attachment_id: Option<String>,
-	pub score: i64,
-	pub zeta_score: i64,
+	pub created_at: chrono::NaiveDateTime,
+
+	// Score details
 	pub max_recall: Option<i64>,
 	pub far_notes: Option<i64>,
-	pub created_at: chrono::NaiveDateTime,
-	pub creation_ptt: Option<i64>,
-	pub creation_zeta_ptt: Option<i64>,
+	pub score: i64,
 }
 
-impl DbPlay {
-	#[inline]
-	pub fn into_play(self) -> Play {
-		Play {
-			id: self.id as u32,
-			chart_id: self.chart_id as u32,
-			user_id: self.user_id as u32,
-			score: Score(self.score as u32),
-			zeta_score: Score(self.zeta_score as u32),
-			max_recall: self.max_recall.map(|r| r as u32),
-			far_notes: self.far_notes.map(|r| r as u32),
-			created_at: self.created_at,
-			discord_attachment_id: self
-				.discord_attachment_id
-				.and_then(|s| AttachmentId::from_str(&s).ok()),
-			creation_ptt: self.creation_ptt.map(|r| r as i32),
-			creation_zeta_ptt: self.creation_zeta_ptt.map(|r| r as i32),
-		}
+// }}}
+// {{{ Score data
+#[derive(Debug, Clone, Copy)]
+pub struct ScoreCollection([Score; ScoringSystem::SCORING_SYSTEMS.len()]);
+
+impl ScoreCollection {
+	pub fn from_standard_score(score: Score, chart: &Chart) -> Self {
+		ScoreCollection(array::from_fn(|i| {
+			score.convert_to(ScoringSystem::SCORING_SYSTEMS[i], chart)
+		}))
 	}
 }
 // }}}
@@ -179,48 +173,38 @@ impl DbPlay {
 #[derive(Debug, Clone)]
 pub struct Play {
 	pub id: u32,
+	#[allow(unused)]
 	pub chart_id: u32,
 	pub user_id: u32,
-
-	#[allow(unused)]
-	pub discord_attachment_id: Option<AttachmentId>,
-
-	// Actual score data
-	pub score: Score,
-	pub zeta_score: Score,
-
-	// Optional score details
-	pub max_recall: Option<u32>,
-	pub far_notes: Option<u32>,
-
-	// Creation data
 	pub created_at: chrono::NaiveDateTime,
 
-	#[allow(dead_code)]
-	pub creation_ptt: Option<i32>,
-	#[allow(dead_code)]
-	pub creation_zeta_ptt: Option<i32>,
+	// Score details
+	pub max_recall: Option<u32>,
+	pub far_notes: Option<u32>,
+	pub scores: ScoreCollection,
 }
 
 impl Play {
 	// {{{ Query the underlying score
 	#[inline]
 	pub fn score(&self, system: ScoringSystem) -> Score {
-		match system {
-			ScoringSystem::Standard => self.score,
-			ScoringSystem::EX => self.zeta_score,
-		}
+		self.scores.0[system.to_index()]
 	}
 
 	#[inline]
-	pub fn play_rating(&self, system: ScoringSystem, chart_constant: u32) -> i32 {
+	pub fn play_rating(&self, system: ScoringSystem, chart_constant: u32) -> Rational32 {
 		self.score(system).play_rating(chart_constant)
+	}
+
+	#[inline]
+	pub fn play_rating_f32(&self, system: ScoringSystem, chart_constant: u32) -> f32 {
+		rating_as_float(self.score(system).play_rating(chart_constant))
 	}
 	// }}}
 	// {{{ Play => distribution
 	pub fn distribution(&self, note_count: u32) -> Option<(u32, u32, u32, u32)> {
 		if let Some(fars) = self.far_notes {
-			let (_, shinies, units) = self.score.analyse(note_count);
+			let (_, shinies, units) = self.score(ScoringSystem::Standard).analyse(note_count);
 			let (pures, rem) = units.checked_sub(fars)?.div_rem_euclid(&2);
 			if rem == 1 {
 				println!("The impossible happened: got an invalid amount of far notes!");
@@ -237,8 +221,8 @@ impl Play {
 	// }}}
 	// {{{ Play => status
 	#[inline]
-	pub fn status(&self, chart: &Chart) -> Option<String> {
-		let score = self.score.0;
+	pub fn status(&self, scoring_system: ScoringSystem, chart: &Chart) -> Option<String> {
+		let score = self.score(scoring_system).0;
 		if score >= 10_000_000 {
 			if score > chart.note_count + 10_000_000 {
 				return None;
@@ -266,8 +250,8 @@ impl Play {
 	}
 
 	#[inline]
-	pub fn short_status(&self, chart: &Chart) -> Option<char> {
-		let score = self.score.0;
+	pub fn short_status(&self, scoring_system: ScoringSystem, chart: &Chart) -> Option<char> {
+		let score = self.score(scoring_system).0;
 		if score >= 10_000_000 {
 			let non_max_pures = (chart.note_count + 10_000_000).checked_sub(score)?;
 			if non_max_pures == 0 {
@@ -298,14 +282,18 @@ impl Play {
 		author: Option<&poise::serenity_prelude::User>,
 	) -> Result<(CreateEmbed, Option<CreateAttachment>), Error> {
 		// {{{ Get previously best score
-		let prev_play = query_as!(
-			DbPlay,
+		let prev_play = query!(
 			"
-        SELECT * FROM plays
-        WHERE user_id=?
-        AND chart_id=?
-        AND created_at<?
-        ORDER BY score DESC
+        SELECT 
+          p.id, p.chart_id, p.user_id, p.created_at,
+          p.max_recall, p.far_notes, s.score
+        FROM plays p
+        JOIN scores s ON s.play_id = p.id
+        WHERE s.scoring_system='standard'
+        AND p.user_id=?
+        AND p.chart_id=?
+        AND p.created_at<?
+        ORDER BY s.score DESC
         LIMIT 1
     ",
 			user.id,
@@ -320,13 +308,18 @@ impl Play {
 				song.title, chart.difficulty
 			)
 		})?
-		.map(|p| p.into_play());
+		.map(|p| play_from_db_record!(chart, p));
 
-		let prev_score = prev_play.as_ref().map(|p| p.score);
-		let prev_zeta_score = prev_play.as_ref().map(|p| p.zeta_score);
+		let prev_score = prev_play.as_ref().map(|p| p.score(ScoringSystem::Standard));
+		let prev_zeta_score = prev_play.as_ref().map(|p| p.score(ScoringSystem::EX));
 		// }}}
 
-		let attachement_name = format!("{:?}-{:?}-{:?}.png", song.id, self.score.0, index);
+		let attachement_name = format!(
+			"{:?}-{:?}-{:?}.png",
+			song.id,
+			self.score(ScoringSystem::Standard).0,
+			index
+		);
 		let icon_attachement = match chart.cached_jacket.as_ref() {
 			Some(jacket) => Some(CreateAttachment::bytes(jacket.raw, &attachement_name)),
 			None => None,
@@ -337,30 +330,46 @@ impl Play {
 				"{} [{:?} {}]",
 				&song.title, chart.difficulty, chart.level
 			))
-			.field("Score", self.score.display_with_diff(prev_score)?, true)
 			.field(
-				"Rating",
-				self.score.display_play_rating(prev_score, chart)?,
+				"Score",
+				self.score(ScoringSystem::Standard)
+					.display_with_diff(prev_score)?,
 				true,
 			)
-			.field("Grade", format!("{}", self.score.grade()), true)
+			.field(
+				"Rating",
+				self.score(ScoringSystem::Standard)
+					.display_play_rating(prev_score, chart)?,
+				true,
+			)
+			.field(
+				"Grade",
+				format!("{}", self.score(ScoringSystem::Standard).grade()),
+				true,
+			)
 			.field(
 				"ξ-Score",
-				self.zeta_score.display_with_diff(prev_zeta_score)?,
+				self.score(ScoringSystem::EX)
+					.display_with_diff(prev_zeta_score)?,
 				true,
 			)
 			// {{{ ξ-Rating
 			.field(
 				"ξ-Rating",
-				self.zeta_score
+				self.score(ScoringSystem::EX)
 					.display_play_rating(prev_zeta_score, chart)?,
 				true,
 			)
 			// }}}
-			.field("ξ-Grade", format!("{}", self.zeta_score.grade()), true)
+			.field(
+				"ξ-Grade",
+				format!("{}", self.score(ScoringSystem::EX).grade()),
+				true,
+			)
 			.field(
 				"Status",
-				self.status(chart).unwrap_or("-".to_string()),
+				self.status(ScoringSystem::Standard, chart)
+					.unwrap_or("-".to_string()),
 				true,
 			)
 			.field(
@@ -402,24 +411,33 @@ pub type PlayCollection<'a> = Vec<(Play, &'a Song, &'a Chart)>;
 pub async fn get_best_plays<'a>(
 	db: &SqlitePool,
 	song_cache: &'a SongCache,
-	user: &User,
+	user_id: u32,
 	scoring_system: ScoringSystem,
 	min_amount: usize,
 	max_amount: usize,
+	before: Option<NaiveDateTime>,
 ) -> Result<Result<PlayCollection<'a>, String>, Error> {
 	// {{{ DB data fetching
 	let plays: Vec<DbPlay> = query_as(
 		"
-        SELECT id, chart_id, user_id,
-        created_at, MAX(score) as score, zeta_score,
-        creation_ptt, creation_zeta_ptt, far_notes, max_recall, discord_attachment_id
-        FROM plays p
-        WHERE user_id = ?
-        GROUP BY chart_id
-        ORDER BY score DESC
+      SELECT 
+        p.id, p.chart_id, p.user_id, p.created_at,
+        p.max_recall, p.far_notes, s.score,
+        MAX(s.score) as _cscore 
+        -- ^ This is only here to make sqlite pick the correct row for the bare columns
+      FROM plays p
+      JOIN scores s ON s.play_id = p.id
+      JOIN scores cs ON cs.play_id = p.id
+      WHERE s.scoring_system='standard'
+      AND cs.scoring_system=?
+      AND p.user_id=?
+      AND p.created_at<=?
+      GROUP BY p.chart_id
     ",
 	)
-	.bind(user.id)
+	.bind(ScoringSystem::SCORING_SYSTEM_DB_STRINGS[scoring_system.to_index()])
+	.bind(user_id)
+	.bind(before.unwrap_or_else(|| Utc::now().naive_utc()))
 	.fetch_all(db)
 	.await?;
 	// }}}
@@ -437,8 +455,8 @@ pub async fn get_best_plays<'a>(
 	let mut plays: Vec<(Play, &Song, &Chart)> = plays
 		.into_iter()
 		.map(|play| {
-			let play = play.into_play();
-			let (song, chart) = song_cache.lookup_chart(play.chart_id)?;
+			let (song, chart) = song_cache.lookup_chart(play.chart_id as u32)?;
+			let play = play_from_db_record!(chart, play);
 			Ok((play, song, chart))
 		})
 		.collect::<Result<Vec<_>, Error>>()?;
@@ -451,12 +469,78 @@ pub async fn get_best_plays<'a>(
 }
 
 #[inline]
-pub fn compute_b30_ptt(scoring_system: ScoringSystem, plays: &PlayCollection<'_>) -> i32 {
+pub fn compute_b30_ptt(scoring_system: ScoringSystem, plays: &PlayCollection<'_>) -> Rational32 {
 	plays
 		.iter()
 		.map(|(play, _, chart)| play.play_rating(scoring_system, chart.chart_constant))
-		.sum::<i32>()
-		.checked_div(plays.len() as i32)
-		.unwrap_or(0)
+		.sum::<Rational32>()
+		.checked_div(&Rational32::from_integer(plays.len() as i32))
+		.unwrap_or(Rational32::zero())
+}
+// }}}
+// {{{ Maintenance functions
+pub async fn generate_missing_scores(ctx: &UserContext) -> Result<(), Error> {
+	let plays = query!(
+		"
+      SELECT 
+        p.id, p.chart_id, p.user_id, p.created_at,
+        p.max_recall, p.far_notes, s.score
+      FROM plays p
+      JOIN scores s ON s.play_id = p.id
+      WHERE s.scoring_system='standard'
+      ORDER BY p.created_at ASC
+    "
+	)
+	// Can't use the stream based version because of db locking...
+	.fetch_all(&ctx.db)
+	.await?;
+
+	let mut i = 0;
+
+	for play in plays {
+		let (_, chart) = ctx.song_cache.lookup_chart(play.chart_id as u32)?;
+		let play = play_from_db_record!(chart, play);
+
+		for system in ScoringSystem::SCORING_SYSTEMS {
+			let i = system.to_index();
+			let plays = get_best_plays(
+				&ctx.db,
+				&ctx.song_cache,
+				play.user_id,
+				system,
+				30,
+				30,
+				Some(play.created_at),
+			)
+			.await?
+			.ok();
+
+			let creation_ptt: Option<_> = try { rating_as_fixed(compute_b30_ptt(system, &plays?)) };
+			let raw_score = play.scores.0[i].0;
+
+			query!(
+				"
+	        INSERT INTO scores(play_id, score, creation_ptt, scoring_system)
+	        VALUES ($1, $2, $3, $4)
+          ON CONFLICT(play_id, scoring_system)
+            DO UPDATE SET
+              score=$2, creation_ptt=$3
+            WHERE play_id = $1
+            AND scoring_system = $4
+
+	      ",
+				play.id,
+				raw_score,
+				creation_ptt,
+				ScoringSystem::SCORING_SYSTEM_DB_STRINGS[i],
+			)
+			.execute(&ctx.db)
+			.await?;
+		}
+
+		i += 1;
+		println!("Processed {i} plays");
+	}
+	Ok(())
 }
 // }}}

@@ -4,7 +4,7 @@ use sqlx::query;
 use crate::{
 	arcaea::chart::Side,
 	context::{Context, Error},
-	get_user,
+	get_user, play_from_db_record,
 	recognition::fuzzy_song_name::guess_song_and_chart,
 };
 use std::io::Cursor;
@@ -20,13 +20,9 @@ use plotters::{
 	style::{IntoFont, TextStyle, BLUE, WHITE},
 };
 use poise::CreateReply;
-use sqlx::query_as;
 
 use crate::{
-	arcaea::{
-		play::DbPlay,
-		score::{Score, ScoringSystem},
-	},
+	arcaea::score::{Score, ScoringSystem},
 	user::discord_it_to_discord_user,
 };
 
@@ -121,13 +117,18 @@ async fn best(
 	let user = get_user!(&ctx);
 
 	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
-	let play = query_as!(
-		DbPlay,
+	let play = query!(
 		"
-        SELECT * FROM plays
-        WHERE user_id=?
-        AND chart_id=?
-        ORDER BY score DESC
+      SELECT 
+        p.id, p.chart_id, p.user_id, p.created_at,
+        p.max_recall, p.far_notes, s.score
+      FROM plays p
+      JOIN scores s ON s.play_id = p.id
+      WHERE s.scoring_system='standard'
+      AND p.user_id=?
+      AND p.chart_id=?
+      ORDER BY s.score DESC
+      LIMIT 1
     ",
 		user.id,
 		chart.id
@@ -139,8 +140,8 @@ async fn best(
 			"Could not find any scores for {} [{:?}]",
 			song.title, chart.difficulty
 		)
-	})?
-	.into_play();
+	})?;
+	let play = play_from_db_record!(chart, play);
 
 	let (embed, attachment) = play
 		.to_embed(
@@ -176,13 +177,17 @@ async fn plot(
 	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
 
 	// SAFETY: we limit the amount of plotted plays to 1000.
-	let plays = query_as!(
-		DbPlay,
+	let plays = query!(
 		"
-      SELECT * FROM plays
-      WHERE user_id=?
-      AND chart_id=?
-      ORDER BY created_at ASC
+      SELECT 
+        p.id, p.chart_id, p.user_id, p.created_at,
+        p.max_recall, p.far_notes, s.score
+      FROM plays p
+      JOIN scores s ON s.play_id = p.id
+      WHERE s.scoring_system='standard'
+      AND p.user_id=?
+      AND p.chart_id=?
+      ORDER BY s.score DESC
       LIMIT 1000
     ",
 		user.id,
@@ -204,7 +209,7 @@ async fn plot(
 	let max_time = plays.iter().map(|p| p.created_at).max().unwrap();
 	let mut min_score = plays
 		.iter()
-		.map(|p| p.clone().into_play().score(scoring_system))
+		.map(|p| play_from_db_record!(chart, p).score(scoring_system))
 		.min()
 		.unwrap()
 		.0 as i64;
@@ -228,7 +233,7 @@ async fn plot(
 	{
 		let root = BitMapBackend::with_buffer(&mut buffer, (width, height)).into_drawing_area();
 
-		let mut chart = ChartBuilder::on(&root)
+		let mut chart_buider = ChartBuilder::on(&root)
 			.margin(25)
 			.caption(
 				format!("{} [{:?}]", song.title, chart.difficulty),
@@ -241,7 +246,7 @@ async fn plot(
 				min_score..max_score,
 			)?;
 
-		chart
+		chart_buider
 			.configure_mesh()
 			.light_line_style(WHITE)
 			.y_label_formatter(&|s| format!("{}", Score(*s as u32)))
@@ -261,7 +266,7 @@ async fn plot(
 			.map(|play| {
 				(
 					play.created_at.and_utc().timestamp_millis(),
-					play.into_play().score(scoring_system),
+					play_from_db_record!(chart, play).score(scoring_system),
 				)
 			})
 			.collect();
@@ -269,12 +274,12 @@ async fn plot(
 		points.sort();
 		points.dedup();
 
-		chart.draw_series(LineSeries::new(
+		chart_buider.draw_series(LineSeries::new(
 			points.iter().map(|(t, s)| (*t, s.0 as i64)),
 			&BLUE,
 		))?;
 
-		chart.draw_series(points.iter().map(|(t, s)| {
+		chart_buider.draw_series(points.iter().map(|(t, s)| {
 			Circle::new((*t, s.0 as i64), 3, plotters::style::Color::filled(&BLUE))
 		}))?;
 		root.present()?;

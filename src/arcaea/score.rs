@@ -1,10 +1,13 @@
 use std::fmt::{Display, Write};
 
-use num::Rational64;
+use num::{Rational32, Rational64};
 
 use crate::context::Error;
 
-use super::chart::Chart;
+use super::{
+	chart::Chart,
+	rating::{rating_as_float, rating_from_fixed, Rating},
+};
 
 // {{{ Scoring system
 #[derive(Debug, Clone, Copy, poise::ChoiceParameter)]
@@ -13,6 +16,18 @@ pub enum ScoringSystem {
 
 	// Inspired by sdvx's EX-scoring
 	EX,
+}
+
+impl ScoringSystem {
+	pub const SCORING_SYSTEMS: [Self; 2] = [Self::Standard, Self::EX];
+
+	/// Values used inside sqlite
+	pub const SCORING_SYSTEM_DB_STRINGS: [&'static str; 2] = ["standard", "ex"];
+
+	#[inline]
+	pub fn to_index(self) -> usize {
+		self as usize
+	}
 }
 
 impl Default for ScoringSystem {
@@ -125,32 +140,39 @@ impl Score {
 		)
 	}
 	// }}}
+	// {{{ Scoring system conversion
+	/// Convert a standard score to any other scoring system. The output might be
+	/// nonsense if the given score is not using the standard system.
+	#[inline]
+	pub fn convert_to(self, scoring_system: ScoringSystem, chart: &Chart) -> Self {
+		match scoring_system {
+			ScoringSystem::Standard => self,
+			ScoringSystem::EX => self.to_zeta(chart.note_count),
+		}
+	}
+	// }}}
 	// {{{ Score => Play rating
 	#[inline]
-	pub fn play_rating(self, chart_constant: u32) -> i32 {
-		chart_constant as i32
+	pub fn play_rating(self, chart_constant: u32) -> Rating {
+		rating_from_fixed(chart_constant as i32)
 			+ if self.0 >= 10_000_000 {
-				200
+				Rational32::from_integer(2)
 			} else if self.0 >= 9_800_000 {
-				100 + (self.0 as i32 - 9_800_000) / 2_000
+				Rational32::from_integer(1)
+					+ Rational32::new(self.0 as i32 - 9_800_000, 200_000).reduced()
 			} else {
-				(self.0 as i32 - 9_500_000) / 3_000
+				Rational32::new(self.0 as i32 - 9_500_000, 300_000).reduced()
 			}
-	}
-
-	#[inline]
-	pub fn play_rating_f32(self, chart_constant: u32) -> f32 {
-		(self.play_rating(chart_constant)) as f32 / 100.0
 	}
 
 	pub fn display_play_rating(self, prev: Option<Self>, chart: &Chart) -> Result<String, Error> {
 		let mut buffer = String::with_capacity(14);
 
-		let play_rating = self.play_rating_f32(chart.chart_constant);
+		let play_rating = rating_as_float(self.play_rating(chart.chart_constant));
 		write!(buffer, "{:.2}", play_rating)?;
 
 		if let Some(prev) = prev {
-			let prev_play_rating = prev.play_rating_f32(chart.chart_constant);
+			let prev_play_rating = rating_as_float(prev.play_rating(chart.chart_constant));
 
 			if play_rating >= prev_play_rating {
 				write!(buffer, " (+{:.2})", play_rating - prev_play_rating)?;

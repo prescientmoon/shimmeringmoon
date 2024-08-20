@@ -13,6 +13,7 @@ use crate::{
 		chart::Level,
 		jacket::BITMAP_IMAGE_SIZE,
 		play::{compute_b30_ptt, get_best_plays},
+		rating::rating_as_float,
 		score::ScoringSystem,
 	},
 	assert_is_pookie,
@@ -55,14 +56,15 @@ async fn best_plays(
 		get_best_plays(
 			&user_ctx.db,
 			&user_ctx.song_cache,
-			&user,
+			user.id,
 			scoring_system,
 			if require_full {
 				grid_size.0 * grid_size.1
 			} else {
 				grid_size.0 * (grid_size.1.max(1) - 1) + 1
 			} as usize,
-			(grid_size.0 * grid_size.1) as usize
+			(grid_size.0 * grid_size.1) as usize,
+			None
 		)
 		.await?
 	);
@@ -287,7 +289,7 @@ async fn best_plays(
 		// }}}
 		// {{{ Display status text
 		with_font(&EXO_FONT, |faces| {
-			let status = play.short_status(chart).ok_or_else(|| {
+			let status = play.short_status(scoring_system, chart).ok_or_else(|| {
 				format!(
 					"Could not get status for score {}",
 					play.score(scoring_system)
@@ -379,7 +381,7 @@ async fn best_plays(
 				style,
 				&format!(
 					"{:.2}",
-					play.play_rating(scoring_system, chart.chart_constant) as f32 / 100.0
+					play.play_rating_f32(scoring_system, chart.chart_constant)
 				),
 			)?;
 
@@ -415,7 +417,7 @@ async fn best_plays(
 		.attachment(CreateAttachment::bytes(out_buffer, "b30.png"))
 		.content(format!(
 			"Your ptt is {:.2}",
-			compute_b30_ptt(scoring_system, &plays) as f32 / 100.0
+			rating_as_float(compute_b30_ptt(scoring_system, &plays))
 		));
 	ctx.send(reply).await?;
 

@@ -125,10 +125,11 @@ impl GoalStats {
 		let plays = get_best_plays(
 			&ctx.db,
 			&ctx.song_cache,
-			user,
+			user.id,
 			scoring_system,
 			0,
 			usize::MAX,
+			None,
 		)
 		.await??;
 
@@ -150,22 +151,20 @@ impl GoalStats {
 		.count as usize;
 		// }}}
 		// {{{ Peak ptt
-		let peak_ptt = {
-			let record = query!(
-				"
-        SELECT 
-          max(creation_ptt) as standard,
-          max(creation_zeta_ptt) as ex 
-        FROM plays
-      "
-			)
-			.fetch_one(&ctx.db)
-			.await?;
-			match scoring_system {
-				ScoringSystem::Standard => record.standard,
-				ScoringSystem::EX => record.ex,
-			}
-		}
+		let peak_ptt = query!(
+			"
+        SELECT s.creation_ptt
+        FROM plays p
+        JOIN scores s ON s.play_id = p.id
+        WHERE user_id = ?
+        AND scoring_system = ?
+      ",
+			user.id,
+			ScoringSystem::SCORING_SYSTEM_DB_STRINGS[scoring_system.to_index()]
+		)
+		.fetch_one(&ctx.db)
+		.await?
+		.creation_ptt
 		.ok_or_else(|| "No ptt history data found")? as u32;
 		// }}}
 		// {{{ Peak PM relay

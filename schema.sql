@@ -1,10 +1,10 @@
 # {{{ users
-# }}}
 create table IF NOT EXISTS users (
     id INTEGER NOT NULL PRIMARY KEY,
     discord_id TEXT UNIQUE NOT NULL,
     is_pookie BOOL NOT NULL DEFAULT 0
 );
+# }}}
 # {{{ songs
 CREATE TABLE IF NOT EXISTS songs (
     id INTEGER NOT NULL PRIMARY KEY,
@@ -54,6 +54,19 @@ CREATE TABLE IF NOT EXISTS plays (
     FOREIGN KEY (chart_id) REFERENCES charts(id),
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
+# }}}
+# {{{ scores
+CREATE TABLE IF NOT EXISTS scores (
+   id INTEGER NOT NULL PRIMARY KEY,
+   play_id INTEGER NOT NULL,
+
+   score INTEGER NOT NULL,
+   creation_ptt INTEGER,
+   scoring_system NOT NULL CHECK (scoring_system IN ('standard', 'ex')),
+
+   FOREIGN KEY (play_id) REFERENCES plays(id),
+   UNIQUE(play_id, scoring_system)
+)
 # }}}
 
 insert into users(discord_id) values (385759924917108740);
