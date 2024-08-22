@@ -14,7 +14,7 @@ macro_rules! edit_reply {
 #[macro_export]
 macro_rules! get_user {
 	($ctx:expr) => {{
-		crate::reply_errors!($ctx, crate::user::User::from_context($ctx).await)
+		crate::reply_errors!($ctx, crate::user::User::from_context($ctx))
 	}};
 }
 

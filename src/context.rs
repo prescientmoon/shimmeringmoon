@@ -1,6 +1,5 @@
+use r2d2_sqlite::SqliteConnectionManager;
 use std::fs;
-
-use sqlx::SqlitePool;
 
 use crate::{
 	arcaea::{chart::SongCache, jacket::JacketCache},
@@ -13,9 +12,11 @@ use crate::{
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Context<'a> = poise::Context<'a, UserContext, Error>;
 
+pub type DbConnection = r2d2::Pool<SqliteConnectionManager>;
+
 // Custom user data passed to all command functions
 pub struct UserContext {
-	pub db: SqlitePool,
+	pub db: DbConnection,
 	pub song_cache: SongCache,
 	pub jacket_cache: JacketCache,
 	pub ui_measurements: UIMeasurements,
@@ -29,11 +30,11 @@ pub struct UserContext {
 
 impl UserContext {
 	#[inline]
-	pub async fn new(db: SqlitePool) -> Result<Self, Error> {
+	pub async fn new(db: DbConnection) -> Result<Self, Error> {
 		timed!("create_context", {
 			fs::create_dir_all(get_data_dir())?;
 
-			let mut song_cache = timed!("make_song_cache", { SongCache::new(&db).await? });
+			let mut song_cache = timed!("make_song_cache", { SongCache::new(&db)? });
 			let jacket_cache = timed!("make_jacket_cache", { JacketCache::new(&mut song_cache)? });
 			let ui_measurements = timed!("read_ui_measurements", { UIMeasurements::read()? });
 

@@ -5,7 +5,6 @@ use poise::{
 	serenity_prelude::{CreateAttachment, CreateEmbed},
 	CreateReply,
 };
-use sqlx::query;
 
 use crate::{
 	arcaea::{
@@ -26,7 +25,7 @@ use crate::{
 	context::{Context, Error},
 	get_user,
 	logs::debug_image_log,
-	reply_errors,
+	reply_errors, timed,
 	user::User,
 };
 
@@ -53,20 +52,20 @@ async fn best_plays(
 	let user_ctx = ctx.data();
 	let plays = reply_errors!(
 		ctx,
-		get_best_plays(
-			&user_ctx.db,
-			&user_ctx.song_cache,
-			user.id,
-			scoring_system,
-			if require_full {
-				grid_size.0 * grid_size.1
-			} else {
-				grid_size.0 * (grid_size.1.max(1) - 1) + 1
-			} as usize,
-			(grid_size.0 * grid_size.1) as usize,
-			None
-		)
-		.await?
+		timed!("get_best_plays", {
+			get_best_plays(
+				user_ctx,
+				user.id,
+				scoring_system,
+				if require_full {
+					grid_size.0 * grid_size.1
+				} else {
+					grid_size.0 * (grid_size.1.max(1) - 1) + 1
+				} as usize,
+				(grid_size.0 * grid_size.1) as usize,
+				None,
+			)?
+		})
 	);
 
 	// {{{ Layout
@@ -463,48 +462,42 @@ pub async fn bany(
 #[poise::command(prefix_command, slash_command, user_cooldown = 1)]
 async fn meta(ctx: Context<'_>) -> Result<(), Error> {
 	let user = get_user!(&ctx);
-	let song_count = query!("SELECT count() as count FROM songs")
-		.fetch_one(&ctx.data().db)
-		.await?
-		.count;
+	let conn = ctx.data().db.get()?;
+	let song_count: usize = conn
+		.prepare_cached("SELECT count() as count FROM songs")?
+		.query_row((), |row| row.get(0))?;
 
-	let chart_count = query!("SELECT count() as count FROM charts")
-		.fetch_one(&ctx.data().db)
-		.await?
-		.count;
+	let chart_count: usize = conn
+		.prepare_cached("SELECT count() as count FROM charts")?
+		.query_row((), |row| row.get(0))?;
 
-	let users_count = query!("SELECT count() as count FROM users")
-		.fetch_one(&ctx.data().db)
-		.await?
-		.count;
+	let users_count: usize = conn
+		.prepare_cached("SELECT count() as count FROM users")?
+		.query_row((), |row| row.get(0))?;
 
-	let pookie_count = query!(
-		"
-      SELECT count() as count 
-      FROM users 
-      WHERE is_pookie=1
-    "
-	)
-	.fetch_one(&ctx.data().db)
-	.await?
-	.count;
+	let pookie_count: usize = conn
+		.prepare_cached(
+			"
+        SELECT count() as count 
+        FROM users 
+        WHERE is_pookie=1
+      ",
+		)?
+		.query_row((), |row| row.get(0))?;
 
-	let play_count = query!("SELECT count() as count FROM plays")
-		.fetch_one(&ctx.data().db)
-		.await?
-		.count;
+	let play_count: usize = conn
+		.prepare_cached("SELECT count() as count FROM plays")?
+		.query_row((), |row| row.get(0))?;
 
-	let your_play_count = query!(
-		"
+	let your_play_count: usize = conn
+		.prepare_cached(
+			"
         SELECT count() as count 
         FROM plays 
         WHERE user_id=?
-    ",
-		user.id
-	)
-	.fetch_one(&ctx.data().db)
-	.await?
-	.count;
+      ",
+		)?
+		.query_row([user.id], |row| row.get(0))?;
 
 	let embed = CreateEmbed::default()
 		.title("Bot statistics")

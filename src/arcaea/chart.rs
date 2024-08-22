@@ -1,12 +1,15 @@
 use std::{fmt::Display, num::NonZeroU16, path::PathBuf};
 
 use image::{ImageBuffer, Rgb};
-use sqlx::SqlitePool;
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ValueRef};
 
-use crate::{bitmap::Color, context::Error};
+use crate::{
+	bitmap::Color,
+	context::{DbConnection, Error},
+};
 
 // {{{ Difficuly
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Difficulty {
 	PST,
 	PRS,
@@ -29,17 +32,19 @@ impl Difficulty {
 	}
 }
 
-impl TryFrom<String> for Difficulty {
-	type Error = String;
+impl FromSql for Difficulty {
+	fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+		let str: String = rusqlite::types::FromSql::column_result(value)?;
 
-	fn try_from(value: String) -> Result<Self, Self::Error> {
 		for (i, s) in Self::DIFFICULTY_SHORTHANDS.iter().enumerate() {
-			if value == **s {
+			if str == **s {
 				return Ok(Self::DIFFICULTIES[i]);
 			}
 		}
 
-		Err(format!("Cannot convert {} to difficulty", value))
+		FromSqlResult::Err(FromSqlError::Other(
+			format!("Cannot convert {} to difficulty", str).into(),
+		))
 	}
 }
 
@@ -120,17 +125,19 @@ impl Display for Level {
 	}
 }
 
-impl TryFrom<String> for Level {
-	type Error = String;
+impl FromSql for Level {
+	fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+		let str: String = rusqlite::types::FromSql::column_result(value)?;
 
-	fn try_from(value: String) -> Result<Self, Self::Error> {
 		for (i, s) in Self::LEVEL_STRINGS.iter().enumerate() {
-			if value == **s {
+			if str == **s {
 				return Ok(Self::LEVELS[i]);
 			}
 		}
 
-		Err(format!("Cannot convert {} to a level", value))
+		FromSqlResult::Err(FromSqlError::Other(
+			format!("Cannot convert {} to level", str).into(),
+		))
 	}
 }
 // }}}
@@ -152,17 +159,19 @@ impl Side {
 	}
 }
 
-impl TryFrom<String> for Side {
-	type Error = String;
+impl FromSql for Side {
+	fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+		let str: String = rusqlite::types::FromSql::column_result(value)?;
 
-	fn try_from(value: String) -> Result<Self, Self::Error> {
 		for (i, s) in Self::SIDE_STRINGS.iter().enumerate() {
-			if value == **s {
+			if str == **s {
 				return Ok(Self::SIDES[i]);
 			}
 		}
 
-		Err(format!("Cannot convert {} to difficulty", value))
+		FromSqlResult::Err(FromSqlError::Other(
+			format!("Cannot convert {} to side", str).into(),
+		))
 	}
 }
 // }}}
@@ -304,44 +313,53 @@ impl SongCache {
 	}
 
 	// {{{ Populate cache
-	pub async fn new(pool: &SqlitePool) -> Result<Self, Error> {
+	pub fn new(conn: &DbConnection) -> Result<Self, Error> {
+		let conn = conn.get()?;
 		let mut result = Self::default();
 
 		// {{{ Songs
-		let songs = sqlx::query!("SELECT * FROM songs").fetch_all(pool).await?;
-		for song in songs {
-			let song = Song {
-				id: song.id as u32,
-				lowercase_title: song.title.to_lowercase(),
-				title: song.title,
-				artist: song.artist,
-				pack: song.pack,
-				bpm: song.bpm,
-				side: Side::try_from(song.side)?,
-			};
+		let mut query = conn.prepare_cached("SELECT * FROM songs")?;
+		let songs = query.query_map((), |row| {
+			Ok(Song {
+				id: row.get("id")?,
+				lowercase_title: row.get::<_, String>("title")?.to_lowercase(),
+				title: row.get("title")?,
+				artist: row.get("artist")?,
+				pack: row.get("pack")?,
+				bpm: row.get("bpm")?,
+				side: row.get("side")?,
+			})
+		})?;
 
+		for song in songs {
+			let song = song?;
 			let song_id = song.id as usize;
 
 			if song_id >= result.songs.len() {
 				result.songs.resize(song_id + 1, None);
 			}
+
 			result.songs[song_id] = Some(CachedSong::new(song));
 		}
 		// }}}
 		// {{{ Charts
-		let charts = sqlx::query!("SELECT * FROM charts").fetch_all(pool).await?;
-		for chart in charts {
-			let chart = Chart {
-				id: chart.id as u32,
-				song_id: chart.song_id as u32,
-				shorthand: chart.shorthand,
-				difficulty: Difficulty::try_from(chart.difficulty)?,
-				level: Level::try_from(chart.level)?,
-				chart_constant: chart.chart_constant as u32,
-				note_count: chart.note_count as u32,
+		let mut query = conn.prepare_cached("SELECT * FROM charts")?;
+		let charts = query.query_map((), |row| {
+			Ok(Chart {
+				id: row.get("id")?,
+				song_id: row.get("song_id")?,
+				shorthand: row.get("shorthand")?,
+				difficulty: row.get("difficulty")?,
+				level: row.get("level")?,
+				chart_constant: row.get("chart_constant")?,
+				note_count: row.get("note_count")?,
+				note_design: row.get("note_design")?,
 				cached_jacket: None,
-				note_design: chart.note_design,
-			};
+			})
+		})?;
+
+		for chart in charts {
+			let chart = chart?;
 
 			// {{{ Tie chart to song
 			{

@@ -1,16 +1,15 @@
 use std::time::Instant;
 
-use crate::arcaea::play::CreatePlay;
+use crate::arcaea::play::{CreatePlay, Play};
 use crate::arcaea::score::Score;
 use crate::context::{Context, Error};
 use crate::recognition::recognize::{ImageAnalyzer, ScoreKind};
-use crate::user::{discord_it_to_discord_user, User};
-use crate::{edit_reply, get_user, play_from_db_record, timed};
+use crate::user::{discord_id_to_discord_user, User};
+use crate::{edit_reply, get_user, timed};
 use image::DynamicImage;
 use poise::serenity_prelude::futures::future::join_all;
 use poise::serenity_prelude::CreateMessage;
 use poise::{serenity_prelude as serenity, CreateReply};
-use sqlx::query;
 
 // {{{ Score
 /// Score management
@@ -121,15 +120,13 @@ pub async fn magic(
 				.with_attachment(file)
 				.with_fars(maybe_fars)
 				.with_max_recall(max_recall)
-				.save(&ctx.data(), &user, &chart)
-				.await?;
+				.save(&ctx.data(), &user, &chart)?;
 			// }}}
 			// }}}
 			// {{{ Deliver embed
 
 			let (embed, attachment) = timed!("to embed", {
-				play.to_embed(&ctx.data().db, &user, &song, &chart, i, None)
-					.await?
+				play.to_embed(ctx.data(), &user, &song, &chart, i, None)?
 			});
 
 			embeds.push(embed);
@@ -183,11 +180,14 @@ pub async fn delete(
 	let mut count = 0;
 
 	for id in ids {
-		let res = query!("DELETE FROM plays WHERE id=? AND user_id=?", id, user.id)
-			.execute(&ctx.data().db)
-			.await?;
+		let res = ctx
+			.data()
+			.db
+			.get()?
+			.prepare_cached("DELETE FROM plays WHERE id=? AND user_id=?")?
+			.execute((id, user.id))?;
 
-		if res.rows_affected() == 0 {
+		if res == 0 {
 			ctx.reply(format!("No play with id {} found", id)).await?;
 		} else {
 			count += 1;
@@ -216,36 +216,38 @@ pub async fn show(
 
 	let mut embeds = Vec::with_capacity(ids.len());
 	let mut attachments = Vec::with_capacity(ids.len());
+	let conn = ctx.data().db.get()?;
 	for (i, id) in ids.iter().enumerate() {
-		let res = query!(
-			"
-        SELECT 
-          p.id, p.chart_id, p.user_id, p.created_at,
-          p.max_recall, p.far_notes, s.score,
-          u.discord_id
-        FROM plays p
-        JOIN scores s ON s.play_id = p.id
-        JOIN users u ON p.user_id = u.id
-        WHERE s.scoring_system='standard'
-        AND p.id=?
-        ORDER BY s.score DESC
-        LIMIT 1
-      ",
-			id
-		)
-		.fetch_one(&ctx.data().db)
-		.await
-		.map_err(|_| format!("Could not find play with id {}", id))?;
+		let (song, chart, play, discord_id) = conn
+			.prepare_cached(
+				"
+          SELECT 
+            p.id, p.chart_id, p.user_id, p.created_at,
+            p.max_recall, p.far_notes, s.score,
+            u.discord_id
+          FROM plays p
+          JOIN scores s ON s.play_id = p.id
+          JOIN users u ON p.user_id = u.id
+          WHERE s.scoring_system='standard'
+          AND p.id=?
+          ORDER BY s.score DESC
+          LIMIT 1
+        ",
+			)?
+			.query_and_then([id], |row| -> Result<_, Error> {
+				let (song, chart) = ctx.data().song_cache.lookup_chart(row.get("chart_id")?)?;
+				let play = Play::from_sql(chart, row)?;
+				let discord_id = row.get::<_, String>("discord_id")?;
+				Ok((song, chart, play, discord_id))
+			})?
+			.next()
+			.ok_or_else(|| format!("Could not find play with id {}", id))??;
 
-		let (song, chart) = ctx.data().song_cache.lookup_chart(res.chart_id as u32)?;
-		let play = play_from_db_record!(chart, res);
+		let author = discord_id_to_discord_user(&ctx, &discord_id).await?;
+		let user = User::by_id(ctx.data(), play.user_id)?;
 
-		let author = discord_it_to_discord_user(&ctx, &res.discord_id).await?;
-		let user = User::by_id(&ctx.data().db, play.user_id).await?;
-
-		let (embed, attachment) = play
-			.to_embed(&ctx.data().db, &user, song, chart, i, Some(&author))
-			.await?;
+		let (embed, attachment) =
+			play.to_embed(ctx.data(), &user, song, chart, i, Some(&author))?;
 
 		embeds.push(embed);
 		attachments.extend(attachment);

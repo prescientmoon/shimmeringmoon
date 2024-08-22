@@ -1,5 +1,4 @@
 use image::RgbaImage;
-use sqlx::query;
 
 use crate::{
 	assets::get_data_dir,
@@ -122,16 +121,8 @@ impl GoalStats {
 		user: &User,
 		scoring_system: ScoringSystem,
 	) -> Result<Self, Error> {
-		let plays = get_best_plays(
-			&ctx.db,
-			&ctx.song_cache,
-			user.id,
-			scoring_system,
-			0,
-			usize::MAX,
-			None,
-		)
-		.await??;
+		let plays = get_best_plays(ctx, user.id, scoring_system, 0, usize::MAX, None)??;
+		let conn = ctx.db.get()?;
 
 		// {{{ PM count
 		let pm_count = plays
@@ -142,30 +133,31 @@ impl GoalStats {
 			.count();
 		// }}}
 		// {{{ Play count
-		let play_count = query!(
-			"SELECT count() as count FROM plays WHERE user_id=?",
-			user.id
-		)
-		.fetch_one(&ctx.db)
-		.await?
-		.count as usize;
+		let play_count = conn
+			.prepare_cached("SELECT count() as count FROM plays WHERE user_id=?")?
+			.query_row([user.id], |row| row.get(0))?;
 		// }}}
 		// {{{ Peak ptt
-		let peak_ptt = query!(
-			"
+		let peak_ptt = conn
+			.prepare_cached(
+				"
         SELECT s.creation_ptt
         FROM plays p
         JOIN scores s ON s.play_id = p.id
         WHERE user_id = ?
         AND scoring_system = ?
+        ORDER BY s.creation_ptt DESC
+        LIMIT 1
       ",
-			user.id,
-			ScoringSystem::SCORING_SYSTEM_DB_STRINGS[scoring_system.to_index()]
-		)
-		.fetch_one(&ctx.db)
-		.await?
-		.creation_ptt
-		.ok_or_else(|| "No ptt history data found")? as u32;
+			)?
+			.query_row(
+				(
+					user.id,
+					ScoringSystem::SCORING_SYSTEM_DB_STRINGS[scoring_system.to_index()],
+				),
+				|row| row.get(0),
+			)
+			.map_err(|_| "No ptt history data found")?;
 		// }}}
 		// {{{ Peak PM relay
 		let peak_pm_relay = {

@@ -1,10 +1,9 @@
 use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage};
-use sqlx::query;
 
 use crate::{
-	arcaea::chart::Side,
+	arcaea::{chart::Side, play::Play},
 	context::{Context, Error},
-	get_user, play_from_db_record,
+	get_user,
 	recognition::fuzzy_song_name::guess_song_and_chart,
 };
 use std::io::Cursor;
@@ -23,7 +22,7 @@ use poise::CreateReply;
 
 use crate::{
 	arcaea::score::{Score, ScoringSystem},
-	user::discord_it_to_discord_user,
+	user::discord_id_to_discord_user,
 };
 
 // {{{ Top command
@@ -55,16 +54,18 @@ async fn info(
 		None => None,
 	};
 
-	let play_count = query!(
-		"
+	let play_count: usize = ctx
+		.data()
+		.db
+		.get()?
+		.prepare_cached(
+			"
         SELECT COUNT(*) as count
         FROM plays
         WHERE chart_id=?
-    ",
-		chart.id
-	)
-	.fetch_one(&ctx.data().db)
-	.await?;
+      ",
+		)?
+		.query_row([chart.id], |row| row.get(0))?;
 
 	let mut embed = CreateEmbed::default()
 		.title(format!(
@@ -77,7 +78,7 @@ async fn info(
 			format!("{:.1}", chart.chart_constant as f32 / 100.0),
 			true,
 		)
-		.field("Total plays", format!("{}", play_count.count), true)
+		.field("Total plays", format!("{play_count}"), true)
 		.field("BPM", &song.bpm, true)
 		.field("Side", Side::SIDE_STRINGS[song.side.to_index()], true)
 		.field("Artist", &song.title, true);
@@ -117,42 +118,40 @@ async fn best(
 	let user = get_user!(&ctx);
 
 	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
-	let play = query!(
-		"
-      SELECT 
+	let play = ctx
+		.data()
+		.db
+		.get()?
+		.prepare_cached(
+			"
+        SELECT 
         p.id, p.chart_id, p.user_id, p.created_at,
         p.max_recall, p.far_notes, s.score
-      FROM plays p
-      JOIN scores s ON s.play_id = p.id
-      WHERE s.scoring_system='standard'
-      AND p.user_id=?
-      AND p.chart_id=?
-      ORDER BY s.score DESC
-      LIMIT 1
-    ",
-		user.id,
-		chart.id
-	)
-	.fetch_one(&ctx.data().db)
-	.await
-	.map_err(|_| {
-		format!(
-			"Could not find any scores for {} [{:?}]",
-			song.title, chart.difficulty
-		)
-	})?;
-	let play = play_from_db_record!(chart, play);
+        FROM plays p
+        JOIN scores s ON s.play_id = p.id
+        WHERE s.scoring_system='standard'
+        AND p.user_id=?
+        AND p.chart_id=?
+        ORDER BY s.score DESC
+        LIMIT 1
+      ",
+		)?
+		.query_row((user.id, chart.id), |row| Play::from_sql(chart, row))
+		.map_err(|_| {
+			format!(
+				"Could not find any scores for {} [{:?}]",
+				song.title, chart.difficulty
+			)
+		})?;
 
-	let (embed, attachment) = play
-		.to_embed(
-			&ctx.data().db,
-			&user,
-			&song,
-			&chart,
-			0,
-			Some(&discord_it_to_discord_user(&ctx, &user.discord_id).await?),
-		)
-		.await?;
+	let (embed, attachment) = play.to_embed(
+		ctx.data(),
+		&user,
+		song,
+		chart,
+		0,
+		Some(&discord_id_to_discord_user(&ctx, &user.discord_id).await?),
+	)?;
 
 	ctx.channel_id()
 		.send_files(ctx.http(), attachment, CreateMessage::new().embed(embed))
@@ -177,8 +176,12 @@ async fn plot(
 	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
 
 	// SAFETY: we limit the amount of plotted plays to 1000.
-	let plays = query!(
-		"
+	let plays = ctx
+		.data()
+		.db
+		.get()?
+		.prepare_cached(
+			"
       SELECT 
         p.id, p.chart_id, p.user_id, p.created_at,
         p.max_recall, p.far_notes, s.score
@@ -190,11 +193,9 @@ async fn plot(
       ORDER BY s.score DESC
       LIMIT 1000
     ",
-		user.id,
-		chart.id
-	)
-	.fetch_all(&ctx.data().db)
-	.await?;
+		)?
+		.query_map((user.id, chart.id), |row| Play::from_sql(chart, row))?
+		.collect::<Result<Vec<_>, _>>()?;
 
 	if plays.len() == 0 {
 		ctx.reply(format!(
@@ -209,7 +210,7 @@ async fn plot(
 	let max_time = plays.iter().map(|p| p.created_at).max().unwrap();
 	let mut min_score = plays
 		.iter()
-		.map(|p| play_from_db_record!(chart, p).score(scoring_system))
+		.map(|p| p.score(scoring_system))
 		.min()
 		.unwrap()
 		.0 as i64;
@@ -266,7 +267,7 @@ async fn plot(
 			.map(|play| {
 				(
 					play.created_at.and_utc().timestamp_millis(),
-					play_from_db_record!(chart, play).score(scoring_system),
+					play.score(scoring_system),
 				)
 			})
 			.collect();

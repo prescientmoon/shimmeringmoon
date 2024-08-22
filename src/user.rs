@@ -1,9 +1,9 @@
 use std::str::FromStr;
 
 use poise::serenity_prelude::UserId;
-use sqlx::SqlitePool;
+use rusqlite::Row;
 
-use crate::context::{Context, Error};
+use crate::context::{Context, Error, UserContext};
 
 #[derive(Debug, Clone)]
 pub struct User {
@@ -13,35 +13,44 @@ pub struct User {
 }
 
 impl User {
-	pub async fn from_context(ctx: &Context<'_>) -> Result<Self, Error> {
-		let id = ctx.author().id.get().to_string();
-		let user = sqlx::query!("SELECT * FROM users WHERE discord_id = ?", id)
-			.fetch_one(&ctx.data().db)
-			.await
-			.map_err(|_| "You are not an user in my database, sowwy ^~^")?;
-
-		Ok(User {
-			id: user.id as u32,
-			discord_id: user.discord_id,
-			is_pookie: user.is_pookie,
+	#[inline]
+	fn from_row<'a, 'b>(row: &'a Row<'b>) -> Result<Self, rusqlite::Error> {
+		Ok(Self {
+			id: row.get("id")?,
+			discord_id: row.get("discord_id")?,
+			is_pookie: row.get("is_pookie")?,
 		})
 	}
 
-	pub async fn by_id(db: &SqlitePool, id: u32) -> Result<Self, Error> {
-		let user = sqlx::query!("SELECT * FROM users WHERE id = ?", id)
-			.fetch_one(db)
-			.await?;
+	pub fn from_context(ctx: &Context<'_>) -> Result<Self, Error> {
+		let id = ctx.author().id.get().to_string();
+		let user = ctx
+			.data()
+			.db
+			.get()?
+			.prepare_cached("SELECT * FROM users WHERE discord_id = ?")?
+			.query_map([id], Self::from_row)?
+			.next()
+			.ok_or_else(|| "You are not an user in my database, sowwy ^~^")??;
 
-		Ok(User {
-			id: user.id as u32,
-			discord_id: user.discord_id,
-			is_pookie: user.is_pookie,
-		})
+		Ok(user)
+	}
+
+	pub fn by_id(ctx: &UserContext, id: u32) -> Result<Self, Error> {
+		let user = ctx
+			.db
+			.get()?
+			.prepare_cached("SELECT * FROM users WHERE id = ?")?
+			.query_map([id], Self::from_row)?
+			.next()
+			.ok_or_else(|| "You are not an user in my database, sowwy ^~^")??;
+
+		Ok(user)
 	}
 }
 
 #[inline]
-pub async fn discord_it_to_discord_user(
+pub async fn discord_id_to_discord_user(
 	&ctx: &Context<'_>,
 	discord_id: &str,
 ) -> Result<poise::serenity_prelude::User, Error> {
