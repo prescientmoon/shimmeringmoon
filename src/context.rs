@@ -1,5 +1,9 @@
+use include_dir::{include_dir, Dir};
+use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite_migration::Migrations;
 use std::fs;
+use std::sync::LazyLock;
 
 use crate::{
 	arcaea::{chart::SongCache, jacket::JacketCache},
@@ -30,9 +34,34 @@ pub struct UserContext {
 
 impl UserContext {
 	#[inline]
-	pub async fn new(db: DbConnection) -> Result<Self, Error> {
+	pub async fn new() -> Result<Self, Error> {
 		timed!("create_context", {
 			fs::create_dir_all(get_data_dir())?;
+
+			// {{{ Connect to database
+			let db = timed!("create_sqlite_pool", {
+				Pool::new(
+					SqliteConnectionManager::file(&format!(
+						"{}/db.sqlite",
+						get_data_dir().to_str().unwrap()
+					))
+					.with_init(|conn| {
+						static MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations");
+						static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
+							Migrations::from_directory(&MIGRATIONS_DIR)
+								.expect("Could not load migrations")
+						});
+
+						MIGRATIONS
+							.to_latest(conn)
+							.expect("Could not run migrations");
+
+						Ok(())
+					}),
+				)
+				.expect("Could not open sqlite database.")
+			});
+			// }}}
 
 			let mut song_cache = timed!("make_song_cache", { SongCache::new(&db)? });
 			let jacket_cache = timed!("make_jacket_cache", { JacketCache::new(&mut song_cache)? });
@@ -50,8 +79,6 @@ impl UserContext {
 			let exo_measurements = EXO_FONT
 				.with_borrow_mut(|font| CharMeasurements::from_text(font, WHITELIST, Some(700)))?;
 			// }}}
-
-			println!("Created user context");
 
 			Ok(Self {
 				db,

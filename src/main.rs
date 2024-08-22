@@ -20,18 +20,9 @@ mod transform;
 mod user;
 
 use arcaea::play::generate_missing_scores;
-use assets::get_data_dir;
 use context::{Error, UserContext};
-use include_dir::{include_dir, Dir};
 use poise::serenity_prelude::{self as serenity};
-use r2d2::Pool;
-use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite_migration::Migrations;
-use std::{
-	env::var,
-	sync::{Arc, LazyLock},
-	time::Duration,
-};
+use std::{env::var, sync::Arc, time::Duration};
 
 // {{{ Error handler
 async fn on_error(error: poise::FrameworkError<'_, UserContext, Error>) {
@@ -47,28 +38,6 @@ async fn on_error(error: poise::FrameworkError<'_, UserContext, Error>) {
 
 #[tokio::main]
 async fn main() {
-	let pool = Pool::new(
-		SqliteConnectionManager::file(&format!("{}/db.sqlite", get_data_dir().to_str().unwrap()))
-			.with_init(|conn| {
-				static MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations");
-				static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
-					timed!("create_migration_structure", {
-						Migrations::from_directory(&MIGRATIONS_DIR)
-							.expect("Could not load migrations")
-					})
-				});
-
-				timed!("run_migrations", {
-					MIGRATIONS
-						.to_latest(conn)
-						.expect("Could not run migrations");
-				});
-
-				Ok(())
-			}),
-	)
-	.expect("Could not open sqlite database.");
-
 	// {{{ Poise options
 	let options = poise::FrameworkOptions {
 		commands: vec![
@@ -110,7 +79,7 @@ async fn main() {
 			Box::pin(async move {
 				println!("Logged in as {}", _ready.user.name);
 				poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-				let ctx = UserContext::new(pool).await?;
+				let ctx = UserContext::new().await?;
 
 				if var("SHIMMERING_REGEN_SCORES").unwrap_or_default() == "1" {
 					timed!("generate_missing_scores", {
