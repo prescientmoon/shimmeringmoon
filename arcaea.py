@@ -3,6 +3,7 @@
 #!nix-shell -p tesseract5 imagemagick
 #!nix-shell -i python3
 import csv
+import re
 import os
 import shutil
 import sqlite3
@@ -15,6 +16,8 @@ from datetime import datetime
 
 # {{{ String helpers
 def levenshtein_distance(str1, str2):
+    str1 = str1.lower()
+    str2 = str2.lower()
     # Create a matrix to store distances
     rows = len(str1) + 1
     cols = len(str2) + 1
@@ -79,14 +82,14 @@ def crop(in_path, out_path, x, y, w, h, hard_to_read=True, debug=False):
     if w >= 100 and h >= 100:
         sw = w / 3
         sh = h / 3
-        br = 5
+        br = 2
         # this can lead to weird results
         if hard_to_read:
-            bt = 100
+            bt = 150
 
     # Only apply more stuff when we are unsure
     if hard_to_read:
-        bonus_opts = f"-blur '{br}x5' -resize '{sw}x{sh}' -edge 0.5 -black-threshold {bt} -negate"
+        bonus_opts = f"-blur '{br}x10' -resize '{sw}x{sh}' -edge 0.75 -black-threshold {bt} -negate"
     else:
         bonus_opts = ""
 
@@ -110,6 +113,21 @@ def tesseract_region(
         if num:
             output = int(output)
     return output
+
+
+def parse_srgb(srgb_string):
+    # Regular expression to match the numbers within the srgb() string
+    match = re.match(r"srgb\((\d+),(\d+),(\d+)\)", srgb_string)
+
+    if not match:
+        raise ValueError(f"Invalid srgb format: {srgb_string}")
+
+    r, g, b = map(int, match.groups())
+    return r, g, b
+
+
+def pixel_at(image, x, y):
+    return parse_srgb(run(f'convert {image} -format "%[pixel:u.p{{{x},{y}}}]\n" info:'))
 
 
 # }}}
@@ -162,7 +180,6 @@ def find_chart_by_name(name, difficulty, artist):
     if (
         artist is not None and closest["title"] == "Quon"
     ):  # AAAAAAAAAA, why are there two quons
-        print(artist)
         chosen_artist, _ = closest_string(
             artist, filtered, lambda chart: chart["artist"]
         )
@@ -172,7 +189,17 @@ def find_chart_by_name(name, difficulty, artist):
 
     filtered = [chart for chart in filtered if chart["difficulty"] == difficulty]
 
-    return filtered[0], distance
+    if len(filtered) > 0:
+        closest = filtered[0]
+
+    # This is so hacky, omg
+    if distance >= len(closest["title"]) / 3 and len(name) > 3:
+        nested = find_chart_by_name(name[:-1].strip(), difficulty, artist)
+        # print(name[:-1], nested[0]["title"], nested[1], closest["title"], distance)
+        if nested[1] < 10:
+            return nested
+
+    return closest, distance
 
 
 # }}}
@@ -222,20 +249,22 @@ def print_scores(scores):
         note_count = chart["note_count"]
         chart_constant = chart["chart_constant"]
 
-        play_rating = compute_play_rating(chart, score)
+        play_rating = "%2.2f" % compute_play_rating(chart, score)
         grade = compute_grade(score)
 
-        pm_string = ""
+        pm_rating = None
         if score > 10000000:
             pm_rating = score - 10000000 - note_count
-            pm_string = f"({pm_rating})"
+            pm_rating = f"({pm_rating})"
 
         data.append(
             [
                 title,
-                f"{difficulty} {level} ({chart_constant})",
-                f"{score} ({grade})",
-                f"{play_rating} {pm_string}",
+                f"{difficulty:>3} {level} ({chart_constant})",
+                score,
+                grade,
+                play_rating,
+                pm_rating,
                 score_id,
             ]
         )
@@ -243,7 +272,8 @@ def print_scores(scores):
     print(
         tabulate(
             data,
-            ["Title", "Difficulty", "Score", "Play rating", "ID"],
+            ["Title", "Difficulty", "Score", "Grade", "Play rating", "PM rating", "ID"],
+            colalign=("left", "left", "right", "center", "center", "center", "center"),
         )
     )
 
@@ -268,17 +298,48 @@ def get_user_id(discord_id):
 
 # {{{ Score parsing
 def parse_score_image(image):
-    print(image)
     topleft_text = tesseract_region(image, [0, 15, 320, 60], mode=13)
     is_song_select = levenshtein_distance(
         topleft_text, "Select a Song"
     ) < levenshtein_distance(topleft_text, "Result")
 
     if is_song_select:
-        name = tesseract_region(image, [10, 355, 1100, 100], tesseract_song_name)
+        name = tesseract_region(image, [10, 350, 1100, 105], tesseract_song_name)
         artist = tesseract_region(image, [10, 445, 800, 50])
         score = tesseract_region(image, [0, 260, 320, 60], num=True)
-        return (name, score, "FTR", artist, None)
+
+        # {{{ Difficulty parsing
+        difficulty = None
+        pst_pixel = pixel_at(image, 25, 150)
+        prs_pixel = pixel_at(image, 210, 150)
+        ftr_pixel = pixel_at(image, 400, 150)
+        byd_pixel = pixel_at(image, 650, 125)
+
+        if 190 < prs_pixel[0] < 210 and prs_pixel[1] > 200 and 100 < prs_pixel[2] < 170:
+            difficulty = "PRS"
+        elif (
+            200 < ftr_pixel[0] and 100 < ftr_pixel[1] < 160 and 100 < ftr_pixel[2] < 200
+        ):
+            difficulty = "FTR"
+        elif 190 < pst_pixel[0] < 210 and 235 < pst_pixel[2]:
+            difficulty = "PST"
+        elif 150 < byd_pixel[0] and byd_pixel[1] < 30 and byd_pixel[2] < 70:
+            difficulty = "BYD"
+        elif (
+            100 < byd_pixel[0] < 200
+            and 100 < byd_pixel[1] < 200
+            and 100 < byd_pixel[2] < 200
+        ):
+            difficulty = "ETR"
+        else:
+            print(pst_pixel)
+            print(prs_pixel)
+            print(ftr_pixel)
+            print(byd_pixel)
+            difficulty = "UKN"  # Unknown
+        # }}}
+
+        return (name, score, difficulty, artist, None)
     else:
         name = tesseract_region(image, [300, 320, 1200, 110], tesseract_song_name)
         artist = tesseract_region(image, [300, 420, 1200, 40])
@@ -317,11 +378,7 @@ def add_scores(discord_id, input_files):
         name, score, difficulty, artist, max_recall = parse_score_image(input_file)
         chart, distance = find_chart_by_name(name, difficulty, artist)
 
-        print(max_recall)
-
-        budget = 8
-        if len(name) > 10:
-            budget = 15
+        budget = len(chart["title"]) / 3
 
         if distance < budget:
             # {{{ Happy path
@@ -367,7 +424,7 @@ def add_scores(discord_id, input_files):
 def list_scores(discord_id):
     rows = conn.execute(
         """
-            SELECT s.id, s.score, c.id, c.title, c.difficulty, c.level, c.note_count, c.chart_constant
+            SELECT s.id, s.score, c.id, c.title, c.difficulty, c.level, c.note_count, c.chart_constant, c.artist
             FROM scores s
             JOIN charts c ON s.chart_id = c.id
             JOIN users u ON s.user_id = u.id
