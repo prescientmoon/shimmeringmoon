@@ -4,12 +4,10 @@
 import csv
 import os
 import sqlite3
-import sys
 
 data_dir = os.environ.get("SHIMMERING_DATA_DIR")
+config_dir = os.environ.get("SHIMMERING_CONFIG_DIR")
 db_path = data_dir + "/db.sqlite"
-# if not os.path.exists(db_path):
-# run(f"cat ./schema.sql | sqlite3 {db_path}")
 conn = sqlite3.connect(db_path)
 
 
@@ -19,12 +17,11 @@ def import_charts_from_csv():
     song_count = 0
     shorthand_count = 0
 
-    with open(data_dir + "/charts.csv", mode="r") as file:
+    with open(config_dir + "/charts.csv", mode="r") as file:
         for i, row in enumerate(csv.reader(file)):
             if i == 0 or len(row) == 0:
                 continue
 
-            song_count += 1
             [
                 title,
                 artist,
@@ -38,6 +35,22 @@ def import_charts_from_csv():
                 ext_date,
                 original,
             ] = map(lambda v: v.strip().replace("\n", " "), row)
+
+            existing_count = conn.execute(
+                """
+                    SELECT count()
+                    FROM songs
+                    WHERE title=?
+                    AND artist=?
+                """,
+                (title, artist),
+            ).fetchone()[0]
+
+            if existing_count > 0:
+                continue
+
+            song_count += 1
+            print(f'Importing "{title}" by "{artist}"')
 
             song_id = conn.execute(
                 """
@@ -71,7 +84,7 @@ def import_charts_from_csv():
                     ),
                 )
 
-    with open(data_dir + "/shorthands.csv", mode="r") as file:
+    with open(config_dir + "/shorthands.csv", mode="r") as file:
         for i, row in enumerate(csv.reader(file)):
             if i == 0 or len(row) == 0:
                 continue
@@ -107,10 +120,4 @@ def import_charts_from_csv():
 
 # }}}
 
-command = sys.argv[1]
-subcommand = sys.argv[2]
-
-if command == "import" and subcommand == "charts":
-    import_charts_from_csv()
-if command == "export" and subcommand == "jackets":
-    import_charts_from_csv()
+import_charts_from_csv()
