@@ -51,7 +51,7 @@ unifont.otf
 
 ### Assets
 
-Most of the assets in this repo have been drawn by me, although you need to bring in your own song jackets and place them at `$SHIMMERING_ASSET_DIR/songs`. This subdirectory must contain a subdirectory for each song in the game, with such subdirectories containing their default jacket at `base_256.jpg`. Different files can be created to override the jacket for each difficulty. For more details, check out the implementation in [./src/arcaea/jacket.rs](./src/arcaea/jacket.rs).
+Most of the assets in this repo have been drawn by me. You need to bring in your own song jackets and place them at `$SHIMMERING_ASSET_DIR/songs`. This directory must contain a subdirectory for each song in the game, with each subdirectory containing a default jacket at `base_256.jpg`. Different files can be created to override the jacket for each difficulty. For more details, check out the implementation in [./src/arcaea/jacket.rs](./src/arcaea/jacket.rs).
 
 Additionally, you must place a custom `b30` background at `$SHIMMERING_ASSET_DIR/b30_background.jpg`.
 
