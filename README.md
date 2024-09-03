@@ -70,7 +70,7 @@ Many thanks go to:
 
 - `@.luminexus` for providing the amazing [Arcaea song table](https://tinyurl.com/mwd5dkfw)
 - `@siloricity` for helping with development assets
-- `@black._heart_.sl` for being the first person I discussed this idea with
+- `@black._heart_.sl` for being the first person I discussed this idea extensively with
 - `@dyuan01` for discussing different scoring system ideas with me
 - [George Dragomir](https://github.com/BlueGhostGH) for, at my request, writing [a new set](https://github.com/BlueGhostGH/hypertesseract) of [Tesseract](https://github.com/tesseract-ocr/tesseract) bindings for the Rust programming language. The [popular rust bindings for Tesseract](https://crates.io/crates/tesseract) are incomplete, unidiomatic, painful to use, easy to misuse, and leak copious amounts of memory. Please avoid them at all cost.
 - The members of a certain small-scale Arcaea server for enduring my shimmeringmoon-related rambles :3
