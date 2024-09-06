@@ -3,7 +3,10 @@ use std::str::FromStr;
 use poise::serenity_prelude::UserId;
 use rusqlite::Row;
 
-use crate::context::{Context, Error, UserContext};
+use crate::{
+	commands::discord::MessageContext,
+	context::{Context, Error, UserContext},
+};
 
 #[derive(Debug, Clone)]
 pub struct User {
@@ -22,8 +25,31 @@ impl User {
 		})
 	}
 
-	pub fn from_context(ctx: &Context<'_>) -> Result<Self, Error> {
-		let id = ctx.author().id.get().to_string();
+	pub fn create_from_context(ctx: &impl MessageContext) -> Result<Self, Error> {
+		let discord_id = ctx.author_id().to_string();
+		let user_id: u32 = ctx
+			.data()
+			.db
+			.get()?
+			.prepare_cached(
+				"
+            INSERT INTO users(discord_id) VALUES (?)
+            RETURNING id
+        ",
+			)?
+			.query_map([&discord_id], |row| row.get("id"))?
+			.next()
+			.ok_or_else(|| "Failed to create user")??;
+
+		Ok(Self {
+			discord_id,
+			id: user_id,
+			is_pookie: false,
+		})
+	}
+
+	pub fn from_context(ctx: &impl MessageContext) -> Result<Self, Error> {
+		let id = ctx.author_id();
 		let user = ctx
 			.data()
 			.db

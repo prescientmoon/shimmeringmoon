@@ -43,7 +43,7 @@ pub async fn stats(_ctx: Context<'_>) -> Result<(), Error> {
 // }}}
 // {{{ Render best plays
 async fn best_plays(
-	ctx: &Context<'_>,
+	ctx: &mut Context<'_>,
 	user: &User,
 	scoring_system: ScoringSystem,
 	grid_size: (u32, u32),
@@ -403,7 +403,7 @@ async fn best_plays(
 		ImageBuffer::from_raw(width, height, drawer.canvas.buffer.into_vec()).unwrap(),
 	);
 
-	debug_image_log(&image)?;
+	debug_image_log(&image);
 
 	if image.height() > 4096 {
 		image = image.resize(4096, 4096, image::imageops::FilterType::Nearest);
@@ -426,10 +426,10 @@ async fn best_plays(
 // {{{ B30
 /// Show the 30 best scores
 #[poise::command(prefix_command, slash_command, user_cooldown = 30)]
-pub async fn b30(ctx: Context<'_>, scoring_system: Option<ScoringSystem>) -> Result<(), Error> {
-	let user = get_user!(&ctx);
+pub async fn b30(mut ctx: Context<'_>, scoring_system: Option<ScoringSystem>) -> Result<(), Error> {
+	let user = get_user!(&mut ctx);
 	best_plays(
-		&ctx,
+		&mut ctx,
 		&user,
 		scoring_system.unwrap_or_default(),
 		(5, 6),
@@ -440,15 +440,15 @@ pub async fn b30(ctx: Context<'_>, scoring_system: Option<ScoringSystem>) -> Res
 
 #[poise::command(prefix_command, slash_command, hide_in_help, global_cooldown = 5)]
 pub async fn bany(
-	ctx: Context<'_>,
+	mut ctx: Context<'_>,
 	scoring_system: Option<ScoringSystem>,
 	width: u32,
 	height: u32,
 ) -> Result<(), Error> {
-	let user = get_user!(&ctx);
+	let user = get_user!(&mut ctx);
 	assert_is_pookie!(ctx, user);
 	best_plays(
-		&ctx,
+		&mut ctx,
 		&user,
 		scoring_system.unwrap_or_default(),
 		(width, height),
@@ -460,8 +460,8 @@ pub async fn bany(
 // {{{ Meta
 /// Show stats about the bot itself.
 #[poise::command(prefix_command, slash_command, user_cooldown = 1)]
-async fn meta(ctx: Context<'_>) -> Result<(), Error> {
-	let user = get_user!(&ctx);
+async fn meta(mut ctx: Context<'_>) -> Result<(), Error> {
+	let user = get_user!(&mut ctx);
 	let conn = ctx.data().db.get()?;
 	let song_count: usize = conn
 		.prepare_cached("SELECT count() as count FROM songs")?

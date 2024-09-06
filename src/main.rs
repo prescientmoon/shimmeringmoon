@@ -6,6 +6,7 @@
 #![feature(try_blocks)]
 #![feature(thread_local)]
 #![feature(generic_arg_infer)]
+#![feature(lazy_cell_consume)]
 
 mod arcaea;
 mod assets;

@@ -73,6 +73,7 @@ impl ImageVec {
 	// }}}
 }
 
+#[derive(Clone)]
 pub struct JacketCache {
 	jackets: Vec<(u32, ImageVec)>,
 }

@@ -10,7 +10,8 @@ use crate::arcaea::chart::{Chart, Difficulty, Song, DIFFICULTY_MENU_PIXEL_COLORS
 use crate::arcaea::jacket::IMAGE_VEC_DIM;
 use crate::arcaea::score::Score;
 use crate::bitmap::{Color, Rect};
-use crate::context::{Context, Error, UserContext};
+use crate::commands::discord::MessageContext;
+use crate::context::{Error, UserContext};
 use crate::levenshtein::edit_distance;
 use crate::logs::debug_image_log;
 use crate::recognition::fuzzy_song_name::guess_chart_name;
@@ -61,7 +62,7 @@ impl ImageAnalyzer {
 		self.last_rect = Some((ui_rect, rect));
 
 		let result = self.crop(image, rect);
-		debug_image_log(&result)?;
+		debug_image_log(&result);
 
 		Ok(result)
 	}
@@ -80,7 +81,7 @@ impl ImageAnalyzer {
 		let result = self.crop(image, rect);
 		let result = result.resize(size.0, size.1, FilterType::Nearest);
 
-		debug_image_log(&result)?;
+		debug_image_log(&result);
 
 		Ok(result)
 	}
@@ -88,7 +89,7 @@ impl ImageAnalyzer {
 	// {{{ Error handling
 	pub async fn send_discord_error(
 		&mut self,
-		ctx: Context<'_>,
+		ctx: &mut impl MessageContext,
 		image: &DynamicImage,
 		filename: &str,
 		err: impl Display,
@@ -112,14 +113,12 @@ impl ImageAnalyzer {
 			));
 
 			let msg = CreateMessage::default().embed(embed);
-			ctx.channel_id()
-				.send_files(ctx.http(), [error_attachement], msg)
-				.await?;
+			ctx.send_files([error_attachement], msg).await?;
 		} else {
 			embed = embed.title("An error occurred");
 
 			let msg = CreateMessage::default().embed(embed);
-			ctx.channel_id().send_files(ctx.http(), [], msg).await?;
+			ctx.send_files([], msg).await?;
 		}
 
 		Ok(())
@@ -347,7 +346,8 @@ impl ImageAnalyzer {
 			out[i] = ctx
 				.kazesawa_bold_measurements
 				.recognise(&image, "0123456789", Some(30))?
-				.parse()?;
+				.parse()
+				.unwrap_or(100000); // This will get discarded as making no sense
 		}
 
 		println!("Ditribution {out:?}");

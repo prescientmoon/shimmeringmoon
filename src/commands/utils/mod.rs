@@ -35,7 +35,7 @@ macro_rules! reply_errors {
 		match $value {
 			Ok(v) => v,
 			Err(err) => {
-				$ctx.reply(format!("{err}")).await?;
+				crate::commands::discord::MessageContext::reply($ctx, &format!("{err}")).await?;
 				return Ok(());
 			}
 		}

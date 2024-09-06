@@ -110,12 +110,12 @@ async fn info(
 /// Show the best score on a given chart
 #[poise::command(prefix_command, slash_command, user_cooldown = 1)]
 async fn best(
-	ctx: Context<'_>,
+	mut ctx: Context<'_>,
 	#[rest]
 	#[description = "Name of chart to show (difficulty at the end)"]
 	name: String,
 ) -> Result<(), Error> {
-	let user = get_user!(&ctx);
+	let user = get_user!(&mut ctx);
 
 	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
 	let play = ctx
@@ -164,13 +164,13 @@ async fn best(
 /// Show the best score on a given chart
 #[poise::command(prefix_command, slash_command, user_cooldown = 10)]
 async fn plot(
-	ctx: Context<'_>,
+	mut ctx: Context<'_>,
 	scoring_system: Option<ScoringSystem>,
 	#[rest]
 	#[description = "Name of chart to show (difficulty at the end)"]
 	name: String,
 ) -> Result<(), Error> {
-	let user = get_user!(&ctx);
+	let user = get_user!(&mut ctx);
 	let scoring_system = scoring_system.unwrap_or_default();
 
 	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;

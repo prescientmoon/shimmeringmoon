@@ -10,7 +10,7 @@ use std::{env, ops::Deref, path::PathBuf, sync::OnceLock, time::Instant};
 
 use image::{DynamicImage, EncodableLayout, ImageBuffer, PixelWithColorType};
 
-use crate::{assets::get_path, context::Error};
+use crate::assets::get_path;
 
 #[inline]
 fn should_save_debug_images() -> bool {
@@ -31,30 +31,30 @@ fn get_startup_time() -> Instant {
 }
 
 #[inline]
-pub fn debug_image_log(image: &DynamicImage) -> Result<(), Error> {
+pub fn debug_image_log(image: &DynamicImage) {
 	if should_save_debug_images() {
-		image.save(get_log_dir().join(format!(
-			"{:0>15}.png",
-			get_startup_time().elapsed().as_nanos()
-		)))?;
+		image
+			.save(get_log_dir().join(format!(
+				"{:0>15}.png",
+				get_startup_time().elapsed().as_nanos()
+			)))
+			.unwrap();
 	}
-
-	Ok(())
 }
 
 #[inline]
-pub fn debug_image_buffer_log<P, C>(image: &ImageBuffer<P, C>) -> Result<(), Error>
+pub fn debug_image_buffer_log<P, C>(image: &ImageBuffer<P, C>)
 where
 	P: PixelWithColorType,
 	[P::Subpixel]: EncodableLayout,
 	C: Deref<Target = [P::Subpixel]>,
 {
 	if should_save_debug_images() {
-		image.save(get_log_dir().join(format!(
-			"./logs/{:0>15}.png",
-			get_startup_time().elapsed().as_nanos()
-		)))?;
+		image
+			.save(get_log_dir().join(format!(
+				"{:0>15}.png",
+				get_startup_time().elapsed().as_nanos()
+			)))
+			.unwrap();
 	}
-
-	Ok(())
 }

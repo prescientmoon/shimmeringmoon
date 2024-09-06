@@ -19,6 +19,7 @@ pub type Context<'a> = poise::Context<'a, UserContext, Error>;
 pub type DbConnection = r2d2::Pool<SqliteConnectionManager>;
 
 // Custom user data passed to all command functions
+#[derive(Clone)]
 pub struct UserContext {
 	pub db: DbConnection,
 	pub song_cache: SongCache,
@@ -32,36 +33,34 @@ pub struct UserContext {
 	pub kazesawa_bold_measurements: CharMeasurements,
 }
 
+pub fn connect_db(manager: SqliteConnectionManager) -> DbConnection {
+	timed!("create_sqlite_pool", {
+		Pool::new(manager.with_init(|conn| {
+			static MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations");
+			static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
+				Migrations::from_directory(&MIGRATIONS_DIR).expect("Could not load migrations")
+			});
+
+			MIGRATIONS
+				.to_latest(conn)
+				.expect("Could not run migrations");
+
+			Ok(())
+		}))
+		.expect("Could not open sqlite database.")
+	})
+}
+
 impl UserContext {
 	#[inline]
 	pub async fn new() -> Result<Self, Error> {
 		timed!("create_context", {
 			fs::create_dir_all(get_data_dir())?;
 
-			// {{{ Connect to database
-			let db = timed!("create_sqlite_pool", {
-				Pool::new(
-					SqliteConnectionManager::file(&format!(
-						"{}/db.sqlite",
-						get_data_dir().to_str().unwrap()
-					))
-					.with_init(|conn| {
-						static MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations");
-						static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
-							Migrations::from_directory(&MIGRATIONS_DIR)
-								.expect("Could not load migrations")
-						});
-
-						MIGRATIONS
-							.to_latest(conn)
-							.expect("Could not run migrations");
-
-						Ok(())
-					}),
-				)
-				.expect("Could not open sqlite database.")
-			});
-			// }}}
+			let db = connect_db(SqliteConnectionManager::file(&format!(
+				"{}/db.sqlite",
+				get_data_dir().to_str().unwrap()
+			)));
 
 			let mut song_cache = timed!("make_song_cache", { SongCache::new(&db)? });
 			let jacket_cache = timed!("make_jacket_cache", { JacketCache::new(&mut song_cache)? });
@@ -92,4 +91,10 @@ impl UserContext {
 			})
 		})
 	}
+}
+
+pub async fn get_shared_context() -> &'static UserContext {
+	static CELL: tokio::sync::OnceCell<UserContext> = tokio::sync::OnceCell::const_new();
+	CELL.get_or_init(async || UserContext::new().await.unwrap())
+		.await
 }

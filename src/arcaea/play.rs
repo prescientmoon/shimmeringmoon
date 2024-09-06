@@ -1,4 +1,5 @@
 use std::array;
+use std::num::NonZeroU64;
 
 use chrono::NaiveDateTime;
 use chrono::Utc;
@@ -6,9 +7,7 @@ use num::traits::Euclid;
 use num::CheckedDiv;
 use num::Rational32;
 use num::Zero;
-use poise::serenity_prelude::{
-	Attachment, AttachmentId, CreateAttachment, CreateEmbed, CreateEmbedAuthor, Timestamp,
-};
+use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateEmbedAuthor, Timestamp};
 use rusqlite::Row;
 
 use crate::arcaea::chart::{Chart, Song};
@@ -21,7 +20,7 @@ use super::score::{Score, ScoringSystem};
 // {{{ Create play
 #[derive(Debug, Clone)]
 pub struct CreatePlay {
-	discord_attachment_id: Option<AttachmentId>,
+	discord_attachment_id: Option<NonZeroU64>,
 
 	// Scoring details
 	score: Score,
@@ -41,8 +40,8 @@ impl CreatePlay {
 	}
 
 	#[inline]
-	pub fn with_attachment(mut self, attachment: &Attachment) -> Self {
-		self.discord_attachment_id = Some(attachment.id);
+	pub fn with_attachment(mut self, attachment_id: NonZeroU64) -> Self {
+		self.discord_attachment_id = Some(attachment_id);
 		self
 	}
 

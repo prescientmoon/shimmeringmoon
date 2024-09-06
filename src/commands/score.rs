@@ -1,15 +1,14 @@
-use std::time::Instant;
-
 use crate::arcaea::play::{CreatePlay, Play};
 use crate::arcaea::score::Score;
 use crate::context::{Context, Error};
 use crate::recognition::recognize::{ImageAnalyzer, ScoreKind};
 use crate::user::{discord_id_to_discord_user, User};
-use crate::{edit_reply, get_user, timed};
+use crate::{get_user, timed};
 use image::DynamicImage;
-use poise::serenity_prelude::futures::future::join_all;
+use poise::serenity_prelude as serenity;
 use poise::serenity_prelude::CreateMessage;
-use poise::{serenity_prelude as serenity, CreateReply};
+
+use super::discord::MessageContext;
 
 // {{{ Score
 /// Score management
@@ -24,13 +23,13 @@ pub async fn score(_ctx: Context<'_>) -> Result<(), Error> {
 }
 // }}}
 // {{{ Score magic
-/// Identify scores from attached images.
-#[poise::command(prefix_command, slash_command)]
-pub async fn magic(
-	ctx: Context<'_>,
-	#[description = "Images containing scores"] files: Vec<serenity::Attachment>,
+// {{{ Implementation
+async fn magic_impl<C: MessageContext>(
+	ctx: &mut C,
+	files: Vec<C::Attachment>,
 ) -> Result<(), Error> {
-	let user = get_user!(&ctx);
+	let user = get_user!(ctx);
+	let files = ctx.download_images(&files).await?;
 
 	if files.len() == 0 {
 		ctx.reply("No images found attached to message").await?;
@@ -39,30 +38,9 @@ pub async fn magic(
 
 	let mut embeds = Vec::with_capacity(files.len());
 	let mut attachments = Vec::with_capacity(files.len());
-	let handle = ctx
-		.reply(format!("Processed 0/{} scores", files.len()))
-		.await?;
-
 	let mut analyzer = ImageAnalyzer::default();
 
-	// {{{ Download files
-	let download_tasks = files
-		.iter()
-		.filter(|file| file.dimensions().is_some())
-		.map(|file| async move { (file, file.download().await) });
-
-	let downloaded = timed!("dowload_files", { join_all(download_tasks).await });
-
-	if downloaded.len() < files.len() {
-		ctx.reply("One or more of the attached files are not images!")
-			.await?;
-	}
-	// }}}
-
-	for (i, (file, bytes)) in downloaded.into_iter().enumerate() {
-		let bytes = bytes?;
-
-		let start = Instant::now();
+	for (i, (attachment, bytes)) in files.into_iter().enumerate() {
 		// {{{ Preapare image
 		let mut image = timed!("decode image", { image::load_from_memory(&bytes)? });
 		let mut grayscale_image = timed!("grayscale image", {
@@ -109,7 +87,14 @@ pub async fn magic(
 
 			// edit_reply!(ctx, handle, "Image {}: reading score", i + 1).await?;
 			let score = timed!("read_score", {
-				analyzer.read_score(ctx.data(), Some(chart.note_count), &grayscale_image, kind)?
+				analyzer
+					.read_score(ctx.data(), Some(chart.note_count), &grayscale_image, kind)
+					.map_err(|err| {
+						format!(
+							"Could not read score for chart {} [{:?}]: {err}",
+							song.title, chart.difficulty
+						)
+					})?
 			});
 
 			// {{{ Build play
@@ -117,7 +102,7 @@ pub async fn magic(
 				Score::resolve_distibution_ambiguities(score, note_distribution, chart.note_count);
 
 			let play = CreatePlay::new(score)
-				.with_attachment(file)
+				.with_attachment(C::attachment_id(attachment))
 				.with_fars(maybe_fars)
 				.with_max_recall(max_recall)
 				.save(&ctx.data(), &user, &chart)?;
@@ -136,29 +121,101 @@ pub async fn magic(
 
 		if let Err(err) = result {
 			analyzer
-				.send_discord_error(ctx, &image, &file.filename, err)
+				.send_discord_error(ctx, &image, C::filename(&attachment), err)
 				.await?;
 		}
-
-		let took = start.elapsed();
-
-		edit_reply!(
-			ctx,
-			handle,
-			"Processed {}/{} scores. Last score took {took:?} to process.",
-			i + 1,
-			files.len()
-		)
-		.await?;
 	}
-
-	handle.delete(ctx).await?;
 
 	if embeds.len() > 0 {
-		ctx.channel_id()
-			.send_files(ctx.http(), attachments, CreateMessage::new().embeds(embeds))
+		ctx.send_files(attachments, CreateMessage::new().embeds(embeds))
 			.await?;
 	}
+
+	Ok(())
+}
+// }}}
+// {{{ Tests
+#[cfg(test)]
+mod magic_tests {
+	use std::{path::PathBuf, process::Command, str::FromStr};
+
+	use r2d2_sqlite::SqliteConnectionManager;
+
+	use crate::{
+		commands::discord::mock::MockContext,
+		context::{connect_db, get_shared_context},
+	};
+
+	use super::*;
+
+	macro_rules! with_ctx {
+		($test_path:expr, $f:expr) => {{
+			let mut data = (*get_shared_context().await).clone();
+			let dir = tempfile::tempdir()?;
+			let path = dir.path().join("db.sqlite");
+			println!("path {path:?}");
+			data.db = connect_db(SqliteConnectionManager::file(path));
+
+			Command::new("scripts/import-charts.py")
+				.env("SHIMMERING_DATA_DIR", dir.path().to_str().unwrap())
+				.output()
+				.unwrap();
+
+			let mut ctx = MockContext::new(data);
+			User::create_from_context(&ctx)?;
+
+			let res: Result<(), Error> = $f(&mut ctx).await;
+			res?;
+
+			ctx.write_to(&PathBuf::from_str($test_path)?)?;
+			Ok(())
+		}};
+	}
+
+	#[tokio::test]
+	async fn no_pics() -> Result<(), Error> {
+		with_ctx!("test/commands/score/magic/no_pics", async |ctx| {
+			magic_impl(ctx, vec![]).await?;
+			Ok(())
+		})
+	}
+
+	#[tokio::test]
+	async fn basic_pic() -> Result<(), Error> {
+		with_ctx!("test/commands/score/magic/single_pic", async |ctx| {
+			magic_impl(
+				ctx,
+				vec![PathBuf::from_str("test/screenshots/alter_ego.jpg")?],
+			)
+			.await?;
+			Ok(())
+		})
+	}
+
+	#[tokio::test]
+	async fn weird_kerning() -> Result<(), Error> {
+		with_ctx!("test/commands/score/magic/weird_kerning", async |ctx| {
+			magic_impl(
+				ctx,
+				vec![
+					PathBuf::from_str("test/screenshots/antithese_74_kerning.jpg")?,
+					PathBuf::from_str("test/screenshots/genocider_24_kerning.jpg")?,
+				],
+			)
+			.await?;
+			Ok(())
+		})
+	}
+}
+// }}}
+
+/// Identify scores from attached images.
+#[poise::command(prefix_command, slash_command)]
+pub async fn magic(
+	mut ctx: Context<'_>,
+	#[description = "Images containing scores"] files: Vec<serenity::Attachment>,
+) -> Result<(), Error> {
+	magic_impl(&mut ctx, files).await?;
 
 	Ok(())
 }
@@ -167,10 +224,10 @@ pub async fn magic(
 /// Delete scores, given their IDs.
 #[poise::command(prefix_command, slash_command)]
 pub async fn delete(
-	ctx: Context<'_>,
+	mut ctx: Context<'_>,
 	#[description = "Id of score to delete"] ids: Vec<u32>,
 ) -> Result<(), Error> {
-	let user = get_user!(&ctx);
+	let user = get_user!(&mut ctx);
 
 	if ids.len() == 0 {
 		ctx.reply("Empty ID list provided").await?;

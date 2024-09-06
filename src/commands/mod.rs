@@ -1,6 +1,7 @@
 use crate::context::{Context, Error};
 
 pub mod chart;
+pub mod discord;
 pub mod score;
 pub mod stats;
 pub mod utils;

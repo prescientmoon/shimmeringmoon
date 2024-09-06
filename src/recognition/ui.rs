@@ -60,7 +60,7 @@ impl UIMeasurementRect {
 pub const UI_RECT_COUNT: usize = 15;
 // }}}
 // {{{ Measurement
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UIMeasurement {
 	dimensions: [u32; 2],
 	datapoints: [u32; UI_RECT_COUNT * 4],
@@ -87,7 +87,7 @@ impl UIMeasurement {
 }
 // }}}
 // {{{ Measurements
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UIMeasurements {
 	pub measurements: Vec<UIMeasurement>,
 }

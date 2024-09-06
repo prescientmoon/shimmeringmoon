@@ -164,7 +164,7 @@ impl ComponentsWithBounds {
 			binarisation_threshold,
 			ThresholdType::Binary,
 		);
-		debug_image_buffer_log(&image)?;
+		debug_image_buffer_log(&image);
 
 		let background = Luma([u8::MAX]);
 		let components = connected_components(&image, Connectivity::Eight, background);
@@ -223,6 +223,7 @@ impl ComponentsWithBounds {
 }
 // }}}
 // {{{ Char measurements
+#[derive(Clone)]
 pub struct CharMeasurements {
 	chars: Vec<(char, ComponentVec)>,
 
@@ -258,7 +259,7 @@ impl CharMeasurements {
 					.ok_or_else(|| "Failed to turn buffer into canvas")?;
 			let image = DynamicImage::ImageRgb8(buffer);
 
-			debug_image_log(&image)?;
+			debug_image_log(&image);
 
 			let components = ComponentsWithBounds::from_image(&image, 100)?;
 
