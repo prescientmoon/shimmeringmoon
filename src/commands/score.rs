@@ -28,17 +28,18 @@ pub async fn score(_ctx: Context<'_>) -> Result<(), Error> {
 async fn magic_impl<C: MessageContext>(
 	ctx: &mut C,
 	files: Vec<C::Attachment>,
-) -> Result<(), Error> {
+) -> Result<Vec<Play>, Error> {
 	let user = get_user!(ctx);
 	let files = ctx.download_images(&files).await?;
 
 	if files.len() == 0 {
 		ctx.reply("No images found attached to message").await?;
-		return Ok(());
+		return Ok(vec![]);
 	}
 
 	let mut embeds = Vec::with_capacity(files.len());
 	let mut attachments = Vec::with_capacity(files.len());
+	let mut plays = Vec::with_capacity(files.len());
 	let mut analyzer = ImageAnalyzer::default();
 
 	for (i, (attachment, bytes)) in files.into_iter().enumerate() {
@@ -116,6 +117,7 @@ async fn magic_impl<C: MessageContext>(
 				play.to_embed(ctx.data(), &user, &song, &chart, i, None)?
 			});
 
+			plays.push(play);
 			embeds.push(embed);
 			attachments.extend(attachment);
 			// }}}
@@ -133,7 +135,7 @@ async fn magic_impl<C: MessageContext>(
 			.await?;
 	}
 
-	Ok(())
+	Ok(plays)
 }
 // }}}
 // {{{ Tests
@@ -142,9 +144,15 @@ mod magic_tests {
 
 	use std::path::PathBuf;
 
-	use crate::with_test_ctx;
+	use crate::{
+		arcaea::score::ScoringSystem, commands::discord::mock::MockContext, with_test_ctx,
+	};
 
 	use super::*;
+
+	fn play_song_title<'a>(ctx: &'a MockContext, play: &'a Play) -> Result<&'a str, Error> {
+		Ok(&ctx.data().song_cache.lookup_chart(play.chart_id)?.0.title)
+	}
 
 	#[tokio::test]
 	async fn no_pics() -> Result<(), Error> {
@@ -156,29 +164,45 @@ mod magic_tests {
 
 	#[tokio::test]
 	async fn simple_pic() -> Result<(), Error> {
-		with_test_ctx!("test/commands/score/magic/single_pic", async |ctx| {
-			magic_impl(
-				ctx,
-				vec![PathBuf::from_str("test/screenshots/alter_ego.jpg")?],
-			)
-			.await?;
-			Ok(())
-		})
+		with_test_ctx!(
+			"test/commands/score/magic/single_pic",
+			async |ctx: &mut MockContext| {
+				let plays = magic_impl(
+					ctx,
+					vec![PathBuf::from_str("test/screenshots/alter_ego.jpg")?],
+				)
+				.await?;
+				assert_eq!(plays.len(), 1);
+				assert_eq!(plays[0].score(ScoringSystem::Standard).0, 9926250);
+				assert_eq!(play_song_title(ctx, &plays[0])?, "ALTER EGO");
+				Ok(())
+			}
+		)
 	}
 
 	#[tokio::test]
 	async fn weird_kerning() -> Result<(), Error> {
-		with_test_ctx!("test/commands/score/magic/weird_kerning", async |ctx| {
-			magic_impl(
-				ctx,
-				vec![
-					PathBuf::from_str("test/screenshots/antithese_74_kerning.jpg")?,
-					PathBuf::from_str("test/screenshots/genocider_24_kerning.jpg")?,
-				],
-			)
-			.await?;
-			Ok(())
-		})
+		with_test_ctx!(
+			"test/commands/score/magic/weird_kerning",
+			async |ctx: &mut MockContext| {
+				let plays = magic_impl(
+					ctx,
+					vec![
+						PathBuf::from_str("test/screenshots/antithese_74_kerning.jpg")?,
+						PathBuf::from_str("test/screenshots/genocider_24_kerning.jpg")?,
+					],
+				)
+				.await?;
+
+				assert_eq!(plays.len(), 2);
+				assert_eq!(plays[0].score(ScoringSystem::Standard).0, 9983744);
+				assert_eq!(play_song_title(ctx, &plays[0])?, "Antithese");
+				assert_eq!(plays[1].score(ScoringSystem::Standard).0, 9724775);
+				assert_eq!(play_song_title(ctx, &plays[1])?, "GENOCIDER");
+
+				Ok(())
+			}
+		)
 	}
 }
 // }}}

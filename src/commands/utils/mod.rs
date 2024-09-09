@@ -31,13 +31,16 @@ macro_rules! assert_is_pookie {
 
 #[macro_export]
 macro_rules! reply_errors {
-	($ctx:expr, $value:expr) => {
+	($ctx:expr, $default:expr, $value:expr) => {
 		match $value {
 			Ok(v) => v,
 			Err(err) => {
 				crate::commands::discord::MessageContext::reply($ctx, &format!("{err}")).await?;
-				return Ok(());
+				return Ok($default);
 			}
 		}
+	};
+	($ctx:expr, $value:expr) => {
+		crate::reply_errors!($ctx, Default::default(), $value)
 	};
 }
