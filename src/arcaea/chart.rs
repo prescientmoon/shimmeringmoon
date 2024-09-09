@@ -1,5 +1,6 @@
 use std::{fmt::Display, num::NonZeroU16, path::PathBuf};
 
+use anyhow::anyhow;
 use image::{ImageBuffer, Rgb};
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ValueRef};
 
@@ -237,6 +238,14 @@ impl CachedSong {
 			chart_ids: [None; 5],
 		}
 	}
+
+	#[inline]
+	pub fn charts(&self) -> impl Iterator<Item = u32> {
+		self.chart_ids
+			.into_iter()
+			.filter_map(|i| i)
+			.map(|i| i.get() as u32)
+	}
 }
 // }}}
 // {{{ Song cache
@@ -252,7 +261,7 @@ impl SongCache {
 		self.songs
 			.get(id as usize)
 			.and_then(|i| i.as_ref())
-			.ok_or_else(|| format!("Could not find song with id {}", id).into())
+			.ok_or_else(|| anyhow!("Could not find song with id {}", id))
 	}
 
 	#[inline]
@@ -261,7 +270,7 @@ impl SongCache {
 			.charts
 			.get(chart_id as usize)
 			.and_then(|i| i.as_ref())
-			.ok_or_else(|| format!("Could not find chart with id {}", chart_id))?;
+			.ok_or_else(|| anyhow!("Could not find chart with id {}", chart_id))?;
 		let song = &self.lookup_song(chart.song_id)?.song;
 
 		Ok((song, chart))
@@ -272,7 +281,7 @@ impl SongCache {
 		self.songs
 			.get_mut(id as usize)
 			.and_then(|i| i.as_mut())
-			.ok_or_else(|| format!("Could not find song with id {}", id).into())
+			.ok_or_else(|| anyhow!("Could not find song with id {}", id))
 	}
 
 	#[inline]
@@ -280,7 +289,7 @@ impl SongCache {
 		self.charts
 			.get_mut(chart_id as usize)
 			.and_then(|i| i.as_mut())
-			.ok_or_else(|| format!("Could not find chart with id {}", chart_id).into())
+			.ok_or_else(|| anyhow!("Could not find chart with id {}", chart_id))
 	}
 
 	#[inline]
@@ -292,7 +301,7 @@ impl SongCache {
 		let cached_song = self.lookup_song(id)?;
 		let chart_id = cached_song.chart_ids[difficulty.to_index()]
 			.ok_or_else(|| {
-				format!(
+				anyhow!(
 					"Cannot find chart {} [{difficulty:?}]",
 					cached_song.song.title
 				)
@@ -300,6 +309,25 @@ impl SongCache {
 			.get() as u32;
 		let chart = self.lookup_chart(chart_id)?.1;
 		Ok((&cached_song.song, chart))
+	}
+
+	#[inline]
+	pub fn lookup_by_difficulty_mut(
+		&mut self,
+		id: u32,
+		difficulty: Difficulty,
+	) -> Result<&mut Chart, Error> {
+		let cached_song = self.lookup_song(id)?;
+		let chart_id = cached_song.chart_ids[difficulty.to_index()]
+			.ok_or_else(|| {
+				anyhow!(
+					"Cannot find chart {} [{difficulty:?}]",
+					cached_song.song.title
+				)
+			})?
+			.get() as u32;
+		let chart = self.lookup_chart_mut(chart_id)?;
+		Ok(chart)
 	}
 
 	#[inline]

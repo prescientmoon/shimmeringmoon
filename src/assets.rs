@@ -85,6 +85,7 @@ pub fn should_skip_jacket_art() -> bool {
 }
 
 #[inline]
+#[allow(dead_code)]
 pub fn should_blur_jacket_art() -> bool {
 	var("SHIMMERING_BLUR_JACKETS").unwrap_or_default() == "1"
 }

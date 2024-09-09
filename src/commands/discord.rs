@@ -53,9 +53,7 @@ pub trait MessageContext {
 }
 // }}}
 // {{{ Poise implementation
-impl<'a, 'b> MessageContext
-	for poise::Context<'a, UserContext, Box<dyn std::error::Error + Send + Sync + 'b>>
-{
+impl<'a> MessageContext for poise::Context<'a, UserContext, Error> {
 	type Attachment = poise::serenity_prelude::Attachment;
 
 	fn data(&self) -> &UserContext {

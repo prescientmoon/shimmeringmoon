@@ -6,6 +6,7 @@
 //! There's still stuff to be implemented here, like a cache for glyphs and
 //! whatnot, but this does run pretty stably for the b30 renderer.
 
+use anyhow::anyhow;
 use freetype::{
 	bitmap::PixelMode,
 	face::{KerningMode, LoadFlag},
@@ -355,7 +356,7 @@ impl BitmapCanvas {
 					Some((i, glyph_index))
 				})
 				.ok_or_else(|| {
-					format!("Could not get glyph index for char '{}' in \"{}\"", c, text)
+					anyhow!("Could not get glyph index for char '{}' in \"{}\"", c, text)
 				})?;
 
 			let face = &mut faces[face_index];

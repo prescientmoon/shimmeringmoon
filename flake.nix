@@ -15,6 +15,20 @@
         inherit (pkgs) lib;
       in
       {
+        packages.shimmeringmoon = pkgs.rustPlatform.buildRustPackage {
+          pname = "shimmeringmoon";
+          version = "unstable-2024-09-06";
+
+          src = lib.cleanSource ./.;
+
+          cargoLock = {
+            lockFile = ./Cargo.lock;
+            outputHashes = {
+              "hypertesseract-0.1.0" = "sha256-G0dos5yvvcfBKznAo1IIzLgXqRDxmyZwB93QQ6hVZSo=";
+              "plotters-0.4.0" = "sha256-9wtd7lig1vQ2RJVaEHdicfPZy2AyuoNav8shPMZ1EuE=";
+            };
+          };
+        };
         devShell = pkgs.mkShell rec {
           packages = with pkgs; [
             (fenix.complete.withComponents [

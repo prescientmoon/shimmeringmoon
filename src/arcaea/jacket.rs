@@ -1,13 +1,15 @@
-use std::{fs, io::Cursor};
+use std::fs;
 
+use anyhow::Context;
 use image::{imageops::FilterType, GenericImageView, Rgba};
 use num::Integer;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 use crate::{
 	arcaea::chart::{Difficulty, Jacket, SongCache},
-	assets::{get_asset_dir, should_blur_jacket_art, should_skip_jacket_art},
+	assets::{get_asset_dir, should_skip_jacket_art},
 	context::Error,
-	recognition::fuzzy_song_name::guess_chart_name,
 };
 
 /// How many sub-segments to split each side into
@@ -15,14 +17,16 @@ pub const SPLIT_FACTOR: u32 = 8;
 pub const IMAGE_VEC_DIM: usize = (SPLIT_FACTOR * SPLIT_FACTOR * 3) as usize;
 pub const BITMAP_IMAGE_SIZE: u32 = 174;
 
-#[derive(Debug, Clone)]
+#[serde_as]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageVec {
+	#[serde_as(as = "[_; IMAGE_VEC_DIM]")]
 	pub colors: [f32; IMAGE_VEC_DIM],
 }
 
 impl ImageVec {
 	// {{{ (Image => vector) encoding
-	fn from_image(image: &impl GenericImageView<Pixel = Rgba<u8>>) -> Self {
+	pub fn from_image(image: &impl GenericImageView<Pixel = Rgba<u8>>) -> Self {
 		let mut colors = [0.0; IMAGE_VEC_DIM];
 		let chunk_width = image.width() / SPLIT_FACTOR;
 		let chunk_height = image.height() / SPLIT_FACTOR;
@@ -101,91 +105,61 @@ impl JacketCache {
 
 			Vec::new()
 		} else {
+			let songs_dir = get_asset_dir().join("songs/by_id");
 			let entries =
-				fs::read_dir(get_asset_dir().join("songs")).expect("Couldn't read songs directory");
-			let mut jacket_vectors = vec![];
+				fs::read_dir(songs_dir).with_context(|| "Couldn't read songs directory")?;
+			let bytes = fs::read(get_asset_dir().join("songs/recognition_matrix"))
+				.with_context(|| "Could not read jacket recognition matrix")?;
+			let jacket_vectors = postcard::from_bytes(&bytes)
+				.with_context(|| "Could not decode jacket recognition matrix")?;
 
 			for entry in entries {
 				let dir = entry?;
 				let raw_dir_name = dir.file_name();
 				let dir_name = raw_dir_name.to_str().unwrap();
-				for entry in fs::read_dir(dir.path()).expect("Couldn't read song directory") {
+				let song_id = dir_name.parse().with_context(|| {
+					format!("Dir name {dir_name} could not be parsed as `u32` song id")
+				})?;
+
+				let entries =
+					fs::read_dir(dir.path()).with_context(|| "Couldn't read song directory")?;
+				for entry in entries {
 					let file = entry?;
 					let raw_name = file.file_name();
 					let name = raw_name.to_str().unwrap().strip_suffix(".jpg").unwrap();
 
-					if !name.ends_with("_256") {
-						continue;
-					}
+					let difficulty = Difficulty::DIFFICULTY_SHORTHANDS
+						.iter()
+						.zip(Difficulty::DIFFICULTIES)
+						.find_map(|(s, d)| Some(d).filter(|_| name == s.to_lowercase()));
 
-					let name = name.strip_suffix("_256").unwrap();
+					let contents: &'static _ = fs::read(file.path())
+						.with_context(|| "Coult not read prepared jacket image")?
+						.leak();
 
-					let difficulty = match name {
-						"0" => Some(Difficulty::PST),
-						"1" => Some(Difficulty::PRS),
-						"2" => Some(Difficulty::FTR),
-						"3" => Some(Difficulty::BYD),
-						"4" => Some(Difficulty::ETR),
-						"base" => None,
-						"base_night" => None,
-						"base_ja" => None,
-						_ => Err(format!("Unknown jacket suffix {}", name))?,
-					};
-
-					let (song_id, chart_id) = {
-						let (song, chart) =
-							guess_chart_name(dir_name, &song_cache, difficulty, true)?;
-						(song.id, chart.id)
-					};
-
-					let contents: &'static _ = fs::read(file.path())?.leak();
-
-					let image = image::load_from_memory(contents)?;
-					jacket_vectors.push((song_id, ImageVec::from_image(&image)));
-					let mut image =
-						image.resize(BITMAP_IMAGE_SIZE, BITMAP_IMAGE_SIZE, FilterType::Nearest);
-
-					if should_blur_jacket_art() {
-						image = image.blur(40.0);
-					}
-
-					let encoded_pic = {
-						let mut processed_pic = Vec::new();
-						image.write_to(
-							&mut Cursor::new(&mut processed_pic),
-							image::ImageFormat::Jpeg,
-						)?;
-						processed_pic.leak()
-					};
+					let image = image::load_from_memory(contents)
+						.with_context(|| "Could not load jacket image from prepared bytes")?;
 					let bitmap: &'static _ = Box::leak(Box::new(image.into_rgb8()));
 
-					if name == "base" {
-						// Inefficiently iterates over everything, but it's fine for ~1k entries
-						for chart in song_cache.charts_mut() {
-							if chart.song_id == song_id && chart.cached_jacket.is_none() {
+					if let Some(difficulty) = difficulty {
+						let chart = song_cache
+							.lookup_by_difficulty_mut(song_id, difficulty)
+							.unwrap();
+						chart.cached_jacket = Some(Jacket {
+							raw: contents,
+							bitmap,
+						});
+					} else {
+						for chart_id in song_cache.lookup_song(song_id)?.charts() {
+							let chart = song_cache.lookup_chart_mut(chart_id)?;
+							if chart.cached_jacket.is_none() {
 								chart.cached_jacket = Some(Jacket {
-									raw: encoded_pic,
+									raw: contents,
 									bitmap,
 								});
 							}
 						}
-					} else if difficulty.is_some() {
-						let chart = song_cache.lookup_chart_mut(chart_id).unwrap();
-						chart.cached_jacket = Some(Jacket {
-							raw: encoded_pic,
-							bitmap,
-						});
 					}
-				}
-			}
-
-			for chart in song_cache.charts() {
-				if chart.cached_jacket.is_none() {
-					println!(
-						"No jacket found for '{} [{:?}]'",
-						song_cache.lookup_song(chart.song_id)?.song.title,
-						chart.difficulty
-					)
 				}
 			}
 

@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use anyhow::anyhow;
 use poise::serenity_prelude::UserId;
 use rusqlite::Row;
 
@@ -39,7 +40,7 @@ impl User {
 			)?
 			.query_map([&discord_id], |row| row.get("id"))?
 			.next()
-			.ok_or_else(|| "Failed to create user")??;
+			.ok_or_else(|| anyhow!("Failed to create user"))??;
 
 		Ok(Self {
 			discord_id,
@@ -57,7 +58,7 @@ impl User {
 			.prepare_cached("SELECT * FROM users WHERE discord_id = ?")?
 			.query_map([id], Self::from_row)?
 			.next()
-			.ok_or_else(|| "You are not an user in my database, sowwy ^~^")??;
+			.ok_or_else(|| anyhow!("You are not an user in my database, sowwy ^~^"))??;
 
 		Ok(user)
 	}
@@ -69,7 +70,7 @@ impl User {
 			.prepare_cached("SELECT * FROM users WHERE id = ?")?
 			.query_map([id], Self::from_row)?
 			.next()
-			.ok_or_else(|| "You are not an user in my database, sowwy ^~^")??;
+			.ok_or_else(|| anyhow!("You are not an user in my database, sowwy ^~^"))??;
 
 		Ok(user)
 	}

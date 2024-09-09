@@ -1,5 +1,6 @@
 use std::io::Cursor;
 
+use anyhow::anyhow;
 use image::{DynamicImage, ImageBuffer};
 use poise::{
 	serenity_prelude::{CreateAttachment, CreateEmbed},
@@ -194,9 +195,10 @@ async fn best_plays(
 		// }}}
 		// {{{ Display jacket
 		let jacket = chart.cached_jacket.as_ref().ok_or_else(|| {
-			format!(
+			anyhow!(
 				"Cannot find jacket for chart {} [{:?}]",
-				song.title, chart.difficulty
+				song.title,
+				chart.difficulty
 			)
 		})?;
 
@@ -289,7 +291,7 @@ async fn best_plays(
 		// {{{ Display status text
 		with_font(&EXO_FONT, |faces| {
 			let status = play.short_status(scoring_system, chart).ok_or_else(|| {
-				format!(
+				anyhow!(
 					"Could not get status for score {}",
 					play.score(scoring_system)
 				)

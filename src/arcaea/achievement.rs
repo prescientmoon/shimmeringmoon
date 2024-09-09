@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use image::RgbaImage;
 
 use crate::{
@@ -121,7 +122,8 @@ impl GoalStats {
 		user: &User,
 		scoring_system: ScoringSystem,
 	) -> Result<Self, Error> {
-		let plays = get_best_plays(ctx, user.id, scoring_system, 0, usize::MAX, None)??;
+		let plays = get_best_plays(ctx, user.id, scoring_system, 0, usize::MAX, None)?
+			.map_err(|s| anyhow!("{s}"))?;
 		let conn = ctx.db.get()?;
 
 		// {{{ PM count
@@ -157,7 +159,7 @@ impl GoalStats {
 				),
 				|row| row.get(0),
 			)
-			.map_err(|_| "No ptt history data found")?;
+			.map_err(|_| anyhow!("No ptt history data found"))?;
 		// }}}
 		// {{{ Peak PM relay
 		let peak_pm_relay = {

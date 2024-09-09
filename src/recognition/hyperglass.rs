@@ -21,6 +21,7 @@
 //!    aforementioned precomputed vectors are generated using almost the exact
 //!    procedure described in steps 1-6, except the images are generated at
 //!    startup using my very own bitmap rendering module (`crate::bitmap`).
+use anyhow::{anyhow, bail};
 use freetype::Face;
 use image::{DynamicImage, ImageBuffer, Luma};
 use imageproc::{
@@ -58,7 +59,7 @@ impl ComponentVec {
 			.bounds
 			.get(component as usize - 1)
 			.and_then(|o| o.as_ref())
-			.ok_or_else(|| "Missing bounds for given connected component")?;
+			.ok_or_else(|| anyhow!("Missing bounds for given connected component"))?;
 
 		for i in 0..(SPLIT_FACTOR * SPLIT_FACTOR) {
 			let (iy, ix) = i.div_rem_euclid(&SPLIT_FACTOR);
@@ -82,10 +83,7 @@ impl ComponentVec {
 			let size = (x_end + 1 - x_start) * (y_end + 1 - y_start);
 
 			if size == 0 {
-				return Err(format!(
-					"Got zero size for chunk [{x_start},{x_end}]x[{y_start},{y_end}]"
-				)
-				.into());
+				bail!("Got zero size for chunk [{x_start},{x_end}]x[{y_start},{y_end}]");
 			}
 
 			chunks[i as usize] = count as f32 / size as f32;
@@ -256,7 +254,7 @@ impl CharMeasurements {
 			canvas.text(padding, &mut [face], style, &string)?;
 			let buffer =
 				ImageBuffer::from_raw(canvas.width, canvas.height(), canvas.buffer.to_vec())
-					.ok_or_else(|| "Failed to turn buffer into canvas")?;
+					.ok_or_else(|| anyhow!("Failed to turn buffer into canvas"))?;
 			let image = DynamicImage::ImageRgb8(buffer);
 
 			debug_image_log(&image);
@@ -270,14 +268,14 @@ impl CharMeasurements {
 				.filter_map(|o| o.as_ref())
 				.map(|b| b.x_max - b.x_min)
 				.max()
-				.ok_or_else(|| "No connected components found")?;
+				.ok_or_else(|| anyhow!("No connected components found"))?;
 			let max_height = components
 				.bounds
 				.iter()
 				.filter_map(|o| o.as_ref())
 				.map(|b| b.y_max - b.y_min)
 				.max()
-				.ok_or_else(|| "No connected components found")?;
+				.ok_or_else(|| anyhow!("No connected components found"))?;
 			// }}}
 
 			let mut chars = Vec::with_capacity(string.len());
@@ -318,7 +316,7 @@ impl CharMeasurements {
 			.filter_map(|o| o.as_ref())
 			.map(|b| b.y_max - b.y_min)
 			.max()
-			.ok_or_else(|| "No connected components found")?;
+			.ok_or_else(|| anyhow!("No connected components found"))?;
 		let max_width = self.max_width * max_height / self.max_height;
 
 		for i in &components.bounds_by_position {
@@ -334,7 +332,7 @@ impl CharMeasurements {
 					d1.partial_cmp(d2).expect("NaN distance encountered")
 				})
 				.map(|(i, _, d)| (d.sqrt(), i))
-				.ok_or_else(|| "No chars in cache")?;
+				.ok_or_else(|| anyhow!("No chars in cache"))?;
 
 			println!("char '{}', distance {}", best_match.1, best_match.0);
 			if best_match.0 <= 0.75 {

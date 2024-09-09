@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use anyhow::{anyhow, bail};
 use hypertesseract::{PageSegMode, Tesseract};
 use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView};
@@ -170,7 +171,7 @@ impl ImageAnalyzer {
 			}) {
 			Ok(result)
 		} else {
-			Err(format!("Score {result} is not vaild").into())
+			Err(anyhow!("Score {result} is not vaild"))
 		}
 	}
 	// }}}
@@ -228,7 +229,7 @@ impl ImageAnalyzer {
 			.zip(Difficulty::DIFFICULTY_STRINGS)
 			.min_by_key(|(_, difficulty_string)| edit_distance(difficulty_string, &text))
 			.map(|(difficulty, _)| *difficulty)
-			.ok_or_else(|| format!("Unrecognised difficulty '{}'", text))?;
+			.ok_or_else(|| anyhow!("Unrecognised difficulty '{}'", text))?;
 
 		Ok(difficulty)
 	}
@@ -272,12 +273,11 @@ impl ImageAnalyzer {
 			)?;
 
 		if conf < 20 && conf != 0 {
-			return Err(format!(
+			bail!(
 				"Title text is not readable (confidence = {}, text = {}).",
 				conf,
 				text.trim()
-			)
-			.into());
+			);
 		}
 
 		guess_chart_name(&text, &ctx.song_cache, Some(difficulty), false)
@@ -319,10 +319,10 @@ impl ImageAnalyzer {
 		let (distance, song_id) = ctx
 			.jacket_cache
 			.recognise(&*cropped)
-			.ok_or_else(|| "Could not recognise jacket")?;
+			.ok_or_else(|| anyhow!("Could not recognise jacket"))?;
 
 		if distance > (IMAGE_VEC_DIM * 3) as f32 {
-			Err("No known jacket looks like this")?;
+			bail!("No known jacket looks like this");
 		}
 
 		let (song, chart) = ctx.song_cache.lookup_by_difficulty(*song_id, difficulty)?;

@@ -1,5 +1,6 @@
 use std::fs;
 
+use anyhow::anyhow;
 use image::GenericImage;
 
 use crate::{assets::get_config_dir, bitmap::Rect, context::Error};
@@ -172,7 +173,7 @@ impl UIMeasurements {
 			}
 		}
 
-		Err(format!("Could no find rect for {rect:?} in image").into())
+		Err(anyhow!("Could no find rect for {rect:?} in image"))
 	}
 	// }}}
 }

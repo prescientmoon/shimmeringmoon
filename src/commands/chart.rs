@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage};
 
 use crate::{
@@ -25,6 +26,8 @@ use crate::{
 	user::discord_id_to_discord_user,
 };
 
+use super::discord::MessageContext;
+
 // {{{ Top command
 /// Chart-related stats
 #[poise::command(
@@ -38,15 +41,9 @@ pub async fn chart(_ctx: Context<'_>) -> Result<(), Error> {
 }
 // }}}
 // {{{ Info
-/// Show a chart given it's name
-#[poise::command(prefix_command, slash_command, user_cooldown = 1)]
-async fn info(
-	ctx: Context<'_>,
-	#[rest]
-	#[description = "Name of chart to show (difficulty at the end)"]
-	name: String,
-) -> Result<(), Error> {
-	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
+// {{{ Implementation
+async fn info_impl(ctx: &mut impl MessageContext, name: &str) -> Result<(), Error> {
+	let (song, chart) = guess_song_and_chart(&ctx.data(), name)?;
 
 	let attachement_name = "chart.png";
 	let icon_attachement = match chart.cached_jacket.as_ref() {
@@ -95,13 +92,58 @@ async fn info(
 		embed = embed.thumbnail(format!("attachment://{}", &attachement_name));
 	}
 
-	ctx.channel_id()
-		.send_files(
-			ctx.http(),
-			icon_attachement,
-			CreateMessage::new().embed(embed),
-		)
+	ctx.send_files(icon_attachement, CreateMessage::new().embed(embed))
 		.await?;
+
+	Ok(())
+}
+// }}}
+// {{{ Tests
+#[cfg(test)]
+mod info_tests {
+	use crate::{commands::discord::mock::MockContext, with_test_ctx};
+
+	use super::*;
+
+	#[tokio::test]
+	async fn no_suffix() -> Result<(), Error> {
+		with_test_ctx!("test/commands/chart/info/no_suffix", async |ctx| {
+			info_impl(ctx, "Pentiment").await?;
+			Ok(())
+		})
+	}
+
+	#[tokio::test]
+	async fn specify_difficulty() -> Result<(), Error> {
+		with_test_ctx!("test/commands/chart/info/specify_difficulty", async |ctx| {
+			info_impl(ctx, "Hellohell [ETR]").await?;
+			Ok(())
+		})
+	}
+
+	#[tokio::test]
+	async fn last_byd() -> Result<(), Error> {
+		with_test_ctx!(
+			"test/commands/chart/info/last_byd",
+			async |ctx: &mut MockContext| {
+				info_impl(ctx, "Last | Moment [BYD]").await?;
+				info_impl(ctx, "Last | Eternity [BYD]").await?;
+				Ok(())
+			}
+		)
+	}
+}
+// }}}
+
+/// Show a chart given it's name
+#[poise::command(prefix_command, slash_command, user_cooldown = 1)]
+async fn info(
+	mut ctx: Context<'_>,
+	#[rest]
+	#[description = "Name of chart to show (difficulty at the end)"]
+	name: String,
+) -> Result<(), Error> {
+	info_impl(&mut ctx, &name).await?;
 
 	Ok(())
 }
@@ -138,9 +180,10 @@ async fn best(
 		)?
 		.query_row((user.id, chart.id), |row| Play::from_sql(chart, row))
 		.map_err(|_| {
-			format!(
+			anyhow!(
 				"Could not find any scores for {} [{:?}]",
-				song.title, chart.difficulty
+				song.title,
+				chart.difficulty
 			)
 		})?;
 

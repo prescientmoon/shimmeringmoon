@@ -10,6 +10,8 @@
 //! databases extracted from the game, but this is still useful for having a
 //! "canonical" way to refer to some weirdly-named charts).
 
+use anyhow::bail;
+
 use crate::arcaea::chart::{Chart, Difficulty, Song, SongCache};
 use crate::context::{Error, UserContext};
 use crate::levenshtein::edit_distance_with;
@@ -82,26 +84,29 @@ pub fn guess_chart_name<'a>(
 				let song_title = &song.lowercase_title;
 				distance_vec.clear();
 
+				// Apply raw distance
 				let base_distance = edit_distance_with(&text, &song_title, &mut levenshtein_vec);
-				if base_distance < 1.max(song.title.len() / 3) {
+				if base_distance <= song.title.len() / 3 {
 					distance_vec.push(base_distance * 10 + 2);
 				}
 
+				// Cut title to the length of the text, and then check
 				let shortest_len = Ord::min(song_title.len(), text.len());
 				if let Some(sliced) = &song_title.get(..shortest_len)
 					&& (text.len() >= 6 || unsafe_heuristics)
 				{
 					let slice_distance = edit_distance_with(&text, sliced, &mut levenshtein_vec);
-					if slice_distance < 1 {
-						distance_vec.push(slice_distance * 10 + 3);
+					if slice_distance == 0 {
+						distance_vec.push(3);
 					}
 				}
 
+				// Shorthand-based matching
 				if let Some(shorthand) = &chart.shorthand
 					&& unsafe_heuristics
 				{
 					let short_distance = edit_distance_with(&text, shorthand, &mut levenshtein_vec);
-					if short_distance < 1.max(shorthand.len() / 3) {
+					if short_distance <= shorthand.len() / 3 {
 						distance_vec.push(short_distance * 10 + 1);
 					}
 				}
@@ -113,12 +118,16 @@ pub fn guess_chart_name<'a>(
 			})
 			.collect();
 
+		close_enough.sort_by_key(|(song, _, _)| song.id);
+		close_enough.dedup_by_key(|(song, _, _)| song.id);
+
 		if close_enough.len() == 0 {
 			if text.len() <= 1 {
-				Err(format!(
+				bail!(
 					"Could not find match for chart name '{}' [{:?}]",
-					raw_text, difficulty
-				))?;
+					raw_text,
+					difficulty
+				);
 			} else {
 				text = &text[..text.len() - 1];
 			}
@@ -129,7 +138,7 @@ pub fn guess_chart_name<'a>(
 				close_enough.sort_by_key(|(_, _, distance)| *distance);
 				break (close_enough[0].0, close_enough[0].1);
 			} else {
-				return Err(format!("Name '{}' is too vague to choose a match", raw_text).into());
+				bail!("Name '{}' is too vague to choose a match", raw_text);
 			};
 		};
 	};

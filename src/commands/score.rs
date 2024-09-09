@@ -4,6 +4,7 @@ use crate::context::{Context, Error};
 use crate::recognition::recognize::{ImageAnalyzer, ScoreKind};
 use crate::user::{discord_id_to_discord_user, User};
 use crate::{get_user, timed};
+use anyhow::anyhow;
 use image::DynamicImage;
 use poise::serenity_prelude as serenity;
 use poise::serenity_prelude::CreateMessage;
@@ -90,9 +91,10 @@ async fn magic_impl<C: MessageContext>(
 				analyzer
 					.read_score(ctx.data(), Some(chart.note_count), &grayscale_image, kind)
 					.map_err(|err| {
-						format!(
+						anyhow!(
 							"Could not read score for chart {} [{:?}]: {err}",
-							song.title, chart.difficulty
+							song.title,
+							chart.difficulty
 						)
 					})?
 			});
@@ -137,52 +139,24 @@ async fn magic_impl<C: MessageContext>(
 // {{{ Tests
 #[cfg(test)]
 mod magic_tests {
-	use std::{path::PathBuf, process::Command, str::FromStr};
 
-	use r2d2_sqlite::SqliteConnectionManager;
+	use std::path::PathBuf;
 
-	use crate::{
-		commands::discord::mock::MockContext,
-		context::{connect_db, get_shared_context},
-	};
+	use crate::with_test_ctx;
 
 	use super::*;
 
-	macro_rules! with_ctx {
-		($test_path:expr, $f:expr) => {{
-			let mut data = (*get_shared_context().await).clone();
-			let dir = tempfile::tempdir()?;
-			let path = dir.path().join("db.sqlite");
-			println!("path {path:?}");
-			data.db = connect_db(SqliteConnectionManager::file(path));
-
-			Command::new("scripts/import-charts.py")
-				.env("SHIMMERING_DATA_DIR", dir.path().to_str().unwrap())
-				.output()
-				.unwrap();
-
-			let mut ctx = MockContext::new(data);
-			User::create_from_context(&ctx)?;
-
-			let res: Result<(), Error> = $f(&mut ctx).await;
-			res?;
-
-			ctx.write_to(&PathBuf::from_str($test_path)?)?;
-			Ok(())
-		}};
-	}
-
 	#[tokio::test]
 	async fn no_pics() -> Result<(), Error> {
-		with_ctx!("test/commands/score/magic/no_pics", async |ctx| {
+		with_test_ctx!("test/commands/score/magic/no_pics", async |ctx| {
 			magic_impl(ctx, vec![]).await?;
 			Ok(())
 		})
 	}
 
 	#[tokio::test]
-	async fn basic_pic() -> Result<(), Error> {
-		with_ctx!("test/commands/score/magic/single_pic", async |ctx| {
+	async fn simple_pic() -> Result<(), Error> {
+		with_test_ctx!("test/commands/score/magic/single_pic", async |ctx| {
 			magic_impl(
 				ctx,
 				vec![PathBuf::from_str("test/screenshots/alter_ego.jpg")?],
@@ -194,7 +168,7 @@ mod magic_tests {
 
 	#[tokio::test]
 	async fn weird_kerning() -> Result<(), Error> {
-		with_ctx!("test/commands/score/magic/weird_kerning", async |ctx| {
+		with_test_ctx!("test/commands/score/magic/weird_kerning", async |ctx| {
 			magic_impl(
 				ctx,
 				vec![
@@ -298,7 +272,7 @@ pub async fn show(
 				Ok((song, chart, play, discord_id))
 			})?
 			.next()
-			.ok_or_else(|| format!("Could not find play with id {}", id))??;
+			.ok_or_else(|| anyhow!("Could not find play with id {}", id))??;
 
 		let author = discord_id_to_discord_user(&ctx, &discord_id).await?;
 		let user = User::by_id(ctx.data(), play.user_id)?;
