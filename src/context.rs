@@ -106,11 +106,16 @@ pub mod testing {
 	}
 
 	pub fn import_songs_and_jackets_from(to: &Path) -> () {
-		std::process::Command::new("scripts/copy-chart-info.sh")
+		let out = std::process::Command::new("scripts/copy-chart-info.sh")
 			.arg(get_data_dir())
 			.arg(to)
 			.output()
 			.expect("Could not run sh chart info copy script");
+
+		assert!(
+			out.status.success(),
+			"chart info copy script exited with non-0 code"
+		);
 	}
 
 	#[macro_export]

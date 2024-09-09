@@ -1,6 +1,7 @@
 use std::array;
 use std::num::NonZeroU64;
 
+use anyhow::Context;
 use chrono::NaiveDateTime;
 use chrono::Utc;
 use num::traits::Euclid;
@@ -83,7 +84,13 @@ impl CreatePlay {
 					self.far_notes,
 				),
 				|row| Ok((row.get("id")?, row.get("created_at")?)),
-			)?;
+			)
+			.with_context(|| {
+				format!(
+					"Could not create play {self:?} with user {:?} and chart {:?}",
+					user.id, chart.id
+				)
+			})?;
 		// }}}
 		// {{{ Update creation ptt data
 		let scores = ScoreCollection::from_standard_score(self.score, chart);

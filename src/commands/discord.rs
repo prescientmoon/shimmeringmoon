@@ -145,7 +145,9 @@ pub mod mock {
 					let path = dir.join(&attachment.filename);
 
 					if path.exists() {
-						assert_eq!(&attachment.data, &fs::read(path)?);
+						if &attachment.data != &fs::read(&path)? {
+							panic!("Attachment differs from {path:?}");
+						}
 					} else {
 						fs::write(&path, &attachment.data)?;
 					}

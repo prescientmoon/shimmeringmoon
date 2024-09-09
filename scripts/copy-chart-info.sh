@@ -6,8 +6,10 @@ if [ "$#" != 2 ]; then
     exit 1
 fi
 
-from="$1/db.sqlite"
-to  ="$2/db.sqlite"
+a="$1/db.sqlite"
+b="$2/db.sqlite"
 
-sqlite3 $from ".dump songs"  | sqlite3 $to
-sqlite3 $from ".dump charts" | sqlite3 $to
+sqlite3 $b "DROP TABLE songs"
+sqlite3 $b "DROP TABLE charts"
+sqlite3 $a ".dump songs"  | sqlite3 $b
+sqlite3 $a ".dump charts" | sqlite3 $b

@@ -334,7 +334,7 @@ impl CharMeasurements {
 				.map(|(i, _, d)| (d.sqrt(), i))
 				.ok_or_else(|| anyhow!("No chars in cache"))?;
 
-			println!("char '{}', distance {}", best_match.1, best_match.0);
+			// println!("char '{}', distance {}", best_match.1, best_match.0);
 			if best_match.0 <= 0.75 {
 				result.push(best_match.1);
 			}
