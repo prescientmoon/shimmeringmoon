@@ -72,7 +72,7 @@ impl ComponentVec {
 					if let Some(p) = components.components.get_pixel_checked(x, y)
 						&& p.0[0] == component
 					{
-						count += 1;
+						count += 255 - components.image[(x, y)].0[0] as u32;
 					}
 				}
 			}
@@ -141,6 +141,7 @@ struct ComponentBounds {
 }
 
 struct ComponentsWithBounds {
+	image: ImageBuffer<Luma<u8>, Vec<u8>>,
 	components: ImageBuffer<Luma<u32>, Vec<u32>>,
 
 	// NOTE: the index is (the id of the component) - 1
@@ -153,16 +154,17 @@ struct ComponentsWithBounds {
 }
 
 impl ComponentsWithBounds {
-	fn from_image(image: &DynamicImage, binarisation_threshold: u8) -> Result<Self, Error> {
-		let image = threshold(
-			&image.to_luma8(),
-			binarisation_threshold,
-			ThresholdType::Binary,
-		);
-		debug_image_buffer_log(&image);
+	fn from_image(
+		image: &DynamicImage,
+		binarisation_threshold: u8,
+		max_sizes: (f32, f32),
+	) -> Result<Self, Error> {
+		let luma_image = image.to_luma8();
+		let binarized_image = threshold(&luma_image, binarisation_threshold, ThresholdType::Binary);
+		debug_image_buffer_log(&binarized_image);
 
 		let background = Luma([u8::MAX]);
-		let components = connected_components(&image, Connectivity::Eight, background);
+		let components = connected_components(&binarized_image, Connectivity::Eight, background);
 
 		let mut bounds: Vec<Option<ComponentBounds>> = Vec::new();
 		for x in 0..components.width() {
@@ -198,7 +200,13 @@ impl ComponentsWithBounds {
 
 		// {{{ Remove components that are too large
 		for bound in &mut bounds {
-			if bound.map_or(false, |b| (b.x_max - b.x_min) >= 9 * image.width() / 10) {
+			if bound.map_or(false, |b| {
+				(b.x_max - b.x_min) as f32 >= max_sizes.0 * image.width() as f32
+			}) {
+				*bound = None;
+			} else if bound.map_or(false, |b| {
+				(b.y_max - b.y_min) as f32 >= max_sizes.1 * image.height() as f32
+			}) {
 				*bound = None;
 			}
 		}
@@ -210,6 +218,7 @@ impl ComponentsWithBounds {
 		bounds_by_position.sort_by_key(|i| bounds[*i].unwrap().x_min);
 
 		Ok(Self {
+			image: luma_image,
 			components,
 			bounds,
 			bounds_by_position,
@@ -254,7 +263,7 @@ impl CharMeasurements {
 
 		debug_image_log(&image);
 
-		let components = ComponentsWithBounds::from_image(&image, 100)?;
+		let components = ComponentsWithBounds::from_image(&image, 100, (1.0, 1.0))?;
 
 		// {{{ Compute max width/height
 		let max_width = components
@@ -298,9 +307,13 @@ impl CharMeasurements {
 		image: &DynamicImage,
 		whitelist: &str,
 		binarisation_threshold: Option<u8>,
+		max_sizes: Option<(f32, f32)>,
 	) -> Result<String, Error> {
-		let components =
-			ComponentsWithBounds::from_image(image, binarisation_threshold.unwrap_or(100))?;
+		let components = ComponentsWithBounds::from_image(
+			image,
+			binarisation_threshold.unwrap_or(100),
+			max_sizes.unwrap_or((0.9, 1.0)),
+		)?;
 		let mut result = String::with_capacity(components.bounds.len());
 
 		let max_height = components

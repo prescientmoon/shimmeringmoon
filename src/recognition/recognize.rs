@@ -150,7 +150,7 @@ impl ImageAnalyzer {
 
 		let result = Score(
 			measurements
-				.recognise(&image, "0123456789'", None)?
+				.recognise(&image, "0123456789'", None, None)?
 				.chars()
 				.filter(|c| *c != '\'')
 				.collect::<String>()
@@ -218,6 +218,7 @@ impl ImageAnalyzer {
 		let text = ctx.kazesawa_bold_measurements.recognise(
 			&image,
 			"PASTPRESENTFUTUREETERNALBEYOND",
+			Some(200), // We can afford to be generous with binarization here
 			None,
 		)?;
 
@@ -240,7 +241,7 @@ impl ImageAnalyzer {
 		let image = self.interp_crop(ctx, image, PlayKind)?;
 		let text = ctx
 			.kazesawa_measurements
-			.recognise(&image, "ResultSelectaSong ", None)?;
+			.recognise(&image, "ResultSelectaSong ", None, None)?;
 
 		let result = if edit_distance(&text, "Result") < edit_distance(&text, "SelectaSong") {
 			ScoreKind::ScoreScreen
@@ -342,7 +343,8 @@ impl ImageAnalyzer {
 			let image = self.interp_crop(ctx, image, ScoreScreen(KINDS[i]))?;
 			out[i] = ctx
 				.kazesawa_bold_measurements
-				.recognise(&image, "0123456789", Some(30))?
+				// We need to be very strict with binarization here
+				.recognise(&image, "0123456789", Some(30), Some((0.33, 0.85)))?
 				.parse()
 				.unwrap_or(100000); // This will get discarded as making no sense
 		}
@@ -361,7 +363,8 @@ impl ImageAnalyzer {
 		let image = self.interp_crop(ctx, image, ScoreScreen(ScoreScreenRect::MaxRecall))?;
 		let max_recall = ctx
 			.exo_measurements
-			.recognise(&image, "0123456789", None)?
+			// We can afford to be generous with binarization here
+			.recognise(&image, "0123456789", Some(200), None)?
 			.parse()?;
 
 		Ok(max_recall)
