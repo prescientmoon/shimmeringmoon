@@ -1,8 +1,9 @@
-use std::num::NonZeroU64;
+use std::{num::NonZeroU64, str::FromStr};
 
 use poise::serenity_prelude::{futures::future::join_all, CreateAttachment, CreateMessage};
 
 use crate::{
+	arcaea::play::Play,
 	context::{Error, UserContext},
 	timed,
 };
@@ -13,6 +14,9 @@ pub trait MessageContext {
 	fn data(&self) -> &UserContext;
 	fn author_id(&self) -> u64;
 
+	/// Fetch info about a user given it's id.
+	async fn fetch_user(&self, discord_id: &str) -> Result<poise::serenity_prelude::User, Error>;
+
 	/// Reply to the current message
 	async fn reply(&mut self, text: &str) -> Result<(), Error>;
 
@@ -22,6 +26,11 @@ pub trait MessageContext {
 		attachments: impl IntoIterator<Item = CreateAttachment>,
 		message: CreateMessage,
 	) -> Result<(), Error>;
+
+	/// Deliver a message
+	async fn send(&mut self, message: CreateMessage) -> Result<(), Error> {
+		self.send_files([], message).await
+	}
 
 	// {{{ Input attachments
 	type Attachment;
@@ -36,7 +45,7 @@ pub trait MessageContext {
 	/// Downloads every image
 	async fn download_images<'a>(
 		&self,
-		attachments: &'a Vec<Self::Attachment>,
+		attachments: &'a [Self::Attachment],
 	) -> Result<Vec<(&'a Self::Attachment, Vec<u8>)>, Error> {
 		let download_tasks = attachments
 			.iter()
@@ -62,6 +71,13 @@ impl<'a> MessageContext for poise::Context<'a, UserContext, Error> {
 
 	fn author_id(&self) -> u64 {
 		self.author().id.get()
+	}
+
+	async fn fetch_user(&self, discord_id: &str) -> Result<poise::serenity_prelude::User, Error> {
+		poise::serenity_prelude::UserId::from_str(discord_id)?
+			.to_user(self.http())
+			.await
+			.map_err(|e| e.into())
 	}
 
 	async fn reply(&mut self, text: &str) -> Result<(), Error> {
@@ -106,6 +122,9 @@ pub mod mock {
 
 	use super::*;
 
+	/// A mock context usable for testing. Messages and attachments are
+	/// accumulated inside a vec, and can be used for golden testing
+	/// (see [MockContext::golden])
 	pub struct MockContext {
 		pub user_id: u64,
 		pub data: UserContext,
@@ -121,7 +140,16 @@ pub mod mock {
 			}
 		}
 
-		pub fn write_to(&self, path: &PathBuf) -> Result<(), Error> {
+		// {{{ golden
+		/// This function implements the logic for "golden testing". We essentially
+		/// make sure a command's output doesn't change, by writing it to disk,
+		/// and comparing new outputs to the "golden" copy.
+		///
+		/// 1. This will attempt to write the data to disk (at the given path)
+		/// 2. If the data already exists on disk, the two copies will be
+		///    compared. A panic will occur on disagreements.
+		/// 3. `SHIMMERING_TEST_REGEN=1` can be passed to overwrite disagreements.
+		pub fn golden(&self, path: &PathBuf) -> Result<(), Error> {
 			if env::var("SHIMMERING_TEST_REGEN").unwrap_or_default() == "1" {
 				fs::remove_dir_all(path)?;
 			}
@@ -152,15 +180,36 @@ pub mod mock {
 						fs::write(&path, &attachment.data)?;
 					}
 				}
+
+				// Ensure there's no extra attachments on disk
+				let file_count = fs::read_dir(dir)?.count();
+				if file_count != attachments.len() + 1 {
+					panic!(
+						"Only {} attachments found instead of {}",
+						attachments.len(),
+						file_count - 1
+					);
+				}
 			}
 
 			Ok(())
 		}
+		// }}}
 	}
 
 	impl MessageContext for MockContext {
 		fn author_id(&self) -> u64 {
 			self.user_id
+		}
+
+		async fn fetch_user(
+			&self,
+			discord_id: &str,
+		) -> Result<poise::serenity_prelude::User, Error> {
+			let mut user = poise::serenity_prelude::User::default();
+			user.id = poise::serenity_prelude::UserId::from_str(discord_id)?;
+			user.name = "testinguser".to_string();
+			Ok(user)
 		}
 
 		fn data(&self) -> &UserContext {
@@ -206,5 +255,12 @@ pub mod mock {
 		}
 		// }}}
 	}
+}
+// }}}
+// {{{ Helpers
+#[inline]
+#[allow(dead_code)] // Currently only used for testing
+pub fn play_song_title<'a>(ctx: &'a impl MessageContext, play: &'a Play) -> Result<&'a str, Error> {
+	Ok(&ctx.data().song_cache.lookup_chart(play.chart_id)?.0.title)
 }
 // }}}

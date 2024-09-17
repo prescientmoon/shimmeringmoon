@@ -42,11 +42,9 @@ pub fn get_asset_dir() -> PathBuf {
 // {{{ Font helpers
 #[inline]
 fn get_font(name: &str) -> RefCell<Face> {
-	let face = timed!(format!("load font \"{name}\""), {
-		FREETYPE_LIB.with(|lib| {
-			lib.new_face(get_asset_dir().join("fonts").join(name), 0)
-				.expect(&format!("Could not load {} font", name))
-		})
+	let face = FREETYPE_LIB.with(|lib| {
+		lib.new_face(get_asset_dir().join("fonts").join(name), 0)
+			.expect(&format!("Could not load {} font", name))
 	});
 	RefCell::new(face)
 }

@@ -16,7 +16,12 @@ use crate::{
 	recognition::fuzzy_song_name::guess_chart_name,
 };
 
-pub fn prepare_jackets() -> Result<(), Error> {
+#[inline]
+fn clear_line() {
+	print!("\r                                       \r");
+}
+
+pub fn run() -> Result<(), Error> {
 	let db = connect_db(&get_data_dir());
 	let song_cache = SongCache::new(&db)?;
 
@@ -41,11 +46,12 @@ pub fn prepare_jackets() -> Result<(), Error> {
 		let dir_name = raw_dir_name.to_str().unwrap();
 
 		// {{{ Update progress live
-		print!(
-			"{}/{}: {dir_name}                          \r",
-			i,
-			entries.len()
-		);
+		if i != 0 {
+			clear_line();
+		}
+
+		print!("{}/{}: {dir_name}", i, entries.len());
+
 		if i % 5 == 0 {
 			stdout().flush()?;
 		}
@@ -131,6 +137,8 @@ pub fn prepare_jackets() -> Result<(), Error> {
 				.with_context(|| format!("Could not save image to {image_out_path:?}"))?;
 		}
 	}
+
+	clear_line();
 
 	// NOTE: this is N^2, but it's a one-off warning thing, so it's fine
 	for chart in song_cache.charts() {

@@ -24,7 +24,7 @@ mod user;
 
 use arcaea::play::generate_missing_scores;
 use clap::Parser;
-use cli::{prepare_jackets::prepare_jackets, Cli, Command};
+use cli::{Cli, Command};
 use context::{Error, UserContext};
 use poise::serenity_prelude::{self as serenity};
 use std::{env::var, sync::Arc, time::Duration};
@@ -115,7 +115,12 @@ async fn main() {
 			// }}}
 		}
 		Command::PrepareJackets {} => {
-			prepare_jackets().expect("Could not prepare jackets");
+			cli::prepare_jackets::run().expect("Could not prepare jackets");
+		}
+		Command::Analyse(args) => {
+			cli::analyse::run(args)
+				.await
+				.expect("Could not analyse screenshot");
 		}
 	}
 }

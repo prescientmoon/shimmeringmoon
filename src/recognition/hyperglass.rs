@@ -34,7 +34,6 @@ use crate::{
 	bitmap::{Align, BitmapCanvas, Color, TextStyle},
 	context::Error,
 	logs::{debug_image_buffer_log, debug_image_log},
-	timed,
 };
 
 // {{{ ConponentVec
@@ -232,69 +231,66 @@ pub struct CharMeasurements {
 impl CharMeasurements {
 	// {{{ Creation
 	pub fn from_text(face: &mut Face, string: &str, weight: Option<u32>) -> Result<Self, Error> {
-		timed!("measure_chars", {
-			// These are bad estimates lol
-			let style = TextStyle {
-				stroke: None,
-				drop_shadow: None,
-				align: (Align::Start, Align::Start),
-				size: 60,
-				color: Color::BLACK,
-				// TODO: do we want to use the weight hint for resilience?
-				weight,
-			};
-			let padding = (5, 5);
-			let planned = BitmapCanvas::plan_text_rendering(padding, &mut [face], style, &string)?;
+		// These are bad estimates lol
+		let style = TextStyle {
+			stroke: None,
+			drop_shadow: None,
+			align: (Align::Start, Align::Start),
+			size: 60,
+			color: Color::BLACK,
+			// TODO: do we want to use the weight hint for resilience?
+			weight,
+		};
+		let padding = (5, 5);
+		let planned = BitmapCanvas::plan_text_rendering(padding, &mut [face], style, &string)?;
 
-			let mut canvas = BitmapCanvas::new(
-				(planned.0 .0) as u32 + planned.1.width + 2 * padding.0 as u32,
-				(planned.0 .1) as u32 + planned.1.height + 2 * padding.0 as u32,
-			);
+		let mut canvas = BitmapCanvas::new(
+			(planned.0 .0) as u32 + planned.1.width + 2 * padding.0 as u32,
+			(planned.0 .1) as u32 + planned.1.height + 2 * padding.0 as u32,
+		);
 
-			canvas.text(padding, &mut [face], style, &string)?;
-			let buffer =
-				ImageBuffer::from_raw(canvas.width, canvas.height(), canvas.buffer.to_vec())
-					.ok_or_else(|| anyhow!("Failed to turn buffer into canvas"))?;
-			let image = DynamicImage::ImageRgb8(buffer);
+		canvas.text(padding, &mut [face], style, &string)?;
+		let buffer = ImageBuffer::from_raw(canvas.width, canvas.height(), canvas.buffer.to_vec())
+			.ok_or_else(|| anyhow!("Failed to turn buffer into canvas"))?;
+		let image = DynamicImage::ImageRgb8(buffer);
 
-			debug_image_log(&image);
+		debug_image_log(&image);
 
-			let components = ComponentsWithBounds::from_image(&image, 100)?;
+		let components = ComponentsWithBounds::from_image(&image, 100)?;
 
-			// {{{ Compute max width/height
-			let max_width = components
-				.bounds
-				.iter()
-				.filter_map(|o| o.as_ref())
-				.map(|b| b.x_max - b.x_min)
-				.max()
-				.ok_or_else(|| anyhow!("No connected components found"))?;
-			let max_height = components
-				.bounds
-				.iter()
-				.filter_map(|o| o.as_ref())
-				.map(|b| b.y_max - b.y_min)
-				.max()
-				.ok_or_else(|| anyhow!("No connected components found"))?;
-			// }}}
+		// {{{ Compute max width/height
+		let max_width = components
+			.bounds
+			.iter()
+			.filter_map(|o| o.as_ref())
+			.map(|b| b.x_max - b.x_min)
+			.max()
+			.ok_or_else(|| anyhow!("No connected components found"))?;
+		let max_height = components
+			.bounds
+			.iter()
+			.filter_map(|o| o.as_ref())
+			.map(|b| b.y_max - b.y_min)
+			.max()
+			.ok_or_else(|| anyhow!("No connected components found"))?;
+		// }}}
 
-			let mut chars = Vec::with_capacity(string.len());
-			for (i, char) in string.chars().enumerate() {
-				chars.push((
-					char,
-					ComponentVec::from_component(
-						&components,
-						(max_width, max_height),
-						components.bounds_by_position[i] as u32 + 1,
-					)?,
-				))
-			}
+		let mut chars = Vec::with_capacity(string.len());
+		for (i, char) in string.chars().enumerate() {
+			chars.push((
+				char,
+				ComponentVec::from_component(
+					&components,
+					(max_width, max_height),
+					components.bounds_by_position[i] as u32 + 1,
+				)?,
+			))
+		}
 
-			Ok(Self {
-				chars,
-				max_width,
-				max_height,
-			})
+		Ok(Self {
+			chars,
+			max_width,
+			max_height,
 		})
 	}
 	// }}}
@@ -305,9 +301,8 @@ impl CharMeasurements {
 		whitelist: &str,
 		binarisation_threshold: Option<u8>,
 	) -> Result<String, Error> {
-		let components = timed!("from_image", {
-			ComponentsWithBounds::from_image(image, binarisation_threshold.unwrap_or(100))?
-		});
+		let components =
+			ComponentsWithBounds::from_image(image, binarisation_threshold.unwrap_or(100))?;
 		let mut result = String::with_capacity(components.bounds.len());
 
 		let max_height = components

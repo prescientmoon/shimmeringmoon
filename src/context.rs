@@ -35,24 +35,22 @@ pub struct UserContext {
 }
 
 pub fn connect_db(data_dir: &Path) -> DbConnection {
-	timed!("create_sqlite_pool", {
-		fs::create_dir_all(data_dir).expect("Could not create $SHIMMERING_DATA_DIR");
+	fs::create_dir_all(data_dir).expect("Could not create $SHIMMERING_DATA_DIR");
 
-		let data_dir = data_dir.to_str().unwrap().to_owned();
+	let data_dir = data_dir.to_str().unwrap().to_owned();
 
-		let db_path = format!("{}/db.sqlite", data_dir);
-		let mut conn = rusqlite::Connection::open(&db_path).unwrap();
-		static MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations");
-		static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
-			Migrations::from_directory(&MIGRATIONS_DIR).expect("Could not load migrations")
-		});
+	let db_path = format!("{}/db.sqlite", data_dir);
+	let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+	static MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations");
+	static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
+		Migrations::from_directory(&MIGRATIONS_DIR).expect("Could not load migrations")
+	});
 
-		MIGRATIONS
-			.to_latest(&mut conn)
-			.expect("Could not run migrations");
+	MIGRATIONS
+		.to_latest(&mut conn)
+		.expect("Could not run migrations");
 
-		Pool::new(SqliteConnectionManager::file(&db_path)).expect("Could not open sqlite database.")
-	})
+	Pool::new(SqliteConnectionManager::file(&db_path)).expect("Could not open sqlite database.")
 }
 
 impl UserContext {
@@ -61,9 +59,9 @@ impl UserContext {
 		timed!("create_context", {
 			let db = connect_db(&get_data_dir());
 
-			let mut song_cache = timed!("make_song_cache", { SongCache::new(&db)? });
+			let mut song_cache = SongCache::new(&db)?;
+			let ui_measurements = UIMeasurements::read()?;
 			let jacket_cache = timed!("make_jacket_cache", { JacketCache::new(&mut song_cache)? });
-			let ui_measurements = timed!("read_ui_measurements", { UIMeasurements::read()? });
 
 			// {{{ Font measurements
 			static WHITELIST: &str = "0123456789'abcdefghklmnopqrstuvwxyzABCDEFGHIJKLMNOPRSTUVWXYZ";
@@ -134,7 +132,7 @@ pub mod testing {
 			let res: Result<(), Error> = $f(&mut ctx).await;
 			res?;
 
-			ctx.write_to(&std::path::PathBuf::from_str($test_path)?)?;
+			ctx.golden(&std::path::PathBuf::from_str($test_path)?)?;
 			Ok(())
 		}};
 	}

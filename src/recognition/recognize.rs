@@ -19,7 +19,6 @@ use crate::recognition::fuzzy_song_name::guess_chart_name;
 use crate::recognition::ui::{
 	ScoreScreenRect, SongSelectRect, UIMeasurementRect, UIMeasurementRect::*,
 };
-use crate::timed;
 use crate::transform::rotate;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,32 +132,28 @@ impl ImageAnalyzer {
 		image: &DynamicImage,
 		kind: ScoreKind,
 	) -> Result<Score, Error> {
-		let image = timed!("interp_crop_resize", {
-			self.interp_crop(
-				ctx,
-				image,
-				match kind {
-					ScoreKind::SongSelect => SongSelect(SongSelectRect::Score),
-					ScoreKind::ScoreScreen => ScoreScreen(ScoreScreenRect::Score),
-				},
-			)?
-		});
+		let image = self.interp_crop(
+			ctx,
+			image,
+			match kind {
+				ScoreKind::SongSelect => SongSelect(SongSelectRect::Score),
+				ScoreKind::ScoreScreen => ScoreScreen(ScoreScreenRect::Score),
+			},
+		)?;
 
 		let measurements = match kind {
 			ScoreKind::SongSelect => &ctx.exo_measurements,
 			ScoreKind::ScoreScreen => &ctx.geosans_measurements,
 		};
 
-		let result = timed!("full recognition", {
-			Score(
-				measurements
-					.recognise(&image, "0123456789'", None)?
-					.chars()
-					.filter(|c| *c != '\'')
-					.collect::<String>()
-					.parse()?,
-			)
-		});
+		let result = Score(
+			measurements
+				.recognise(&image, "0123456789'", None)?
+				.chars()
+				.filter(|c| *c != '\'')
+				.collect::<String>()
+				.parse()?,
+		);
 
 		// Discard scores if it's impossible
 		if result.0 <= 10_010_000

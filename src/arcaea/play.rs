@@ -83,7 +83,12 @@ impl CreatePlay {
 					self.max_recall,
 					self.far_notes,
 				),
-				|row| Ok((row.get("id")?, row.get("created_at")?)),
+				|row| {
+					Ok((
+						row.get("id")?,
+						default_while_testing(row.get("created_at")?),
+					))
+				},
 			)
 			.with_context(|| {
 				format!(
@@ -131,7 +136,7 @@ impl CreatePlay {
 }
 // }}}
 // {{{ Score data
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScoreCollection([Score; ScoringSystem::SCORING_SYSTEMS.len()]);
 
 impl ScoreCollection {
@@ -143,7 +148,7 @@ impl ScoreCollection {
 }
 // }}}
 // {{{ Play
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Play {
 	pub id: u32,
 	#[allow(unused)]
@@ -157,6 +162,18 @@ pub struct Play {
 	pub scores: ScoreCollection,
 }
 
+/// Timestamps and other similar values break golden testing.
+/// This function can be used to replace such values with [Default::default]
+/// while testing.
+#[inline]
+fn default_while_testing<D: Default>(v: D) -> D {
+	if cfg!(test) {
+		D::default()
+	} else {
+		v
+	}
+}
+
 impl Play {
 	// {{{ Row parsing
 	#[inline]
@@ -165,10 +182,10 @@ impl Play {
 			id: row.get("id")?,
 			chart_id: row.get("chart_id")?,
 			user_id: row.get("user_id")?,
-			created_at: row.get("created_at")?,
 			max_recall: row.get("max_recall")?,
 			far_notes: row.get("far_notes")?,
 			scores: ScoreCollection::from_standard_score(Score(row.get("score")?), chart),
+			created_at: default_while_testing(row.get("created_at")?),
 		})
 	}
 	// }}}

@@ -1,3 +1,5 @@
+pub mod analyse;
+pub mod context;
 pub mod prepare_jackets;
 
 #[derive(clap::Parser)]
@@ -12,4 +14,5 @@ pub enum Command {
 	/// Start the discord bot
 	Discord {},
 	PrepareJackets {},
+	Analyse(analyse::Args),
 }

@@ -27,7 +27,7 @@ No neural-networks/machine-learning is used by this project. All image analysis 
 The bot needs the following environment variables to be set in order to run:
 
 ```
-SHIMMERING_DISCORD_ID=yourtoken
+SHIMMERING_DISCORD_TOKEN=yourtoken
 SHIMMERING_DATA_DIR=shimmering/data
 SHIMMERING_ASSET_DIR=shimmering/assets
 SHIMMERING_CONFIG_DIR=shimmering/config
