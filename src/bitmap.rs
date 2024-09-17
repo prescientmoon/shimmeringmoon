@@ -5,18 +5,18 @@
 //!
 //! There's still stuff to be implemented here, like a cache for glyphs and
 //! whatnot, but this does run pretty stably for the b30 renderer.
-
+// {{{ Imports
 use anyhow::anyhow;
-use freetype::{
-	bitmap::PixelMode,
-	face::{KerningMode, LoadFlag},
-	ffi::{FT_Set_Var_Design_Coordinates, FT_GLYPH_BBOX_PIXELS},
-	Bitmap, BitmapGlyph, Face, Glyph, StrokerLineCap, StrokerLineJoin,
-};
+use freetype::bitmap::PixelMode;
+use freetype::face::{KerningMode, LoadFlag};
+use freetype::ffi::{FT_Set_Var_Design_Coordinates, FT_GLYPH_BBOX_PIXELS};
+use freetype::{Bitmap, BitmapGlyph, Face, Glyph, StrokerLineCap, StrokerLineJoin};
 use image::{GenericImage, RgbImage, RgbaImage};
 use num::traits::Euclid;
 
-use crate::{assets::FREETYPE_LIB, context::Error};
+use crate::assets::FREETYPE_LIB;
+use crate::context::Error;
+// }}}
 
 // {{{ Color
 #[derive(Debug, Clone, Copy)]

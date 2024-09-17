@@ -1,13 +1,13 @@
+// {{{ Imports
 use std::fmt::{Display, Write};
 
 use num::{Rational32, Rational64};
 
 use crate::context::Error;
 
-use super::{
-	chart::Chart,
-	rating::{rating_as_float, rating_from_fixed, Rating},
-};
+use super::chart::Chart;
+use super::rating::{rating_as_float, rating_from_fixed, Rating};
+// }}}
 
 // {{{ Scoring system
 #[derive(Debug, Clone, Copy, poise::ChoiceParameter)]

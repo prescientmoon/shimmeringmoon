@@ -1,3 +1,4 @@
+// {{{ Imports
 use std::array;
 use std::num::NonZeroU64;
 
@@ -17,6 +18,7 @@ use crate::user::User;
 
 use super::rating::{rating_as_fixed, rating_as_float};
 use super::score::{Score, ScoringSystem};
+// }}}
 
 // {{{ Create play
 #[derive(Debug, Clone)]

@@ -1,13 +1,8 @@
-use std::str::FromStr;
-
 use anyhow::anyhow;
-use poise::serenity_prelude::UserId;
 use rusqlite::Row;
 
-use crate::{
-	commands::discord::MessageContext,
-	context::{Context, Error, UserContext},
-};
+use crate::commands::discord::MessageContext;
+use crate::context::{Error, UserContext};
 
 #[derive(Debug, Clone)]
 pub struct User {
@@ -74,15 +69,4 @@ impl User {
 
 		Ok(user)
 	}
-}
-
-#[inline]
-pub async fn discord_id_to_discord_user(
-	&ctx: &Context<'_>,
-	discord_id: &str,
-) -> Result<poise::serenity_prelude::User, Error> {
-	UserId::from_str(discord_id)?
-		.to_user(ctx.http())
-		.await
-		.map_err(|e| e.into())
 }

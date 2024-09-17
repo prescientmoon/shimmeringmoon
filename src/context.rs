@@ -1,3 +1,4 @@
+// {{{ Imports
 use include_dir::{include_dir, Dir};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -6,33 +7,18 @@ use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use crate::{
-	arcaea::{chart::SongCache, jacket::JacketCache},
-	assets::{get_data_dir, EXO_FONT, GEOSANS_FONT, KAZESAWA_BOLD_FONT, KAZESAWA_FONT},
-	recognition::{hyperglass::CharMeasurements, ui::UIMeasurements},
-	timed,
-};
+use crate::arcaea::{chart::SongCache, jacket::JacketCache};
+use crate::assets::{get_data_dir, EXO_FONT, GEOSANS_FONT, KAZESAWA_BOLD_FONT, KAZESAWA_FONT};
+use crate::recognition::{hyperglass::CharMeasurements, ui::UIMeasurements};
+use crate::timed;
+// }}}
 
-// Types used by all command functions
+// {{{ Common types
 pub type Error = anyhow::Error;
 pub type Context<'a> = poise::Context<'a, UserContext, Error>;
-
+// }}}
+// {{{ DB connection
 pub type DbConnection = r2d2::Pool<SqliteConnectionManager>;
-
-// Custom user data passed to all command functions
-#[derive(Clone)]
-pub struct UserContext {
-	pub db: DbConnection,
-	pub song_cache: SongCache,
-	pub jacket_cache: JacketCache,
-	pub ui_measurements: UIMeasurements,
-
-	pub geosans_measurements: CharMeasurements,
-	pub exo_measurements: CharMeasurements,
-	// TODO: do we really need both after I've fixed the bug in the ocr code?
-	pub kazesawa_measurements: CharMeasurements,
-	pub kazesawa_bold_measurements: CharMeasurements,
-}
 
 pub fn connect_db(data_dir: &Path) -> DbConnection {
 	fs::create_dir_all(data_dir).expect("Could not create $SHIMMERING_DATA_DIR");
@@ -51,6 +37,22 @@ pub fn connect_db(data_dir: &Path) -> DbConnection {
 		.expect("Could not run migrations");
 
 	Pool::new(SqliteConnectionManager::file(&db_path)).expect("Could not open sqlite database.")
+}
+// }}}
+// {{{ UserContext
+/// Custom user data passed to all command functions
+#[derive(Clone)]
+pub struct UserContext {
+	pub db: DbConnection,
+	pub song_cache: SongCache,
+	pub jacket_cache: JacketCache,
+	pub ui_measurements: UIMeasurements,
+
+	pub geosans_measurements: CharMeasurements,
+	pub exo_measurements: CharMeasurements,
+	// TODO: do we really need both after I've fixed the bug in the ocr code?
+	pub kazesawa_measurements: CharMeasurements,
+	pub kazesawa_bold_measurements: CharMeasurements,
 }
 
 impl UserContext {
@@ -89,7 +91,8 @@ impl UserContext {
 		})
 	}
 }
-
+// }}}
+// {{{ Testing helpers
 #[cfg(test)]
 pub mod testing {
 	use super::*;
@@ -137,3 +140,4 @@ pub mod testing {
 		}};
 	}
 }
+// }}}

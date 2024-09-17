@@ -1,9 +1,13 @@
+// {{{ Imports
 use std::fs;
 
 use anyhow::anyhow;
 use image::GenericImage;
 
-use crate::{assets::get_config_dir, bitmap::Rect, context::Error};
+use crate::assets::get_config_dir;
+use crate::bitmap::Rect;
+use crate::context::Error;
+// }}}
 
 // {{{ Rects
 #[derive(Debug, Clone, Copy)]

@@ -1,32 +1,27 @@
+// {{{ Imports
 use anyhow::anyhow;
 use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage};
 
-use crate::{
-	arcaea::{chart::Side, play::Play},
-	context::{Context, Error},
-	get_user,
-	recognition::fuzzy_song_name::guess_song_and_chart,
-};
+use crate::arcaea::{chart::Side, play::Play};
+use crate::context::{Context, Error};
+use crate::get_user;
+use crate::recognition::fuzzy_song_name::guess_song_and_chart;
 use std::io::Cursor;
 
 use chrono::DateTime;
 use image::{ImageBuffer, Rgb};
-use plotters::{
-	backend::{BitMapBackend, PixelFormat, RGBPixel},
-	chart::{ChartBuilder, LabelAreaPosition},
-	drawing::IntoDrawingArea,
-	element::Circle,
-	series::LineSeries,
-	style::{IntoFont, TextStyle, BLUE, WHITE},
-};
+use plotters::backend::{BitMapBackend, PixelFormat, RGBPixel};
+use plotters::chart::{ChartBuilder, LabelAreaPosition};
+use plotters::drawing::IntoDrawingArea;
+use plotters::element::Circle;
+use plotters::series::LineSeries;
+use plotters::style::{IntoFont, TextStyle, BLUE, WHITE};
 use poise::CreateReply;
 
-use crate::{
-	arcaea::score::{Score, ScoringSystem},
-	user::discord_id_to_discord_user,
-};
+use crate::arcaea::score::{Score, ScoringSystem};
 
 use super::discord::MessageContext;
+// }}}
 
 // {{{ Top command
 /// Chart-related stats
@@ -134,7 +129,7 @@ mod info_tests {
 	}
 }
 // }}}
-
+// {{{ Discord wrapper
 /// Show a chart given it's name
 #[poise::command(prefix_command, slash_command, user_cooldown = 1)]
 async fn info(
@@ -147,6 +142,7 @@ async fn info(
 
 	Ok(())
 }
+// }}}
 // }}}
 // {{{ Best score
 /// Show the best score on a given chart
@@ -193,7 +189,7 @@ async fn best(
 		song,
 		chart,
 		0,
-		Some(&discord_id_to_discord_user(&ctx, &user.discord_id).await?),
+		Some(&ctx.fetch_user(&user.discord_id).await?),
 	)?;
 
 	ctx.channel_id()

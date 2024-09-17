@@ -1,10 +1,10 @@
+// {{{ Imports
 use std::path::PathBuf;
 
-use crate::{
-	cli::context::CliContext,
-	commands::score::magic_impl,
-	context::{Error, UserContext},
-};
+use crate::cli::context::CliContext;
+use crate::commands::score::magic_impl;
+use crate::context::{Error, UserContext};
+// }}}
 
 #[derive(clap::Args)]
 pub struct Args {

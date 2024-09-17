@@ -1,34 +1,28 @@
+// {{{ Imports
 use std::io::Cursor;
 
 use anyhow::anyhow;
 use image::{DynamicImage, ImageBuffer};
-use poise::{
-	serenity_prelude::{CreateAttachment, CreateEmbed},
-	CreateReply,
-};
+use poise::serenity_prelude::{CreateAttachment, CreateEmbed};
+use poise::CreateReply;
 
-use crate::{
-	arcaea::{
-		achievement::GoalStats,
-		chart::Level,
-		jacket::BITMAP_IMAGE_SIZE,
-		play::{compute_b30_ptt, get_best_plays},
-		rating::rating_as_float,
-		score::ScoringSystem,
-	},
-	assert_is_pookie,
-	assets::{
-		get_difficulty_background, with_font, B30_BACKGROUND, COUNT_BACKGROUND, EXO_FONT,
-		GRADE_BACKGROUND, NAME_BACKGROUND, PTT_EMBLEM, SCORE_BACKGROUND, STATUS_BACKGROUND,
-		TOP_BACKGROUND,
-	},
-	bitmap::{Align, BitmapCanvas, Color, LayoutDrawer, LayoutManager, Rect},
-	context::{Context, Error},
-	get_user,
-	logs::debug_image_log,
-	reply_errors, timed,
-	user::User,
+use crate::arcaea::achievement::GoalStats;
+use crate::arcaea::chart::Level;
+use crate::arcaea::jacket::BITMAP_IMAGE_SIZE;
+use crate::arcaea::play::{compute_b30_ptt, get_best_plays};
+use crate::arcaea::rating::rating_as_float;
+use crate::arcaea::score::ScoringSystem;
+use crate::assets::{
+	get_difficulty_background, with_font, B30_BACKGROUND, COUNT_BACKGROUND, EXO_FONT,
+	GRADE_BACKGROUND, NAME_BACKGROUND, PTT_EMBLEM, SCORE_BACKGROUND, STATUS_BACKGROUND,
+	TOP_BACKGROUND,
 };
+use crate::bitmap::{Align, BitmapCanvas, Color, LayoutDrawer, LayoutManager, Rect};
+use crate::context::{Context, Error};
+use crate::logs::debug_image_log;
+use crate::user::User;
+use crate::{assert_is_pookie, get_user, reply_errors, timed};
+// }}}
 
 // {{{ Stats
 /// Stats display

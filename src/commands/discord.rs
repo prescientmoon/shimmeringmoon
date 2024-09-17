@@ -1,12 +1,14 @@
-use std::{num::NonZeroU64, str::FromStr};
+// {{{ Imports
+use std::num::NonZeroU64;
+use std::str::FromStr;
 
-use poise::serenity_prelude::{futures::future::join_all, CreateAttachment, CreateMessage};
+use poise::serenity_prelude::futures::future::join_all;
+use poise::serenity_prelude::{CreateAttachment, CreateMessage};
 
-use crate::{
-	arcaea::play::Play,
-	context::{Error, UserContext},
-	timed,
-};
+use crate::arcaea::play::Play;
+use crate::context::{Error, UserContext};
+use crate::timed;
+// }}}
 
 // {{{ Trait
 pub trait MessageContext {

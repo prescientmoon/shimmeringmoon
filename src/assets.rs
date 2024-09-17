@@ -1,16 +1,17 @@
-use std::{
-	cell::RefCell,
-	env::var,
-	path::PathBuf,
-	str::FromStr,
-	sync::{LazyLock, OnceLock},
-	thread::LocalKey,
-};
+// {{{ Imports
+use std::cell::RefCell;
+use std::env::var;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::{LazyLock, OnceLock};
+use std::thread::LocalKey;
 
 use freetype::{Face, Library};
 use image::{DynamicImage, RgbaImage};
 
-use crate::{arcaea::chart::Difficulty, timed};
+use crate::arcaea::chart::Difficulty;
+use crate::timed;
+// }}}
 
 // {{{ Path helpers
 #[inline]

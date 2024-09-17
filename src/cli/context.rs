@@ -1,3 +1,4 @@
+// {{{ Imports
 use std::num::NonZeroU64;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -7,7 +8,13 @@ use poise::serenity_prelude::{CreateAttachment, CreateMessage};
 use crate::assets::get_var;
 use crate::context::Error;
 use crate::{commands::discord::MessageContext, context::UserContext};
+// }}}
 
+/// Similar in scope to [crate::commands::discord::mock::MockContext],
+/// except replies and messages are printed to the standard output.
+///
+/// Attachments are ignored, and [CreateMessage] values are printed
+/// as TOML.
 pub struct CliContext {
 	pub user_id: u64,
 	pub data: UserContext,

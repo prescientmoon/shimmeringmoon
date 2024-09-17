@@ -1,21 +1,18 @@
-use std::{
-	fs,
-	io::{stdout, Write},
-};
+// {{{ Imports
+use std::fs;
+use std::io::{stdout, Write};
 
 use anyhow::{anyhow, bail, Context};
 use image::imageops::FilterType;
 
-use crate::{
-	arcaea::{
-		chart::{Difficulty, SongCache},
-		jacket::{ImageVec, BITMAP_IMAGE_SIZE},
-	},
-	assets::{get_asset_dir, get_data_dir},
-	context::{connect_db, Error},
-	recognition::fuzzy_song_name::guess_chart_name,
-};
+use crate::arcaea::chart::{Difficulty, SongCache};
+use crate::arcaea::jacket::{ImageVec, BITMAP_IMAGE_SIZE};
+use crate::assets::{get_asset_dir, get_data_dir};
+use crate::context::{connect_db, Error};
+use crate::recognition::fuzzy_song_name::guess_chart_name;
+// }}}
 
+/// Hacky function which clears the current line of the standard output.
 #[inline]
 fn clear_line() {
 	print!("\r                                       \r");

@@ -1,3 +1,4 @@
+// {{{ Imports
 use std::fs;
 
 use anyhow::Context;
@@ -6,11 +7,10 @@ use num::Integer;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-use crate::{
-	arcaea::chart::{Difficulty, Jacket, SongCache},
-	assets::{get_asset_dir, should_skip_jacket_art},
-	context::Error,
-};
+use crate::arcaea::chart::{Difficulty, Jacket, SongCache};
+use crate::assets::{get_asset_dir, should_skip_jacket_art};
+use crate::context::Error;
+// }}}
 
 /// How many sub-segments to split each side into
 pub const SPLIT_FACTOR: u32 = 8;

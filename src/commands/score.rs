@@ -1,3 +1,4 @@
+// {{{ Imports
 use crate::arcaea::play::{CreatePlay, Play};
 use crate::arcaea::score::Score;
 use crate::context::{Context, Error};
@@ -10,6 +11,7 @@ use poise::serenity_prelude as serenity;
 use poise::serenity_prelude::CreateMessage;
 
 use super::discord::MessageContext;
+// }}}
 
 // {{{ Score
 /// Score management

@@ -1,3 +1,4 @@
+// {{{ Imports
 use std::fmt::Display;
 
 use anyhow::{anyhow, bail};
@@ -20,6 +21,7 @@ use crate::recognition::ui::{
 	ScoreScreenRect, SongSelectRect, UIMeasurementRect, UIMeasurementRect::*,
 };
 use crate::transform::rotate;
+// }}}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScoreKind {

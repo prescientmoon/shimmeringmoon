@@ -1,13 +1,13 @@
+// {{{ Imports
 use std::{fmt::Display, num::NonZeroU16, path::PathBuf};
 
 use anyhow::anyhow;
 use image::{ImageBuffer, Rgb};
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ValueRef};
 
-use crate::{
-	bitmap::Color,
-	context::{DbConnection, Error},
-};
+use crate::bitmap::Color;
+use crate::context::{DbConnection, Error};
+// }}}
 
 // {{{ Difficuly
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

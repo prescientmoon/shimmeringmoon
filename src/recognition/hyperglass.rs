@@ -21,20 +21,18 @@
 //!    aforementioned precomputed vectors are generated using almost the exact
 //!    procedure described in steps 1-6, except the images are generated at
 //!    startup using my very own bitmap rendering module (`crate::bitmap`).
+// {{{ Imports
 use anyhow::{anyhow, bail};
 use freetype::Face;
 use image::{DynamicImage, ImageBuffer, Luma};
-use imageproc::{
-	contrast::{threshold, ThresholdType},
-	region_labelling::{connected_components, Connectivity},
-};
+use imageproc::contrast::{threshold, ThresholdType};
+use imageproc::region_labelling::{connected_components, Connectivity};
 use num::traits::Euclid;
 
-use crate::{
-	bitmap::{Align, BitmapCanvas, Color, TextStyle},
-	context::Error,
-	logs::{debug_image_buffer_log, debug_image_log},
-};
+use crate::bitmap::{Align, BitmapCanvas, Color, TextStyle};
+use crate::context::Error;
+use crate::logs::{debug_image_buffer_log, debug_image_log};
+// }}}
 
 // {{{ ConponentVec
 /// How many sub-segments to split each side into

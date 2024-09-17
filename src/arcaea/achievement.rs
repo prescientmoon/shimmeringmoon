@@ -1,17 +1,15 @@
+// {{{ Imports
 use anyhow::anyhow;
 use image::RgbaImage;
 
-use crate::{
-	assets::get_data_dir,
-	context::{Error, UserContext},
-	user::User,
-};
+use crate::assets::get_data_dir;
+use crate::context::{Error, UserContext};
+use crate::user::User;
 
-use super::{
-	chart::{Difficulty, Level},
-	play::get_best_plays,
-	score::{Grade, ScoringSystem},
-};
+use super::chart::{Difficulty, Level};
+use super::play::get_best_plays;
+use super::score::{Grade, ScoringSystem};
+// }}}
 
 // {{{ Goal
 #[derive(Debug, Clone, Copy)]
