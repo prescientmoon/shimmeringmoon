@@ -12,8 +12,8 @@ url=$2
 
 curr=$(pwd)
 
-dir_path=$SHIMMERING_ASSET_DIR/songs/$name
-mkdir $dir_path
+dir_path=$SHIMMERING_ASSET_DIR/songs/raw/$name
+mkdir -p $dir_path
 cd $dir_path
 
 http GET "$url" > temp

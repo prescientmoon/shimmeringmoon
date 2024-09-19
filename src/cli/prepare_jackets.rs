@@ -130,6 +130,7 @@ pub fn run() -> Result<(), Error> {
 			let image_out_path =
 				out_dir.join(format!("{difficulty_string}_{BITMAP_IMAGE_SIZE}.jpg"));
 			image
+				// .blur(27.5)
 				.save(&image_out_path)
 				.with_context(|| format!("Could not save image to {image_out_path:?}"))?;
 		}
