@@ -88,12 +88,9 @@ To add charts that have just been added to the CSV file into the database, run [
 
 The project provides an always-growing automated test suite for it's core functionality. The command logic is written in terms of a generic `MessagingContext` trait, which allows running the commands in non-discord contexts. The technique employed is called "golden testing" (also known as "snapshot testing") — the output of each test is initially saved to disk (at [test/commands](./test/commands)). On subsequent runs, the output is compared to the existing files, with the test failing on mismatches. You can provide the `SHIMMERING_TEST_REGEN=1` environment variable to override the existing output (make sure the changes are intended).
 
-Each test saves it's output in a directory. The directory contains two kinds of files:
+Each test saves it's output in a directory. Each file tracks the contents of a single response the bot produced during testing. This file contains everything from whether the response was a reply or not, to every field of every embed, to the hash of every attachment.
 
-- `in_<i>.toml`: these files track the hash of an attachment the command "downloaded" during execution. The screenshots used for testing are not available in this repository (thousands of Arcaea screenshots are posted to the internet on a daily basis, although I do not want to risk any legal trouble, therefore you need to provide your own), hence these hashes ensure the provided screenshots have not changed.
-- `out_<i>.toml`: each such file tracks the contents of a single response the bot produced during testing. This file contains everything from whether the response was a reply or not, to each field of each provided embed, to the hash of every attachment.
-
-You should only bother setting up a testing environment if you are planning to maintain your own fork of this repository. As mentioned above, you need to provide your own screenshots for testing. The test suite expects the following files to be present in `test/screenshots`❌
+The screenshots used for testing are not available in this repository. Although thousands of Arcaea screenshots are posted to the internet on a daily basis, I do not want to risk any legal trouble. You need to therefore provide your own testing screenshots. The test suite expects the following files to be present in `test/screenshots`:
 
 | File                         | Description                                 |
 | ---------------------------- | ------------------------------------------- |
@@ -102,6 +99,8 @@ You should only bother setting up a testing environment if you are planning to m
 | `fracture_ray_missed_ex.jpg` | a `9_766_531` score on `Fracture Ray [FTR]` |
 | `antithese_74_kerning.jpg`   | a `9_983_744` score on `Antithese [FTR]`    |
 | `genocider_24_kerning.jpg`   | a `9_724_775` score on `GENOCIDER [FTR]`    |
+
+The hashes of the output images can often depend on the jacket images the tests were run with. This means you will likely have to regenerate the output locally in order to test with your own custom jackets.
 
 ## Thanks
 
