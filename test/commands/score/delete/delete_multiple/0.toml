@@ -1,0 +1,169 @@
+reply = true
+
+[[embeds]]
+title = "Antithese [FTR 8+]"
+type = "rich"
+
+[embeds.thumbnail]
+url = "attachment://116-9983744-0.png"
+
+[[embeds.fields]]
+name = "Score"
+value = "9'983'744"
+inline = true
+
+[[embeds.fields]]
+name = "Rating"
+value = "10.72"
+inline = true
+
+[[embeds.fields]]
+name = "Grade"
+value = "EX+"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Score"
+value = "9'920'182"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Rating"
+value = "10.40"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Grade"
+value = "EX+"
+inline = true
+
+[[embeds.fields]]
+name = "Status"
+value = "C (-27/-1/-1)"
+inline = true
+
+[[embeds.fields]]
+name = "Max recall"
+value = "479"
+inline = true
+
+[[embeds.fields]]
+name = "ID"
+value = "1"
+inline = true
+
+[[embeds]]
+title = "ALTER EGO [FTR 10]"
+type = "rich"
+
+[embeds.thumbnail]
+url = "attachment://416-9926250-1.png"
+
+[[embeds.fields]]
+name = "Score"
+value = "9'926'250"
+inline = true
+
+[[embeds.fields]]
+name = "Rating"
+value = "12.13"
+inline = true
+
+[[embeds.fields]]
+name = "Grade"
+value = "EX+"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Score"
+value = "9'693'042"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Rating"
+value = "11.14"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Grade"
+value = "AA"
+inline = true
+
+[[embeds.fields]]
+name = "Status"
+value = "C (-164/-12/-5)"
+inline = true
+
+[[embeds.fields]]
+name = "Max recall"
+value = "397"
+inline = true
+
+[[embeds.fields]]
+name = "ID"
+value = "2"
+inline = true
+
+[[embeds]]
+title = "GENOCIDER [FTR 10+]"
+type = "rich"
+
+[embeds.thumbnail]
+url = "attachment://243-9724775-2.png"
+
+[[embeds.fields]]
+name = "Score"
+value = "9'724'775"
+inline = true
+
+[[embeds.fields]]
+name = "Rating"
+value = "11.45"
+inline = true
+
+[[embeds.fields]]
+name = "Grade"
+value = "AA"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Score"
+value = "9'453'809"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Rating"
+value = "10.55"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Grade"
+value = "A"
+inline = true
+
+[[embeds.fields]]
+name = "Status"
+value = "C (-180/-40/-21)"
+inline = true
+
+[[embeds.fields]]
+name = "Max recall"
+value = "347"
+inline = true
+
+[[embeds.fields]]
+name = "ID"
+value = "3"
+inline = true
+
+[[attachments]]
+filename = "116-9983744-0.png"
+hash = "sha256_75b03ac3392d4bcb9d377396a36708aea1298dd463c08d5d62ca1e1414bfeaef"
+
+[[attachments]]
+filename = "416-9926250-1.png"
+hash = "sha256_5f1febcdf44bc22bf7ef5bff0cee197a65a221277ebe9615d469002b4324ada3"
+
+[[attachments]]
+filename = "243-9724775-2.png"
+hash = "sha256_4a8ad7af5482104b3ec7c9a50091bb6f01df10a0cc758837cf47dcf7d73fd59d"

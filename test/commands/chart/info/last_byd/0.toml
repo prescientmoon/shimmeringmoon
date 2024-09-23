@@ -1,0 +1,52 @@
+reply = true
+
+[[embeds]]
+title = "Last | Moment [BYD 9]"
+type = "rich"
+
+[embeds.thumbnail]
+url = "attachment://chart.png"
+
+[[embeds.fields]]
+name = "Note count"
+value = "888"
+inline = true
+
+[[embeds.fields]]
+name = "Chart constant"
+value = "9.6"
+inline = true
+
+[[embeds.fields]]
+name = "Total plays"
+value = "0"
+inline = true
+
+[[embeds.fields]]
+name = "BPM"
+value = "175"
+inline = true
+
+[[embeds.fields]]
+name = "Side"
+value = "silent"
+inline = true
+
+[[embeds.fields]]
+name = "Artist"
+value = "Last | Moment"
+inline = true
+
+[[embeds.fields]]
+name = "Note design"
+value = "Arcaea"
+inline = true
+
+[[embeds.fields]]
+name = "Pack"
+value = "Silent Answer"
+inline = true
+
+[[attachments]]
+filename = "chart.png"
+hash = "sha256_affdfd1928406a58f0d55dd87dbaafd4bdf3a2a7092bd91395ed991b00b9c7e1"

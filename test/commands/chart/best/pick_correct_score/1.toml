@@ -1,0 +1,61 @@
+reply = true
+
+[[embeds]]
+title = "Fracture Ray [FTR 11]"
+type = "rich"
+timestamp = "1970-01-01T00:00:00Z"
+
+[embeds.thumbnail]
+url = "attachment://90-9805651-0.png"
+
+[embeds.author]
+name = "testinguser"
+
+[[embeds.fields]]
+name = "Score"
+value = "9'805'651"
+inline = true
+
+[[embeds.fields]]
+name = "Rating"
+value = "12.33"
+inline = true
+
+[[embeds.fields]]
+name = "Grade"
+value = "EX"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Score"
+value = "9'590'304"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Rating"
+value = "11.60"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Grade"
+value = "AA"
+inline = true
+
+[[embeds.fields]]
+name = "Status"
+value = "C (-123/-28/-11)"
+inline = true
+
+[[embeds.fields]]
+name = "Max recall"
+value = "556"
+inline = true
+
+[[embeds.fields]]
+name = "ID"
+value = "1"
+inline = true
+
+[[attachments]]
+filename = "90-9805651-0.png"
+hash = "sha256_0cc7eb587c87d1749d71e4888b62aa0c8a4bec31b34598f44b539e54498a2644"

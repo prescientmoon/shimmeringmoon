@@ -11,4 +11,4 @@ target
 backups
 dump.sql
 schema.sql
-test
+test/screenshots

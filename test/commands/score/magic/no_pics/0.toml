@@ -1,0 +1,4 @@
+reply = true
+content = "No images found attached to message"
+embeds = []
+attachments = []

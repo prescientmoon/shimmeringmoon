@@ -1,0 +1,52 @@
+reply = true
+
+[[embeds]]
+title = "Last | Eternity [BYD 9+]"
+type = "rich"
+
+[embeds.thumbnail]
+url = "attachment://chart.png"
+
+[[embeds.fields]]
+name = "Note count"
+value = "790"
+inline = true
+
+[[embeds.fields]]
+name = "Chart constant"
+value = "9.7"
+inline = true
+
+[[embeds.fields]]
+name = "Total plays"
+value = "0"
+inline = true
+
+[[embeds.fields]]
+name = "BPM"
+value = "175"
+inline = true
+
+[[embeds.fields]]
+name = "Side"
+value = "silent"
+inline = true
+
+[[embeds.fields]]
+name = "Artist"
+value = "Last | Eternity"
+inline = true
+
+[[embeds.fields]]
+name = "Note design"
+value = "Arcaea"
+inline = true
+
+[[embeds.fields]]
+name = "Pack"
+value = "Silent Answer"
+inline = true
+
+[[attachments]]
+filename = "chart.png"
+hash = "sha256_572ebfbc0c4b2c515926cc3de2bcea57deee3352fe58b4574c9408e16cea9463"

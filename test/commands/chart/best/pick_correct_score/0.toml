@@ -1,0 +1,169 @@
+reply = true
+
+[[embeds]]
+title = "Fracture Ray [FTR 11]"
+type = "rich"
+
+[embeds.thumbnail]
+url = "attachment://90-9805651-0.png"
+
+[[embeds.fields]]
+name = "Score"
+value = "9'805'651"
+inline = true
+
+[[embeds.fields]]
+name = "Rating"
+value = "12.33"
+inline = true
+
+[[embeds.fields]]
+name = "Grade"
+value = "EX"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Score"
+value = "9'590'304"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Rating"
+value = "11.60"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Grade"
+value = "AA"
+inline = true
+
+[[embeds.fields]]
+name = "Status"
+value = "C (-123/-28/-11)"
+inline = true
+
+[[embeds.fields]]
+name = "Max recall"
+value = "556"
+inline = true
+
+[[embeds.fields]]
+name = "ID"
+value = "1"
+inline = true
+
+[[embeds]]
+title = "Antithese [FTR 8+]"
+type = "rich"
+
+[embeds.thumbnail]
+url = "attachment://116-9983744-1.png"
+
+[[embeds.fields]]
+name = "Score"
+value = "9'983'744"
+inline = true
+
+[[embeds.fields]]
+name = "Rating"
+value = "10.72"
+inline = true
+
+[[embeds.fields]]
+name = "Grade"
+value = "EX+"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Score"
+value = "9'920'182"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Rating"
+value = "10.40"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Grade"
+value = "EX+"
+inline = true
+
+[[embeds.fields]]
+name = "Status"
+value = "C (-27/-1/-1)"
+inline = true
+
+[[embeds.fields]]
+name = "Max recall"
+value = "479"
+inline = true
+
+[[embeds.fields]]
+name = "ID"
+value = "2"
+inline = true
+
+[[embeds]]
+title = "Fracture Ray [FTR 11]"
+type = "rich"
+
+[embeds.thumbnail]
+url = "attachment://90-9766531-2.png"
+
+[[embeds.fields]]
+name = "Score"
+value = "9'766'531"
+inline = true
+
+[[embeds.fields]]
+name = "Rating"
+value = "12.19"
+inline = true
+
+[[embeds.fields]]
+name = "Grade"
+value = "AA"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Score"
+value = "9'516'810"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Rating"
+value = "11.36"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Grade"
+value = "AA"
+inline = true
+
+[[embeds.fields]]
+name = "Status"
+value = "C (-137/-44/-8)"
+inline = true
+
+[[embeds.fields]]
+name = "Max recall"
+value = "616"
+inline = true
+
+[[embeds.fields]]
+name = "ID"
+value = "3"
+inline = true
+
+[[attachments]]
+filename = "90-9805651-0.png"
+hash = "sha256_0cc7eb587c87d1749d71e4888b62aa0c8a4bec31b34598f44b539e54498a2644"
+
+[[attachments]]
+filename = "116-9983744-1.png"
+hash = "sha256_75b03ac3392d4bcb9d377396a36708aea1298dd463c08d5d62ca1e1414bfeaef"
+
+[[attachments]]
+filename = "90-9766531-2.png"
+hash = "sha256_0cc7eb587c87d1749d71e4888b62aa0c8a4bec31b34598f44b539e54498a2644"

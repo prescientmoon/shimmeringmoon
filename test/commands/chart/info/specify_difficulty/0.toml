@@ -1,0 +1,52 @@
+reply = true
+
+[[embeds]]
+title = "HELLOHELL [ETR 9]"
+type = "rich"
+
+[embeds.thumbnail]
+url = "attachment://chart.png"
+
+[[embeds.fields]]
+name = "Note count"
+value = "770"
+inline = true
+
+[[embeds.fields]]
+name = "Chart constant"
+value = "9.4"
+inline = true
+
+[[embeds.fields]]
+name = "Total plays"
+value = "0"
+inline = true
+
+[[embeds.fields]]
+name = "BPM"
+value = "155"
+inline = true
+
+[[embeds.fields]]
+name = "Side"
+value = "conflict"
+inline = true
+
+[[embeds.fields]]
+name = "Artist"
+value = "HELLOHELL"
+inline = true
+
+[[embeds.fields]]
+name = "Note design"
+value = "eién"
+inline = true
+
+[[embeds.fields]]
+name = "Pack"
+value = "World Extend 3: Illusions"
+inline = true
+
+[[attachments]]
+filename = "chart.png"
+hash = "sha256_e00a92ba1abbcf97c7b006447867914b9d95dc4dfb039e05260d71128b60eedb"
