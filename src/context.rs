@@ -9,7 +9,6 @@ use std::sync::LazyLock;
 
 use crate::arcaea::{chart::SongCache, jacket::JacketCache};
 use crate::assets::{get_data_dir, EXO_FONT, GEOSANS_FONT, KAZESAWA_BOLD_FONT, KAZESAWA_FONT};
-use crate::commands::discord::MessageContext;
 use crate::recognition::{hyperglass::CharMeasurements, ui::UIMeasurements};
 use crate::timed;
 // }}}
@@ -46,24 +45,6 @@ macro_rules! get_user_error {
 			$crate::context::ErrorKind::Internal => Err($err.error)?,
 		}
 	}};
-}
-
-/// Handles a [TaggedError], showing user errors to the user,
-/// and throwing away anything else.
-pub async fn discord_error_handler<V>(
-	ctx: &mut impl MessageContext,
-	res: Result<V, TaggedError>,
-) -> Result<Option<V>, Error> {
-	match res {
-		Ok(v) => Ok(Some(v)),
-		Err(e) => match e.kind {
-			ErrorKind::Internal => Err(e.error),
-			ErrorKind::User => {
-				ctx.reply(&format!("{}", e.error)).await?;
-				Ok(None)
-			}
-		},
-	}
 }
 
 impl<E: Into<Error>> From<E> for TaggedError {

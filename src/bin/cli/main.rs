@@ -1,6 +1,6 @@
 use clap::Parser;
 use command::{Cli, Command};
-use shimmeringmoon::context::{Error, UserContext};
+use shimmeringmoon::context::Error;
 
 mod command;
 mod commands;

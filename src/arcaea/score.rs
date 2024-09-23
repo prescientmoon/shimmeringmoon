@@ -226,16 +226,10 @@ impl Score {
 
 		// {{{ Compute score from note breakdown subpairs
 		let pf_score = Score::compute_naive(note_count, pures, fars);
-		let fl_score = Score::compute_naive(
-			note_count,
-			note_count.checked_sub(losts + fars).unwrap_or(0),
-			fars,
-		);
-		let lp_score = Score::compute_naive(
-			note_count,
-			pures,
-			note_count.checked_sub(losts + pures).unwrap_or(0),
-		);
+		let fl_score =
+			Score::compute_naive(note_count, note_count.saturating_sub(losts + fars), fars);
+		let lp_score =
+			Score::compute_naive(note_count, pures, note_count.saturating_sub(losts + pures));
 		// }}}
 		// {{{ Look for consensus among recomputed scores
 		// Lemma: if two computed scores agree, then so will the third

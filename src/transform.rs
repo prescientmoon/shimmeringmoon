@@ -1,9 +1,11 @@
-//! This file implements the "rotation as shearing" algorithm,
-//! which can rotate images without making use of any trigonometric
-//! functions (or working with floats altogether, if you don't care
+//! This file implements the "rotation as shearing" algorithm.
+//!
+//! The algorithm can rotate images without making use of any trigonometric
+//! functions (or working with floats altogether, assuming you don't care
 //! about antialiasing).
 //!
-//! For more information, consult this article: https://www.ocf.berkeley.edu/~fricke/projects/israel/paeth/rotation_by_shearing.html
+//! For more information, consult this article:
+//! https://www.ocf.berkeley.edu/~fricke/projects/israel/paeth/rotation_by_shearing.html
 
 use image::{DynamicImage, GenericImage, GenericImageView};
 
@@ -57,7 +59,7 @@ pub fn yshear(image: &mut DynamicImage, rect: Rect, center: Position, shear: f32
 	}
 }
 
-/// Performs a rotation as a series of three shear operations
+/// Performs a rotation as a series of three shear operations.
 /// Does not perform anti-aliasing.
 pub fn rotate(image: &mut DynamicImage, rect: Rect, center: Position, angle: f32) {
 	let alpha = -f32::tan(angle / 2.0);

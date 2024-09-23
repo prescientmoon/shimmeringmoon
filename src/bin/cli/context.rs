@@ -3,10 +3,10 @@ use std::num::NonZeroU64;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use poise::serenity_prelude::{CreateAttachment, CreateMessage};
-
 extern crate shimmeringmoon;
+use poise::CreateReply;
 use shimmeringmoon::assets::get_var;
+use shimmeringmoon::commands::discord::mock::ReplyEssence;
 use shimmeringmoon::context::Error;
 use shimmeringmoon::{commands::discord::MessageContext, context::UserContext};
 // }}}
@@ -53,12 +53,8 @@ impl MessageContext for CliContext {
 		Ok(())
 	}
 
-	async fn send_files(
-		&mut self,
-		_attachments: impl IntoIterator<Item = CreateAttachment>,
-		message: CreateMessage,
-	) -> Result<(), Error> {
-		let all = toml::to_string(&message).unwrap();
+	async fn send(&mut self, message: CreateReply) -> Result<(), Error> {
+		let all = toml::to_string(&ReplyEssence::from_reply(message)).unwrap();
 		println!("\n========== Message ==========");
 		println!("{all}");
 		Ok(())

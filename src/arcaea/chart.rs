@@ -1,3 +1,4 @@
+use std::path::Path;
 // {{{ Imports
 use std::{fmt::Display, num::NonZeroU16, path::PathBuf};
 
@@ -216,7 +217,7 @@ pub struct Chart {
 
 impl Chart {
 	#[inline]
-	pub fn jacket_path(&self, data_dir: &PathBuf) -> PathBuf {
+	pub fn jacket_path(&self, data_dir: &Path) -> PathBuf {
 		data_dir
 			.join("jackets")
 			.join(format!("{}-{}.jpg", self.song_id, self.id))
@@ -241,10 +242,7 @@ impl CachedSong {
 
 	#[inline]
 	pub fn charts(&self) -> impl Iterator<Item = u32> {
-		self.chart_ids
-			.into_iter()
-			.filter_map(|i| i)
-			.map(|i| i.get() as u32)
+		self.chart_ids.into_iter().flatten().map(|i| i.get() as u32)
 	}
 }
 // }}}

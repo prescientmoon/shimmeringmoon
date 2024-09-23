@@ -122,24 +122,17 @@ impl<'a> MessageContext for poise::Context<'a, UserContext, Error> {
 pub mod mock {
 	use std::{env, fs, path::PathBuf};
 
+	use anyhow::Context;
 	use poise::serenity_prelude::CreateEmbed;
 	use serde::{Deserialize, Serialize};
 	use sha2::{Digest, Sha256};
 
 	use super::*;
 
-	/// A mock context usable for testing. Messages and attachments are
-	/// accumulated inside a vec, and can be used for golden testing
-	/// (see [MockContext::golden])
-	pub struct MockContext {
-		pub user_id: u64,
-		pub data: UserContext,
-		messages: Vec<ReplyEssence>,
-	}
-
+	// {{{ Message essences
 	/// Holds test-relevant data about an attachment.
 	#[derive(Debug, Clone, Serialize, Deserialize)]
-	struct AttachmentEssence {
+	pub struct AttachmentEssence {
 		filename: String,
 		description: Option<String>,
 		/// SHA-256 hash of the file
@@ -148,12 +141,49 @@ pub mod mock {
 
 	/// Holds test-relevant data about a reply.
 	#[derive(Debug, Clone, Serialize)]
-	struct ReplyEssence {
+	pub struct ReplyEssence {
 		reply: bool,
 		ephermal: Option<bool>,
 		content: Option<String>,
 		embeds: Vec<CreateEmbed>,
 		attachments: Vec<AttachmentEssence>,
+	}
+
+	impl ReplyEssence {
+		pub fn from_reply(message: CreateReply) -> Self {
+			ReplyEssence {
+				reply: message.reply,
+				ephermal: message.ephemeral,
+				content: message.content,
+				embeds: message.embeds,
+				attachments: message
+					.attachments
+					.into_iter()
+					.map(|attachment| AttachmentEssence {
+						filename: attachment.filename,
+						description: attachment.description,
+						hash: {
+							let hash = Sha256::digest(&attachment.data);
+							let string = base16ct::lower::encode_string(&hash);
+
+							// We allocate twice, but it's only at the end of tests,
+							// so it should be fineeeeeeee
+							format!("sha256_{string}")
+						},
+					})
+					.collect(),
+			}
+		}
+	}
+	// }}}
+	// {{{ Mock context
+	/// A mock context usable for testing. Messages and attachments are
+	/// accumulated inside a vec, and can be used for golden testing
+	/// (see [MockContext::golden])
+	pub struct MockContext {
+		pub user_id: u64,
+		pub data: UserContext,
+		messages: Vec<ReplyEssence>,
 	}
 
 	impl MockContext {
@@ -223,28 +253,7 @@ pub mod mock {
 		}
 
 		async fn send(&mut self, message: CreateReply) -> Result<(), Error> {
-			self.messages.push(ReplyEssence {
-				reply: message.reply,
-				ephermal: message.ephemeral,
-				content: message.content,
-				embeds: message.embeds,
-				attachments: message
-					.attachments
-					.into_iter()
-					.map(|attachment| AttachmentEssence {
-						filename: attachment.filename,
-						description: attachment.description,
-						hash: {
-							let hash = Sha256::digest(&attachment.data);
-							let string = base16ct::lower::encode_string(&hash);
-
-							// We allocate twice, but it's only at the end of tests,
-							// so it should be fineeeeeeee
-							format!("sha256_{string}")
-						},
-					})
-					.collect(),
-			});
+			self.messages.push(ReplyEssence::from_reply(message));
 			Ok(())
 		}
 
@@ -266,11 +275,14 @@ pub mod mock {
 		}
 
 		async fn download(&self, attachment: &Self::Attachment) -> Result<Vec<u8>, Error> {
-			let res = tokio::fs::read(attachment).await?;
+			let res = tokio::fs::read(attachment)
+				.await
+				.with_context(|| format!("Could not download attachment {attachment:?}"))?;
 			Ok(res)
 		}
 		// }}}
 	}
+	// }}}
 }
 // }}}
 // {{{ Helpers

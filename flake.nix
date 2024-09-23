@@ -13,7 +13,12 @@
     inputs.flake-utils.lib.eachSystem (with inputs.flake-utils.lib.system; [ x86_64-linux ]) (
       system:
       let
-        pkgs = inputs.nixpkgs.legacyPackages.${system}.extend (import inputs.rust-overlay);
+        pkgs = inputs.nixpkgs.legacyPackages.${system};
+        # pkgs = inputs.nixpkgs.legacyPackages.${system}.extend (import inputs.rust-overlay);
+        # pkgs = import inputs.nixpkgs {
+        #   inherit system;
+        #   overlays = [ (import inputs.rust-overlay) ];
+        # };
         # toolchain = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default);
         # toolchain = pkgs.rust-bin.stable.latest.default;
         toolchain = inputs.fenix.packages.${system}.complete.toolchain;
@@ -34,18 +39,17 @@
             };
           };
         };
-        devShell = pkgs.mkShell {
+        devShell = pkgs.mkShell rec {
           nativeBuildInputs = with pkgs; [
             toolchain
-            # ruff
-            # imagemagick
+            ruff
+            imagemagick
             pkg-config
 
             # clang
             # llvmPackages.clang
           ];
           buildInputs = with pkgs; [
-            toolchain
             freetype
             fontconfig
             leptonica
@@ -54,7 +58,7 @@
             sqlite
           ];
 
-          # LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
+          LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
 
           # compilation of -sys packages requires manually setting LIBCLANG_PATH
           # LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";

@@ -1,5 +1,4 @@
 use poise::serenity_prelude::{self as serenity};
-extern crate shimmeringmoon;
 use shimmeringmoon::arcaea::play::generate_missing_scores;
 use shimmeringmoon::context::{Error, UserContext};
 use shimmeringmoon::{commands, timed};

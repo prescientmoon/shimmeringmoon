@@ -174,9 +174,11 @@ impl BitmapCanvas {
 	}
 
 	// {{{ Draw pixel
+	#[allow(clippy::identity_op)]
 	pub fn set_pixel(&mut self, pos: (u32, u32), color: Color) {
 		let index = 3 * (pos.1 * self.width + pos.0) as usize;
 		let alpha = color.3 as u32;
+
 		self.buffer[index + 0] =
 			((alpha * color.0 as u32 + (255 - alpha) * self.buffer[index + 0] as u32) / 255) as u8;
 		self.buffer[index + 1] =
@@ -299,6 +301,7 @@ impl BitmapCanvas {
 	}
 	// }}}
 	// {{{ Draw text
+	#[allow(clippy::type_complexity)]
 	pub fn plan_text_rendering(
 		pos: Position,
 		faces: &mut [&mut Face],
@@ -490,8 +493,8 @@ impl BitmapCanvas {
 
 		for dx in 0..iw {
 			for dy in 0..ih {
-				let x = pos.0 + dx as i32 + b_glyph.left();
-				let y = pos.1 + dy as i32 - b_glyph.top();
+				let x = pos.0 + dx + b_glyph.left();
+				let y = pos.1 + dy - b_glyph.top();
 
 				// TODO: gamma correction
 				if x >= 0 && (x as u32) < self.width && y >= 0 && (y as u32) < height {
@@ -656,7 +659,7 @@ impl LayoutManager {
 
 		(
 			outer_id,
-			(0..amount.0 * amount.1).into_iter().map(move |i| {
+			(0..amount.0 * amount.1).map(move |i| {
 				let (y, x) = i.div_rem_euclid(&amount.0);
 				((x * inner.width) as i32, (y * inner.height) as i32)
 			}),
@@ -689,7 +692,7 @@ impl LayoutManager {
 	#[inline]
 	pub fn position_relative_to(&self, id: LayoutBoxId, pos: Position) -> Position {
 		let current = self.lookup(id);
-		((pos.0 as i32 + current.x), (pos.1 as i32 + current.y))
+		((pos.0 + current.x), (pos.1 + current.y))
 	}
 
 	#[inline]

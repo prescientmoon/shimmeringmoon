@@ -111,14 +111,14 @@ impl UIMeasurements {
 			let i = i % (UI_RECT_COUNT + 2);
 			if i == 0 {
 				for (j, str) in line.split_whitespace().enumerate().take(2) {
-					measurement.dimensions[j] = u32::from_str_radix(str, 10)?;
+					measurement.dimensions[j] = str.parse()?;
 				}
 			} else if i == UI_RECT_COUNT + 1 {
 				measurements.push(measurement);
 				measurement = UIMeasurement::default();
 			} else {
 				for (j, str) in line.split_whitespace().enumerate().take(4) {
-					measurement.datapoints[(i - 1) * 4 + j] = u32::from_str_radix(str, 10)?;
+					measurement.datapoints[(i - 1) * 4 + j] = str.parse()?;
 				}
 			}
 		}

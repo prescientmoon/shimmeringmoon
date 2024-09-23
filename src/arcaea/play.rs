@@ -500,7 +500,7 @@ pub fn compute_b30_ptt(scoring_system: ScoringSystem, plays: &PlayCollection<'_>
 }
 // }}}
 // {{{ Maintenance functions
-pub async fn generate_missing_scores(ctx: &UserContext) -> Result<(), TaggedError> {
+pub async fn generate_missing_scores(ctx: &UserContext) -> Result<(), Error> {
 	let conn = ctx.db.get()?;
 	let mut query = conn.prepare_cached(
 		"

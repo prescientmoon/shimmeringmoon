@@ -219,7 +219,7 @@ mod best_tests {
 
 	#[tokio::test]
 	async fn no_scores() -> Result<(), Error> {
-		with_test_ctx!("test/commands/chart/best/specify_difficulty", async |ctx| {
+		with_test_ctx!("test/commands/chart/best/no_scores", async |ctx| {
 			best_impl(ctx, "Pentiment").await?;
 			Ok(())
 		})
@@ -228,9 +228,9 @@ mod best_tests {
 	#[tokio::test]
 	async fn pick_correct_score() -> Result<(), Error> {
 		with_test_ctx!(
-			"test/commands/chart/best/last_byd",
+			"test/commands/chart/best/pick_correct_score",
 			async |ctx: &mut MockContext| {
-				magic_impl(
+				let plays = magic_impl(
 					ctx,
 					&[
 						PathBuf::from_str("test/screenshots/fracture_ray_ex.jpg")?,
@@ -243,6 +243,7 @@ mod best_tests {
 
 				let play = best_impl(ctx, "Fracture ray").await?;
 				assert_eq!(play.score(ScoringSystem::Standard).0, 9_805_651);
+				assert_eq!(plays[0], play);
 
 				Ok(())
 			}

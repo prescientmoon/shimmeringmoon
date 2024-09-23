@@ -55,6 +55,7 @@ impl ImageVec {
 			let r = (r as f64 / count).sqrt();
 			let g = (g as f64 / count).sqrt();
 			let b = (b as f64 / count).sqrt();
+			#[allow(clippy::identity_op)]
 			colors[i as usize * 3 + 0] = r as f32;
 			colors[i as usize * 3 + 1] = g as f32;
 			colors[i as usize * 3 + 2] = b as f32;

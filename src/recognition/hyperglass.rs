@@ -1,7 +1,8 @@
-//! Hyperglass is my own specialized OCR system, created as a result of my
-//! annoyance with how unreliable tesseract is. Assuming we know the font,
-//! OCR should be almost perfect, even when faced with stange kerning. This is
-//! what this module achieves!
+//! Hyperglass is my own specialized OCR system.
+//!
+//! Hyperglass was created as a result of my annoyance with how unreliable
+//! tesseract is. Assuming we know the font, OCR should be almost perfect,
+//! even when faced with stange kerning. This is what this module achieves!
 //!
 //! The algorithm is pretty simple:
 //! 1. Find the connected components (i.e., "black areas") in the image.
@@ -202,10 +203,7 @@ impl ComponentsWithBounds {
 		for bound in &mut bounds {
 			if bound.map_or(false, |b| {
 				(b.x_max - b.x_min) as f32 >= max_sizes.0 * image.width() as f32
-			}) {
-				*bound = None;
-			} else if bound.map_or(false, |b| {
-				(b.y_max - b.y_min) as f32 >= max_sizes.1 * image.height() as f32
+					|| (b.y_max - b.y_min) as f32 >= max_sizes.1 * image.height() as f32
 			}) {
 				*bound = None;
 			}
@@ -249,14 +247,14 @@ impl CharMeasurements {
 			weight,
 		};
 		let padding = (5, 5);
-		let planned = BitmapCanvas::plan_text_rendering(padding, &mut [face], style, &string)?;
+		let planned = BitmapCanvas::plan_text_rendering(padding, &mut [face], style, string)?;
 
 		let mut canvas = BitmapCanvas::new(
 			(planned.0 .0) as u32 + planned.1.width + 2 * padding.0 as u32,
 			(planned.0 .1) as u32 + planned.1.height + 2 * padding.0 as u32,
 		);
 
-		canvas.text(padding, &mut [face], style, &string)?;
+		canvas.text(padding, &mut [face], style, string)?;
 		let buffer = ImageBuffer::from_raw(canvas.width, canvas.height(), canvas.buffer.to_vec())
 			.ok_or_else(|| anyhow!("Failed to turn buffer into canvas"))?;
 		let image = DynamicImage::ImageRgb8(buffer);
