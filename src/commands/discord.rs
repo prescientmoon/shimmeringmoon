@@ -5,6 +5,7 @@ use std::str::FromStr;
 use poise::serenity_prelude::futures::future::join_all;
 use poise::serenity_prelude::{CreateAttachment, CreateEmbed};
 use poise::CreateReply;
+use tokio::sync::Mutex;
 
 use crate::arcaea::play::Play;
 use crate::context::{Error, ErrorKind, TaggedError, UserContext};
@@ -33,18 +34,24 @@ pub trait MessageContext {
 	fn filename(attachment: &Self::Attachment) -> &str;
 	fn attachment_id(attachment: &Self::Attachment) -> NonZeroU64;
 
-	/// Downloads a single file
-	async fn download(&self, attachment: &Self::Attachment) -> Result<Vec<u8>, Error>;
+	/// Downloads a single file.
+	///
+	/// This takes a mutex, as downloads are often done in parallel.
+	async fn download(
+		mutex: &tokio::sync::Mutex<&mut Self>,
+		attachment: &Self::Attachment,
+	) -> Result<Vec<u8>, Error>;
 
 	/// Downloads every image
 	async fn download_images<'a>(
-		&self,
+		&mut self,
 		attachments: &'a [Self::Attachment],
 	) -> Result<Vec<(&'a Self::Attachment, Vec<u8>)>, Error> {
+		let mutex = &Mutex::new(self);
 		let download_tasks = attachments
 			.iter()
 			.filter(|file| Self::is_image(file))
-			.map(|file| async move { (file, self.download(file).await) });
+			.map(|file| async move { (file, Self::download(mutex, file).await) });
 
 		let downloaded = timed!("dowload_files", { join_all(download_tasks).await });
 		downloaded
@@ -111,7 +118,10 @@ impl<'a> MessageContext for poise::Context<'a, UserContext, Error> {
 		attachment.dimensions().is_some()
 	}
 
-	async fn download(&self, attachment: &Self::Attachment) -> Result<Vec<u8>, Error> {
+	async fn download(
+		_mutex: &tokio::sync::Mutex<&mut Self>,
+		attachment: &Self::Attachment,
+	) -> Result<Vec<u8>, Error> {
 		let res = poise::serenity_prelude::Attachment::download(attachment).await?;
 		Ok(res)
 	}
@@ -120,9 +130,12 @@ impl<'a> MessageContext for poise::Context<'a, UserContext, Error> {
 // }}}
 // {{{ Testing context
 pub mod mock {
-	use std::{env, fs, path::PathBuf};
+	use std::{
+		env, fs,
+		path::{Path, PathBuf},
+	};
 
-	use anyhow::Context;
+	use anyhow::{anyhow, Context};
 	use poise::serenity_prelude::CreateEmbed;
 	use serde::{Deserialize, Serialize};
 	use sha2::{Digest, Sha256};
@@ -137,6 +150,23 @@ pub mod mock {
 		description: Option<String>,
 		/// SHA-256 hash of the file
 		hash: String,
+	}
+
+	impl AttachmentEssence {
+		pub fn new(filename: String, description: Option<String>, data: &[u8]) -> Self {
+			Self {
+				filename,
+				description,
+				hash: {
+					let hash = Sha256::digest(data);
+					let string = base16ct::lower::encode_string(&hash);
+
+					// We allocate twice, but it's only for testing,
+					// so it should be fineeeeeeee
+					format!("sha256_{string}")
+				},
+			}
+		}
 	}
 
 	/// Holds test-relevant data about a reply.
@@ -159,17 +189,12 @@ pub mod mock {
 				attachments: message
 					.attachments
 					.into_iter()
-					.map(|attachment| AttachmentEssence {
-						filename: attachment.filename,
-						description: attachment.description,
-						hash: {
-							let hash = Sha256::digest(&attachment.data);
-							let string = base16ct::lower::encode_string(&hash);
-
-							// We allocate twice, but it's only at the end of tests,
-							// so it should be fineeeeeeee
-							format!("sha256_{string}")
-						},
+					.map(|attachment| {
+						AttachmentEssence::new(
+							attachment.filename,
+							attachment.description,
+							&attachment.data,
+						)
 					})
 					.collect(),
 			}
@@ -179,11 +204,16 @@ pub mod mock {
 	// {{{ Mock context
 	/// A mock context usable for testing. Messages and attachments are
 	/// accumulated inside a vec, and can be used for golden testing
-	/// (see [MockContext::golden])
+	/// (see [MockContext::golden]).
+	///
+	/// Moreover, downloaded attachment hashes are tracked so changes
+	/// to the input files require the test data to be regenerated.
 	pub struct MockContext {
 		pub user_id: u64,
 		pub data: UserContext,
+
 		messages: Vec<ReplyEssence>,
+		downloaded_files: Vec<AttachmentEssence>,
 	}
 
 	impl MockContext {
@@ -192,6 +222,7 @@ pub mod mock {
 				data,
 				user_id: 666,
 				messages: vec![],
+				downloaded_files: vec![],
 			}
 		}
 
@@ -210,17 +241,27 @@ pub mod mock {
 			}
 
 			fs::create_dir_all(path)?;
-			for (i, message) in self.messages.iter().enumerate() {
-				let message_file = path.join(format!("{i}.toml"));
 
-				if message_file.exists() {
-					assert_eq!(
-						toml::to_string_pretty(message)?,
-						fs::read_to_string(message_file)?
-					);
-				} else {
-					fs::write(&message_file, toml::to_string_pretty(message)?)?;
-				}
+			for (i, attachment) in self.downloaded_files.iter().enumerate() {
+				let file = path.join(format!("in_{i}.toml"));
+				Self::golden_impl(&file, &attachment)?;
+			}
+
+			for (i, message) in self.messages.iter().enumerate() {
+				let file = path.join(format!("out_{i}.toml"));
+				Self::golden_impl(&file, message)?;
+			}
+
+			Ok(())
+		}
+
+		/// Runs the golden testing logic for a single file.
+		/// See [Self::golden] for more details.
+		fn golden_impl(path: &Path, message: &impl Serialize) -> Result<(), Error> {
+			if path.exists() {
+				assert_eq!(toml::to_string_pretty(message)?, fs::read_to_string(path)?);
+			} else {
+				fs::write(path, toml::to_string_pretty(message)?)?;
 			}
 
 			Ok(())
@@ -274,10 +315,24 @@ pub mod mock {
 			NonZeroU64::new(666).unwrap()
 		}
 
-		async fn download(&self, attachment: &Self::Attachment) -> Result<Vec<u8>, Error> {
+		async fn download(
+			mutex: &tokio::sync::Mutex<&mut Self>,
+			attachment: &Self::Attachment,
+		) -> Result<Vec<u8>, Error> {
 			let res = tokio::fs::read(attachment)
 				.await
 				.with_context(|| format!("Could not download attachment {attachment:?}"))?;
+
+			let mut guard = mutex.lock().await;
+			guard.downloaded_files.push(AttachmentEssence::new(
+				attachment
+					.to_str()
+					.ok_or_else(|| anyhow!("Download path contains invalid unicode"))?
+					.to_owned(),
+				None,
+				&res,
+			));
+
 			Ok(res)
 		}
 		// }}}

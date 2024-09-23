@@ -2,6 +2,7 @@
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::redundant_closure)]
 #![feature(iter_map_windows)]
+#![feature(anonymous_lifetime_in_impl_trait)]
 #![feature(let_chains)]
 #![feature(array_try_map)]
 #![feature(async_closure)]

@@ -77,7 +77,10 @@ impl MessageContext for CliContext {
 		NonZeroU64::new(666).unwrap()
 	}
 
-	async fn download(&self, attachment: &Self::Attachment) -> Result<Vec<u8>, Error> {
+	async fn download(
+		_mutex: &tokio::sync::Mutex<&mut Self>,
+		attachment: &Self::Attachment,
+	) -> Result<Vec<u8>, Error> {
 		let res = tokio::fs::read(attachment).await?;
 		Ok(res)
 	}
