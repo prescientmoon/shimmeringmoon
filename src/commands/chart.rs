@@ -1,11 +1,11 @@
-// {{{ Imports
 use anyhow::anyhow;
-use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage};
+// {{{ Imports
+use poise::serenity_prelude::{CreateAttachment, CreateEmbed};
 
 use crate::arcaea::{chart::Side, play::Play};
-use crate::context::{Context, Error};
-use crate::get_user;
+use crate::context::{Context, Error, ErrorKind, TagError, TaggedError};
 use crate::recognition::fuzzy_song_name::guess_song_and_chart;
+use crate::user::User;
 use std::io::Cursor;
 
 use chrono::DateTime;
@@ -20,7 +20,7 @@ use poise::CreateReply;
 
 use crate::arcaea::score::{Score, ScoringSystem};
 
-use super::discord::MessageContext;
+use super::discord::{CreateReplyExtra, MessageContext};
 // }}}
 
 // {{{ Top command
@@ -37,14 +37,13 @@ pub async fn chart(_ctx: Context<'_>) -> Result<(), Error> {
 // }}}
 // {{{ Info
 // {{{ Implementation
-async fn info_impl(ctx: &mut impl MessageContext, name: &str) -> Result<(), Error> {
-	let (song, chart) = guess_song_and_chart(&ctx.data(), name)?;
+async fn info_impl(ctx: &mut impl MessageContext, name: &str) -> Result<(), TaggedError> {
+	let (song, chart) = guess_song_and_chart(ctx.data(), name)?;
 
 	let attachement_name = "chart.png";
-	let icon_attachement = match chart.cached_jacket.as_ref() {
-		Some(jacket) => Some(CreateAttachment::bytes(jacket.raw, attachement_name)),
-		None => None,
-	};
+	let icon_attachement = chart
+		.cached_jacket
+		.map(|jacket| CreateAttachment::bytes(jacket.raw, attachement_name));
 
 	let play_count: usize = ctx
 		.data()
@@ -57,7 +56,8 @@ async fn info_impl(ctx: &mut impl MessageContext, name: &str) -> Result<(), Erro
         WHERE chart_id=?
       ",
 		)?
-		.query_row([chart.id], |row| row.get(0))?;
+		.query_row([chart.id], |row| row.get(0))
+		.unwrap_or(0);
 
 	let mut embed = CreateEmbed::default()
 		.title(format!(
@@ -87,8 +87,13 @@ async fn info_impl(ctx: &mut impl MessageContext, name: &str) -> Result<(), Erro
 		embed = embed.thumbnail(format!("attachment://{}", &attachement_name));
 	}
 
-	ctx.send_files(icon_attachement, CreateMessage::new().embed(embed))
-		.await?;
+	ctx.send(
+		CreateReply::default()
+			.reply(true)
+			.embed(embed)
+			.attachments(icon_attachement),
+	)
+	.await?;
 
 	Ok(())
 }
@@ -138,24 +143,19 @@ async fn info(
 	#[description = "Name of chart to show (difficulty at the end)"]
 	name: String,
 ) -> Result<(), Error> {
-	info_impl(&mut ctx, &name).await?;
+	let res = info_impl(&mut ctx, &name).await;
+	ctx.handle_error(res).await?;
 
 	Ok(())
 }
 // }}}
 // }}}
 // {{{ Best score
-/// Show the best score on a given chart
-#[poise::command(prefix_command, slash_command, user_cooldown = 1)]
-async fn best(
-	mut ctx: Context<'_>,
-	#[rest]
-	#[description = "Name of chart to show (difficulty at the end)"]
-	name: String,
-) -> Result<(), Error> {
-	let user = get_user!(&mut ctx);
+// {{{ Implementation
+async fn best_impl<C: MessageContext>(ctx: &mut C, name: &str) -> Result<Play, TaggedError> {
+	let user = User::from_context(ctx)?;
 
-	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
+	let (song, chart) = guess_song_and_chart(ctx.data(), name)?;
 	let play = ctx
 		.data()
 		.db
@@ -181,6 +181,7 @@ async fn best(
 				song.title,
 				chart.difficulty
 			)
+			.tag(ErrorKind::User)
 		})?;
 
 	let (embed, attachment) = play.to_embed(
@@ -192,27 +193,91 @@ async fn best(
 		Some(&ctx.fetch_user(&user.discord_id).await?),
 	)?;
 
-	ctx.channel_id()
-		.send_files(ctx.http(), attachment, CreateMessage::new().embed(embed))
-		.await?;
+	ctx.send(
+		CreateReply::default()
+			.reply(true)
+			.embed(embed)
+			.attachments(attachment),
+	)
+	.await?;
 
-	Ok(())
+	Ok(play)
 }
 // }}}
-// {{{ Score plot
+// {{{ Tests
+// {{{ Tests
+#[cfg(test)]
+mod best_tests {
+	use std::path::PathBuf;
+
+	use crate::{
+		commands::{discord::mock::MockContext, score::magic_impl},
+		with_test_ctx,
+	};
+
+	use super::*;
+
+	#[tokio::test]
+	async fn no_scores() -> Result<(), Error> {
+		with_test_ctx!("test/commands/chart/best/specify_difficulty", async |ctx| {
+			best_impl(ctx, "Pentiment").await?;
+			Ok(())
+		})
+	}
+
+	#[tokio::test]
+	async fn pick_correct_score() -> Result<(), Error> {
+		with_test_ctx!(
+			"test/commands/chart/best/last_byd",
+			async |ctx: &mut MockContext| {
+				magic_impl(
+					ctx,
+					&[
+						PathBuf::from_str("test/screenshots/fracture_ray_ex.jpg")?,
+						// Make sure we aren't considering higher scores from other stuff
+						PathBuf::from_str("test/screenshots/antithese_74_kerning.jpg")?,
+						PathBuf::from_str("test/screenshots/fracture_ray_missed_ex.jpg")?,
+					],
+				)
+				.await?;
+
+				let play = best_impl(ctx, "Fracture ray").await?;
+				assert_eq!(play.score(ScoringSystem::Standard).0, 9_805_651);
+
+				Ok(())
+			}
+		)
+	}
+}
+// }}}
+// }}}
+// {{{ Discord wrapper
 /// Show the best score on a given chart
-#[poise::command(prefix_command, slash_command, user_cooldown = 10)]
-async fn plot(
+#[poise::command(prefix_command, slash_command, user_cooldown = 1)]
+async fn best(
 	mut ctx: Context<'_>,
-	scoring_system: Option<ScoringSystem>,
 	#[rest]
 	#[description = "Name of chart to show (difficulty at the end)"]
 	name: String,
 ) -> Result<(), Error> {
-	let user = get_user!(&mut ctx);
+	let res = best_impl(&mut ctx, &name).await;
+	ctx.handle_error(res).await?;
+
+	Ok(())
+}
+// }}}
+// }}}
+// {{{ Score plot
+// {{{ Implementation
+async fn plot_impl<C: MessageContext>(
+	ctx: &mut C,
+	scoring_system: Option<ScoringSystem>,
+	name: String,
+) -> Result<(), TaggedError> {
+	let user = User::from_context(ctx)?;
 	let scoring_system = scoring_system.unwrap_or_default();
 
-	let (song, chart) = guess_song_and_chart(&ctx.data(), &name)?;
+	let (song, chart) = guess_song_and_chart(ctx.data(), &name)?;
 
 	// SAFETY: we limit the amount of plotted plays to 1000.
 	let plays = ctx
@@ -236,13 +301,11 @@ async fn plot(
 		.query_map((user.id, chart.id), |row| Play::from_sql(chart, row))?
 		.collect::<Result<Vec<_>, _>>()?;
 
-	if plays.len() == 0 {
-		ctx.reply(format!(
-			"No plays found on {} [{:?}]",
-			song.title, chart.difficulty
-		))
-		.await?;
-		return Ok(());
+	if plays.is_empty() {
+		return Err(
+			anyhow!("No plays found on {} [{:?}]", song.title, chart.difficulty)
+				.tag(ErrorKind::User),
+		);
 	}
 
 	let min_time = plays.iter().map(|p| p.created_at).min().unwrap();
@@ -255,7 +318,7 @@ async fn plot(
 		.0 as i64;
 
 	if min_score > 9_900_000 {
-		min_score = 9_800_000;
+		min_score = 9_900_000;
 	} else if min_score > 9_800_000 {
 		min_score = 9_800_000;
 	} else if min_score > 9_500_000 {
@@ -331,9 +394,28 @@ async fn plot(
 	let mut cursor = Cursor::new(&mut buffer);
 	image.write_to(&mut cursor, image::ImageFormat::Png)?;
 
-	let reply = CreateReply::default().attachment(CreateAttachment::bytes(buffer, "plot.png"));
+	let reply = CreateReply::default()
+		.reply(true)
+		.attachment(CreateAttachment::bytes(buffer, "plot.png"));
 	ctx.send(reply).await?;
 
 	Ok(())
 }
+// }}}
+// {{{ Discord wrapper
+/// Show the best score on a given chart
+#[poise::command(prefix_command, slash_command, user_cooldown = 10)]
+async fn plot(
+	mut ctx: Context<'_>,
+	scoring_system: Option<ScoringSystem>,
+	#[rest]
+	#[description = "Name of chart to show (difficulty at the end)"]
+	name: String,
+) -> Result<(), Error> {
+	let res = plot_impl(&mut ctx, scoring_system, name).await;
+	ctx.handle_error(res).await?;
+
+	Ok(())
+}
+// }}}
 // }}}

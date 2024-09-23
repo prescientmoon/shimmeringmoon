@@ -5,11 +5,11 @@ use std::io::{stdout, Write};
 use anyhow::{anyhow, bail, Context};
 use image::imageops::FilterType;
 
-use crate::arcaea::chart::{Difficulty, SongCache};
-use crate::arcaea::jacket::{ImageVec, BITMAP_IMAGE_SIZE};
-use crate::assets::{get_asset_dir, get_data_dir};
-use crate::context::{connect_db, Error};
-use crate::recognition::fuzzy_song_name::guess_chart_name;
+use shimmeringmoon::arcaea::chart::{Difficulty, SongCache};
+use shimmeringmoon::arcaea::jacket::{ImageVec, BITMAP_IMAGE_SIZE};
+use shimmeringmoon::assets::{get_asset_dir, get_data_dir};
+use shimmeringmoon::context::{connect_db, Error};
+use shimmeringmoon::recognition::fuzzy_song_name::guess_chart_name;
 // }}}
 
 /// Hacky function which clears the current line of the standard output.

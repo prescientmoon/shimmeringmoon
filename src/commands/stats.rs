@@ -18,10 +18,11 @@ use crate::assets::{
 	TOP_BACKGROUND,
 };
 use crate::bitmap::{Align, BitmapCanvas, Color, LayoutDrawer, LayoutManager, Rect};
-use crate::context::{Context, Error};
+use crate::context::{Context, Error, TaggedError};
 use crate::logs::debug_image_log;
 use crate::user::User;
-use crate::{assert_is_pookie, get_user, reply_errors, timed};
+
+use super::discord::MessageContext;
 // }}}
 
 // {{{ Stats
@@ -37,31 +38,26 @@ pub async fn stats(_ctx: Context<'_>) -> Result<(), Error> {
 }
 // }}}
 // {{{ Render best plays
-async fn best_plays(
-	ctx: &mut Context<'_>,
+async fn best_plays<C: MessageContext>(
+	ctx: &mut C,
 	user: &User,
 	scoring_system: ScoringSystem,
 	grid_size: (u32, u32),
 	require_full: bool,
-) -> Result<(), Error> {
+) -> Result<(), TaggedError> {
 	let user_ctx = ctx.data();
-	let plays = reply_errors!(
-		ctx,
-		timed!("get_best_plays", {
-			get_best_plays(
-				user_ctx,
-				user.id,
-				scoring_system,
-				if require_full {
-					grid_size.0 * grid_size.1
-				} else {
-					grid_size.0 * (grid_size.1.max(1) - 1) + 1
-				} as usize,
-				(grid_size.0 * grid_size.1) as usize,
-				None,
-			)?
-		})
-	);
+	let plays = get_best_plays(
+		user_ctx,
+		user.id,
+		scoring_system,
+		if require_full {
+			grid_size.0 * grid_size.1
+		} else {
+			grid_size.0 * (grid_size.1.max(1) - 1) + 1
+		} as usize,
+		(grid_size.0 * grid_size.1) as usize,
+		None,
+	)?;
 
 	// {{{ Layout
 	let mut layout = LayoutManager::default();
@@ -132,7 +128,7 @@ async fn best_plays(
 		let bg_center = Rect::from_image(bg).center();
 
 		// Draw background
-		drawer.blit_rbga(item_area, (-8, jacket_margin as i32), bg);
+		drawer.blit_rbga(item_area, (-8, jacket_margin), bg);
 		with_font(&EXO_FONT, |faces| {
 			drawer.text(
 				item_area,
@@ -420,20 +416,49 @@ async fn best_plays(
 }
 // }}}
 // {{{ B30
+// {{{ Implementation
+pub async fn b30_impl<C: MessageContext>(
+	ctx: &mut C,
+	scoring_system: Option<ScoringSystem>,
+) -> Result<(), TaggedError> {
+	let user = User::from_context(ctx)?;
+	best_plays(ctx, &user, scoring_system.unwrap_or_default(), (5, 6), true).await?;
+	Ok(())
+}
+// }}}
+// {{{ Discord wrapper
 /// Show the 30 best scores
 #[poise::command(prefix_command, slash_command, user_cooldown = 30)]
 pub async fn b30(mut ctx: Context<'_>, scoring_system: Option<ScoringSystem>) -> Result<(), Error> {
-	let user = get_user!(&mut ctx);
+	let res = b30_impl(&mut ctx, scoring_system).await;
+	ctx.handle_error(res).await?;
+	Ok(())
+}
+// }}}
+// }}}
+// {{{ B-any
+// {{{ Implementation
+async fn bany_impl<C: MessageContext>(
+	ctx: &mut C,
+	scoring_system: Option<ScoringSystem>,
+	width: u32,
+	height: u32,
+) -> Result<(), TaggedError> {
+	let user = User::from_context(ctx)?;
+	user.assert_is_pookie()?;
 	best_plays(
-		&mut ctx,
+		ctx,
 		&user,
 		scoring_system.unwrap_or_default(),
-		(5, 6),
-		true,
+		(width, height),
+		false,
 	)
-	.await
-}
+	.await?;
 
+	Ok(())
+}
+// }}}
+// {{{ Discord wrapper
 #[poise::command(prefix_command, slash_command, hide_in_help, global_cooldown = 5)]
 pub async fn bany(
 	mut ctx: Context<'_>,
@@ -441,23 +466,16 @@ pub async fn bany(
 	width: u32,
 	height: u32,
 ) -> Result<(), Error> {
-	let user = get_user!(&mut ctx);
-	assert_is_pookie!(ctx, user);
-	best_plays(
-		&mut ctx,
-		&user,
-		scoring_system.unwrap_or_default(),
-		(width, height),
-		false,
-	)
-	.await
+	let res = bany_impl(&mut ctx, scoring_system, width, height).await;
+	ctx.handle_error(res).await?;
+	Ok(())
 }
 // }}}
+// }}}
 // {{{ Meta
-/// Show stats about the bot itself.
-#[poise::command(prefix_command, slash_command, user_cooldown = 1)]
-async fn meta(mut ctx: Context<'_>) -> Result<(), Error> {
-	let user = get_user!(&mut ctx);
+// {{{ Implementation
+async fn meta_impl<C: MessageContext>(ctx: &mut C) -> Result<(), TaggedError> {
+	let user = User::from_context(ctx)?;
 	let conn = ctx.data().db.get()?;
 	let song_count: usize = conn
 		.prepare_cached("SELECT count() as count FROM songs")?
@@ -504,8 +522,10 @@ async fn meta(mut ctx: Context<'_>) -> Result<(), Error> {
 		.field("Plays", format!("{play_count}"), true)
 		.field("Your plays", format!("{your_play_count}"), true);
 
-	ctx.send(CreateReply::default().embed(embed)).await?;
+	ctx.send(CreateReply::default().reply(true).embed(embed))
+		.await?;
 
+	// TODO: remove once achivement system is implemented
 	println!(
 		"{:?}",
 		GoalStats::make(ctx.data(), &user, ScoringSystem::Standard).await?
@@ -513,4 +533,15 @@ async fn meta(mut ctx: Context<'_>) -> Result<(), Error> {
 
 	Ok(())
 }
+// }}}
+// {{{ Discord wrapper
+/// Show stats about the bot itself.
+#[poise::command(prefix_command, slash_command, user_cooldown = 1)]
+async fn meta(mut ctx: Context<'_>) -> Result<(), Error> {
+	let res = meta_impl(&mut ctx).await;
+	ctx.handle_error(res).await?;
+
+	Ok(())
+}
+// }}}
 // }}}

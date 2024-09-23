@@ -9,6 +9,7 @@ use std::sync::LazyLock;
 
 use crate::arcaea::{chart::SongCache, jacket::JacketCache};
 use crate::assets::{get_data_dir, EXO_FONT, GEOSANS_FONT, KAZESAWA_BOLD_FONT, KAZESAWA_FONT};
+use crate::commands::discord::MessageContext;
 use crate::recognition::{hyperglass::CharMeasurements, ui::UIMeasurements};
 use crate::timed;
 // }}}
@@ -16,6 +17,70 @@ use crate::timed;
 // {{{ Common types
 pub type Error = anyhow::Error;
 pub type Context<'a> = poise::Context<'a, UserContext, Error>;
+// }}}
+// {{{ Error handling
+#[derive(Debug, Clone, Copy)]
+pub enum ErrorKind {
+	User,
+	Internal,
+}
+
+#[derive(Debug)]
+pub struct TaggedError {
+	pub kind: ErrorKind,
+	pub error: Error,
+}
+
+impl TaggedError {
+	#[inline]
+	pub fn new(kind: ErrorKind, error: Error) -> Self {
+		Self { kind, error }
+	}
+}
+
+#[macro_export]
+macro_rules! get_user_error {
+	($err:expr) => {{
+		match $err.kind {
+			$crate::context::ErrorKind::User => $err.error,
+			$crate::context::ErrorKind::Internal => Err($err.error)?,
+		}
+	}};
+}
+
+/// Handles a [TaggedError], showing user errors to the user,
+/// and throwing away anything else.
+pub async fn discord_error_handler<V>(
+	ctx: &mut impl MessageContext,
+	res: Result<V, TaggedError>,
+) -> Result<Option<V>, Error> {
+	match res {
+		Ok(v) => Ok(Some(v)),
+		Err(e) => match e.kind {
+			ErrorKind::Internal => Err(e.error),
+			ErrorKind::User => {
+				ctx.reply(&format!("{}", e.error)).await?;
+				Ok(None)
+			}
+		},
+	}
+}
+
+impl<E: Into<Error>> From<E> for TaggedError {
+	fn from(value: E) -> Self {
+		Self::new(ErrorKind::Internal, value.into())
+	}
+}
+
+pub trait TagError {
+	fn tag(self, tag: ErrorKind) -> TaggedError;
+}
+
+impl TagError for Error {
+	fn tag(self, tag: ErrorKind) -> TaggedError {
+		TaggedError::new(tag, self)
+	}
+}
 // }}}
 // {{{ DB connection
 pub type DbConnection = r2d2::Pool<SqliteConnectionManager>;
@@ -106,7 +171,7 @@ pub mod testing {
 		.await
 	}
 
-	pub fn import_songs_and_jackets_from(to: &Path) -> () {
+	pub fn import_songs_and_jackets_from(to: &Path) {
 		let out = std::process::Command::new("scripts/copy-chart-info.sh")
 			.arg(get_data_dir())
 			.arg(to)
@@ -124,16 +189,17 @@ pub mod testing {
 		($test_path:expr, $f:expr) => {{
 			use std::str::FromStr;
 
-			let mut data = (*crate::context::testing::get_shared_context().await).clone();
+			let mut data = (*$crate::context::testing::get_shared_context().await).clone();
 			let dir = tempfile::tempdir()?;
-			data.db = crate::context::connect_db(dir.path());
-			crate::context::testing::import_songs_and_jackets_from(dir.path());
+			data.db = $crate::context::connect_db(dir.path());
+			$crate::context::testing::import_songs_and_jackets_from(dir.path());
 
-			let mut ctx = crate::commands::discord::mock::MockContext::new(data);
-			crate::user::User::create_from_context(&ctx)?;
+			let mut ctx = $crate::commands::discord::mock::MockContext::new(data);
+			let res = $crate::user::User::create_from_context(&ctx);
+			ctx.handle_error(res).await?;
 
-			let res: Result<(), Error> = $f(&mut ctx).await;
-			res?;
+			let res: Result<(), $crate::context::TaggedError> = $f(&mut ctx).await;
+			ctx.handle_error(res).await?;
 
 			ctx.golden(&std::path::PathBuf::from_str($test_path)?)?;
 			Ok(())

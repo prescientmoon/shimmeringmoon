@@ -1,9 +1,9 @@
 // {{{ Imports
 use std::path::PathBuf;
 
-use crate::cli::context::CliContext;
-use crate::commands::score::magic_impl;
-use crate::context::{Error, UserContext};
+use crate::context::CliContext;
+use shimmeringmoon::commands::score::magic_impl;
+use shimmeringmoon::context::{Error, UserContext};
 // }}}
 
 #[derive(clap::Args)]

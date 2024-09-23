@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use rusqlite::Row;
 
 use crate::commands::discord::MessageContext;
-use crate::context::{Error, UserContext};
+use crate::context::{ErrorKind, TagError, TaggedError, UserContext};
 
 #[derive(Debug, Clone)]
 pub struct User {
@@ -13,7 +13,7 @@ pub struct User {
 
 impl User {
 	#[inline]
-	fn from_row<'a, 'b>(row: &'a Row<'b>) -> Result<Self, rusqlite::Error> {
+	fn from_row(row: &Row<'_>) -> Result<Self, rusqlite::Error> {
 		Ok(Self {
 			id: row.get("id")?,
 			discord_id: row.get("discord_id")?,
@@ -21,7 +21,7 @@ impl User {
 		})
 	}
 
-	pub fn create_from_context(ctx: &impl MessageContext) -> Result<Self, Error> {
+	pub fn create_from_context(ctx: &impl MessageContext) -> Result<Self, TaggedError> {
 		let discord_id = ctx.author_id().to_string();
 		let user_id: u32 = ctx
 			.data()
@@ -35,7 +35,7 @@ impl User {
 			)?
 			.query_map([&discord_id], |row| row.get("id"))?
 			.next()
-			.ok_or_else(|| anyhow!("Failed to create user"))??;
+			.ok_or_else(|| anyhow!("No id returned from user creation"))??;
 
 		Ok(Self {
 			discord_id,
@@ -44,7 +44,7 @@ impl User {
 		})
 	}
 
-	pub fn from_context(ctx: &impl MessageContext) -> Result<Self, Error> {
+	pub fn from_context(ctx: &impl MessageContext) -> Result<Self, TaggedError> {
 		let id = ctx.author_id();
 		let user = ctx
 			.data()
@@ -53,20 +53,35 @@ impl User {
 			.prepare_cached("SELECT * FROM users WHERE discord_id = ?")?
 			.query_map([id], Self::from_row)?
 			.next()
-			.ok_or_else(|| anyhow!("You are not an user in my database, sowwy ^~^"))??;
+			.ok_or_else(|| {
+				anyhow!("You are not an user in my database, sowwy ^~^").tag(ErrorKind::User)
+			})??;
 
 		Ok(user)
 	}
 
-	pub fn by_id(ctx: &UserContext, id: u32) -> Result<Self, Error> {
+	pub fn by_id(ctx: &UserContext, id: u32) -> Result<Self, TaggedError> {
 		let user = ctx
 			.db
 			.get()?
 			.prepare_cached("SELECT * FROM users WHERE id = ?")?
 			.query_map([id], Self::from_row)?
 			.next()
-			.ok_or_else(|| anyhow!("You are not an user in my database, sowwy ^~^"))??;
+			.ok_or_else(|| {
+				anyhow!("You are not an user in my database, sowwy ^~^").tag(ErrorKind::User)
+			})??;
 
 		Ok(user)
+	}
+
+	#[inline]
+	pub fn assert_is_pookie(&self) -> Result<(), TaggedError> {
+		if !self.is_pookie {
+			return Err(
+				anyhow!("This feature is reserved for my pookies. Sowwy :3").tag(ErrorKind::User)
+			);
+		}
+
+		Ok(())
 	}
 }

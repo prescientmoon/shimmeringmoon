@@ -10,37 +10,3 @@ macro_rules! edit_reply {
         $handle.edit($ctx, edited)
     }};
 }
-
-#[macro_export]
-macro_rules! get_user {
-	($ctx:expr) => {{
-		crate::reply_errors!($ctx, crate::user::User::from_context($ctx))
-	}};
-}
-
-#[macro_export]
-macro_rules! assert_is_pookie {
-	($ctx:expr, $user:expr) => {{
-		if !$user.is_pookie {
-			$ctx.reply("This feature is reserved for my pookies. Sowwy :3")
-				.await?;
-			return Ok(());
-		}
-	}};
-}
-
-#[macro_export]
-macro_rules! reply_errors {
-	($ctx:expr, $default:expr, $value:expr) => {
-		match $value {
-			Ok(v) => v,
-			Err(err) => {
-				crate::commands::discord::MessageContext::reply($ctx, &format!("{err}")).await?;
-				return Ok($default);
-			}
-		}
-	};
-	($ctx:expr, $value:expr) => {
-		crate::reply_errors!($ctx, Default::default(), $value)
-	};
-}

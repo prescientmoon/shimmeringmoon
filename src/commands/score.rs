@@ -1,16 +1,15 @@
 // {{{ Imports
 use crate::arcaea::play::{CreatePlay, Play};
 use crate::arcaea::score::Score;
-use crate::context::{Context, Error};
+use crate::context::{Context, Error, ErrorKind, TagError, TaggedError};
 use crate::recognition::recognize::{ImageAnalyzer, ScoreKind};
 use crate::user::User;
-use crate::{get_user, timed};
+use crate::{get_user_error, timed};
 use anyhow::anyhow;
 use image::DynamicImage;
-use poise::serenity_prelude as serenity;
-use poise::serenity_prelude::CreateMessage;
+use poise::{serenity_prelude as serenity, CreateReply};
 
-use super::discord::MessageContext;
+use super::discord::{CreateReplyExtra, MessageContext};
 // }}}
 
 // {{{ Score
@@ -30,13 +29,12 @@ pub async fn score(_ctx: Context<'_>) -> Result<(), Error> {
 pub async fn magic_impl<C: MessageContext>(
 	ctx: &mut C,
 	files: &[C::Attachment],
-) -> Result<Vec<Play>, Error> {
-	let user = get_user!(ctx);
-	let files = ctx.download_images(&files).await?;
+) -> Result<Vec<Play>, TaggedError> {
+	let user = User::from_context(ctx)?;
+	let files = ctx.download_images(files).await?;
 
-	if files.len() == 0 {
-		ctx.reply("No images found attached to message").await?;
-		return Ok(vec![]);
+	if files.is_empty() {
+		return Err(anyhow!("No images found attached to message").tag(ErrorKind::User));
 	}
 
 	let mut embeds = Vec::with_capacity(files.len());
@@ -50,7 +48,7 @@ pub async fn magic_impl<C: MessageContext>(
 		let mut grayscale_image = DynamicImage::ImageLuma8(image.to_luma8());
 		// }}}
 
-		let result: Result<(), Error> = try {
+		let result: Result<(), TaggedError> = try {
 			// {{{ Detection
 
 			let kind = timed!("read_score_kind", {
@@ -102,13 +100,13 @@ pub async fn magic_impl<C: MessageContext>(
 				.with_attachment(C::attachment_id(attachment))
 				.with_fars(maybe_fars)
 				.with_max_recall(max_recall)
-				.save(&ctx.data(), &user, &chart)?;
+				.save(ctx.data(), &user, chart)?;
 			// }}}
 			// }}}
 			// {{{ Deliver embed
 
 			let (embed, attachment) = timed!("to embed", {
-				play.to_embed(ctx.data(), &user, &song, &chart, i, None)?
+				play.to_embed(ctx.data(), &user, song, chart, i, None)?
 			});
 
 			plays.push(play);
@@ -118,15 +116,21 @@ pub async fn magic_impl<C: MessageContext>(
 		};
 
 		if let Err(err) = result {
+			let user_err = get_user_error!(err);
 			analyzer
-				.send_discord_error(ctx, &image, C::filename(&attachment), err)
+				.send_discord_error(ctx, &image, C::filename(attachment), user_err)
 				.await?;
 		}
 	}
 
-	if embeds.len() > 0 {
-		ctx.send_files(attachments, CreateMessage::new().embeds(embeds))
-			.await?;
+	if !embeds.is_empty() {
+		ctx.send(
+			CreateReply::default()
+				.reply(true)
+				.embeds(embeds)
+				.attachments(attachments),
+		)
+		.await?;
 	}
 
 	Ok(plays)
@@ -203,7 +207,8 @@ pub async fn magic(
 	mut ctx: Context<'_>,
 	#[description = "Images containing scores"] files: Vec<serenity::Attachment>,
 ) -> Result<(), Error> {
-	magic_impl(&mut ctx, &files).await?;
+	let res = magic_impl(&mut ctx, &files).await;
+	ctx.handle_error(res).await?;
 
 	Ok(())
 }
@@ -211,10 +216,12 @@ pub async fn magic(
 // }}}
 // {{{ Score show
 // {{{ Implementation
-pub async fn show_impl<C: MessageContext>(ctx: &mut C, ids: &[u32]) -> Result<Vec<Play>, Error> {
-	if ids.len() == 0 {
-		ctx.reply("Empty ID list provided").await?;
-		return Ok(vec![]);
+pub async fn show_impl<C: MessageContext>(
+	ctx: &mut C,
+	ids: &[u32],
+) -> Result<Vec<Play>, TaggedError> {
+	if ids.is_empty() {
+		return Err(anyhow!("Empty ID list provided").tag(ErrorKind::User));
 	}
 
 	let mut embeds = Vec::with_capacity(ids.len());
@@ -225,7 +232,7 @@ pub async fn show_impl<C: MessageContext>(ctx: &mut C, ids: &[u32]) -> Result<Ve
 		let result = conn
 			.prepare_cached(
 				"
-          SELECT 
+          SELECT
             p.id, p.chart_id, p.user_id, p.created_at,
             p.max_recall, p.far_notes, s.score,
             u.discord_id
@@ -250,7 +257,7 @@ pub async fn show_impl<C: MessageContext>(ctx: &mut C, ids: &[u32]) -> Result<Ve
 		let (song, chart, play, discord_id) = match result {
 			None => {
 				ctx.send(
-					CreateMessage::new().content(format!("Could not find play with id {}", id)),
+					CreateReply::default().content(format!("Could not find play with id {}", id)),
 				)
 				.await?;
 				continue;
@@ -269,9 +276,14 @@ pub async fn show_impl<C: MessageContext>(ctx: &mut C, ids: &[u32]) -> Result<Ve
 		plays.push(play);
 	}
 
-	if embeds.len() > 0 {
-		ctx.send_files(attachments, CreateMessage::new().embeds(embeds))
-			.await?;
+	if !embeds.is_empty() {
+		ctx.send(
+			CreateReply::default()
+				.reply(true)
+				.embeds(embeds)
+				.attachments(attachments),
+		)
+		.await?;
 	}
 
 	Ok(plays)
@@ -333,7 +345,8 @@ pub async fn show(
 	mut ctx: Context<'_>,
 	#[description = "Ids of score to show"] ids: Vec<u32>,
 ) -> Result<(), Error> {
-	show_impl(&mut ctx, &ids).await?;
+	let res = show_impl(&mut ctx, &ids).await;
+	ctx.handle_error(res).await?;
 
 	Ok(())
 }
@@ -341,12 +354,11 @@ pub async fn show(
 // }}}
 // {{{ Score delete
 // {{{ Implementation
-pub async fn delete_impl<C: MessageContext>(ctx: &mut C, ids: &[u32]) -> Result<(), Error> {
-	let user = get_user!(ctx);
+pub async fn delete_impl<C: MessageContext>(ctx: &mut C, ids: &[u32]) -> Result<(), TaggedError> {
+	let user = User::from_context(ctx)?;
 
-	if ids.len() == 0 {
-		ctx.reply("Empty ID list provided").await?;
-		return Ok(());
+	if ids.is_empty() {
+		return Err(anyhow!("Empty ID list provided").tag(ErrorKind::User));
 	}
 
 	let mut count = 0;
@@ -472,7 +484,8 @@ pub async fn delete(
 	mut ctx: Context<'_>,
 	#[description = "Id of score to delete"] ids: Vec<u32>,
 ) -> Result<(), Error> {
-	delete_impl(&mut ctx, &ids).await?;
+	let res = delete_impl(&mut ctx, &ids).await;
+	ctx.handle_error(res).await?;
 
 	Ok(())
 }

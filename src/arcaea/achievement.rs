@@ -3,7 +3,7 @@ use anyhow::anyhow;
 use image::RgbaImage;
 
 use crate::assets::get_data_dir;
-use crate::context::{Error, UserContext};
+use crate::context::{ErrorKind, TagError, TaggedError, UserContext};
 use crate::user::User;
 
 use super::chart::{Difficulty, Level};
@@ -119,9 +119,8 @@ impl GoalStats {
 		ctx: &UserContext,
 		user: &User,
 		scoring_system: ScoringSystem,
-	) -> Result<Self, Error> {
-		let plays = get_best_plays(ctx, user.id, scoring_system, 0, usize::MAX, None)?
-			.map_err(|s| anyhow!("{s}"))?;
+	) -> Result<Self, TaggedError> {
+		let plays = get_best_plays(ctx, user.id, scoring_system, 0, usize::MAX, None)?;
 		let conn = ctx.db.get()?;
 
 		// {{{ PM count
@@ -141,14 +140,14 @@ impl GoalStats {
 		let peak_ptt = conn
 			.prepare_cached(
 				"
-        SELECT s.creation_ptt
-        FROM plays p
-        JOIN scores s ON s.play_id = p.id
-        WHERE user_id = ?
-        AND scoring_system = ?
-        ORDER BY s.creation_ptt DESC
-        LIMIT 1
-      ",
+            SELECT s.creation_ptt
+            FROM plays p
+            JOIN scores s ON s.play_id = p.id
+            WHERE user_id = ?
+            AND scoring_system = ?
+            ORDER BY s.creation_ptt DESC
+            LIMIT 1
+        ",
 			)?
 			.query_row(
 				(
@@ -157,7 +156,7 @@ impl GoalStats {
 				),
 				|row| row.get(0),
 			)
-			.map_err(|_| anyhow!("No ptt history data found"))?;
+			.map_err(|_| anyhow!("No ptt history data found").tag(ErrorKind::User))?;
 		// }}}
 		// {{{ Peak PM relay
 		let peak_pm_relay = {
@@ -309,6 +308,7 @@ impl Default for AchievementTowers {
 		]);
 		// }}}
 		// {{{ PTT tower
+		#[allow(clippy::zero_prefixed_literal)]
 		let ptt_tower = AchievementTower::new(vec![
 			Achievement::new(PTT(0800)),
 			Achievement::new(PTT(0900)),

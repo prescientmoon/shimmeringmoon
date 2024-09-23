@@ -3,10 +3,11 @@ use std::num::NonZeroU64;
 use std::str::FromStr;
 
 use poise::serenity_prelude::futures::future::join_all;
-use poise::serenity_prelude::{CreateAttachment, CreateMessage};
+use poise::serenity_prelude::{CreateAttachment, CreateEmbed};
+use poise::CreateReply;
 
 use crate::arcaea::play::Play;
-use crate::context::{Error, UserContext};
+use crate::context::{Error, ErrorKind, TaggedError, UserContext};
 use crate::timed;
 // }}}
 
@@ -22,17 +23,8 @@ pub trait MessageContext {
 	/// Reply to the current message
 	async fn reply(&mut self, text: &str) -> Result<(), Error>;
 
-	/// Deliver a message containing references to files.
-	async fn send_files(
-		&mut self,
-		attachments: impl IntoIterator<Item = CreateAttachment>,
-		message: CreateMessage,
-	) -> Result<(), Error>;
-
 	/// Deliver a message
-	async fn send(&mut self, message: CreateMessage) -> Result<(), Error> {
-		self.send_files([], message).await
-	}
+	async fn send(&mut self, message: CreateReply) -> Result<(), Error>;
 
 	// {{{ Input attachments
 	type Attachment;
@@ -61,6 +53,20 @@ pub trait MessageContext {
 			.collect::<Result<_, Error>>()
 	}
 	// }}}
+	// {{{ Erorr handling
+	async fn handle_error<V>(&mut self, res: Result<V, TaggedError>) -> Result<Option<V>, Error> {
+		match res {
+			Ok(v) => Ok(Some(v)),
+			Err(e) => match e.kind {
+				ErrorKind::Internal => Err(e.error),
+				ErrorKind::User => {
+					self.reply(&format!("{}", e.error)).await?;
+					Ok(None)
+				}
+			},
+		}
+	}
+	// }}}
 }
 // }}}
 // {{{ Poise implementation
@@ -87,14 +93,8 @@ impl<'a> MessageContext for poise::Context<'a, UserContext, Error> {
 		Ok(())
 	}
 
-	async fn send_files(
-		&mut self,
-		attachments: impl IntoIterator<Item = CreateAttachment>,
-		message: CreateMessage,
-	) -> Result<(), Error> {
-		self.channel_id()
-			.send_files(self.http(), attachments, message)
-			.await?;
+	async fn send(&mut self, message: CreateReply) -> Result<(), Error> {
+		poise::send_reply(*self, message).await?;
 		Ok(())
 	}
 
@@ -122,6 +122,10 @@ impl<'a> MessageContext for poise::Context<'a, UserContext, Error> {
 pub mod mock {
 	use std::{env, fs, path::PathBuf};
 
+	use poise::serenity_prelude::CreateEmbed;
+	use serde::{Deserialize, Serialize};
+	use sha2::{Digest, Sha256};
+
 	use super::*;
 
 	/// A mock context usable for testing. Messages and attachments are
@@ -130,7 +134,26 @@ pub mod mock {
 	pub struct MockContext {
 		pub user_id: u64,
 		pub data: UserContext,
-		pub messages: Vec<(CreateMessage, Vec<CreateAttachment>)>,
+		messages: Vec<ReplyEssence>,
+	}
+
+	/// Holds test-relevant data about an attachment.
+	#[derive(Debug, Clone, Serialize, Deserialize)]
+	struct AttachmentEssence {
+		filename: String,
+		description: Option<String>,
+		/// SHA-256 hash of the file
+		hash: String,
+	}
+
+	/// Holds test-relevant data about a reply.
+	#[derive(Debug, Clone, Serialize)]
+	struct ReplyEssence {
+		reply: bool,
+		ephermal: Option<bool>,
+		content: Option<String>,
+		embeds: Vec<CreateEmbed>,
+		attachments: Vec<AttachmentEssence>,
 	}
 
 	impl MockContext {
@@ -157,10 +180,8 @@ pub mod mock {
 			}
 
 			fs::create_dir_all(path)?;
-			for (i, (message, attachments)) in self.messages.iter().enumerate() {
-				let dir = path.join(format!("{i}"));
-				fs::create_dir_all(&dir)?;
-				let message_file = dir.join("message.toml");
+			for (i, message) in self.messages.iter().enumerate() {
+				let message_file = path.join(format!("{i}.toml"));
 
 				if message_file.exists() {
 					assert_eq!(
@@ -169,28 +190,6 @@ pub mod mock {
 					);
 				} else {
 					fs::write(&message_file, toml::to_string_pretty(message)?)?;
-				}
-
-				for attachment in attachments {
-					let path = dir.join(&attachment.filename);
-
-					if path.exists() {
-						if &attachment.data != &fs::read(&path)? {
-							panic!("Attachment differs from {path:?}");
-						}
-					} else {
-						fs::write(&path, &attachment.data)?;
-					}
-				}
-
-				// Ensure there's no extra attachments on disk
-				let file_count = fs::read_dir(dir)?.count();
-				if file_count != attachments.len() + 1 {
-					panic!(
-						"Only {} attachments found instead of {}",
-						attachments.len(),
-						file_count - 1
-					);
 				}
 			}
 
@@ -219,18 +218,33 @@ pub mod mock {
 		}
 
 		async fn reply(&mut self, text: &str) -> Result<(), Error> {
-			self.messages
-				.push((CreateMessage::new().content(text), Vec::new()));
-			Ok(())
+			self.send(CreateReply::default().content(text).reply(true))
+				.await
 		}
 
-		async fn send_files(
-			&mut self,
-			attachments: impl IntoIterator<Item = CreateAttachment>,
-			message: CreateMessage,
-		) -> Result<(), Error> {
-			self.messages
-				.push((message, attachments.into_iter().collect()));
+		async fn send(&mut self, message: CreateReply) -> Result<(), Error> {
+			self.messages.push(ReplyEssence {
+				reply: message.reply,
+				ephermal: message.ephemeral,
+				content: message.content,
+				embeds: message.embeds,
+				attachments: message
+					.attachments
+					.into_iter()
+					.map(|attachment| AttachmentEssence {
+						filename: attachment.filename,
+						description: attachment.description,
+						hash: {
+							let hash = Sha256::digest(&attachment.data);
+							let string = base16ct::lower::encode_string(&hash);
+
+							// We allocate twice, but it's only at the end of tests,
+							// so it should be fineeeeeeee
+							format!("sha256_{string}")
+						},
+					})
+					.collect(),
+			});
 			Ok(())
 		}
 
@@ -264,5 +278,28 @@ pub mod mock {
 #[allow(dead_code)] // Currently only used for testing
 pub fn play_song_title<'a>(ctx: &'a impl MessageContext, play: &'a Play) -> Result<&'a str, Error> {
 	Ok(&ctx.data().song_cache.lookup_chart(play.chart_id)?.0.title)
+}
+
+pub trait CreateReplyExtra {
+	fn attachments(self, attachments: impl IntoIterator<Item = CreateAttachment>) -> Self;
+	fn embeds(self, embeds: impl IntoIterator<Item = CreateEmbed>) -> Self;
+}
+
+impl CreateReplyExtra for CreateReply {
+	fn attachments(mut self, attachments: impl IntoIterator<Item = CreateAttachment>) -> Self {
+		for attachment in attachments.into_iter() {
+			self = self.attachment(attachment);
+		}
+
+		self
+	}
+
+	fn embeds(mut self, embeds: impl IntoIterator<Item = CreateEmbed>) -> Self {
+		for embed in embeds.into_iter() {
+			self = self.embed(embed);
+		}
+
+		self
+	}
 }
 // }}}

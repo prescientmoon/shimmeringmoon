@@ -33,7 +33,7 @@ pub async fn help(
 /// Explains the different scoring systems
 #[poise::command(prefix_command, slash_command)]
 async fn scoring(ctx: Context<'_>) -> Result<(), Error> {
-	static CONTENT: &'static str = "
+	static CONTENT: &str = "
 ## 1. Standard scoring (`standard`):
 This is the base-game Arcaea scoring system we all know and love! Points are awarded for each note, with a `2:1` pure:far ratio. The score is then scaled up such that `10_000_000` is the maximum. Last but not least, the number of max pures is added to the total.
 
@@ -58,7 +58,7 @@ Most commands take an optional parameter specifying what scoring system to use. 
 /// Explains the different scoring systems using gen-z slang
 #[poise::command(prefix_command, slash_command)]
 async fn scoringz(ctx: Context<'_>) -> Result<(), Error> {
-	static CONTENT: &'static str = "
+	static CONTENT: &str = "
 ## 1. Standard scoring (`standard`):
 Alright, fam, this is the OG Arcaea scoring setup that everyone vibes with! You hit notes, you get points — easy clap. The ratio is straight up `2:1` pure:far. The score then gets a glow-up, maxing out at `10 milly`. And hold up, you even get bonus points for those max pures at the end. No cap, this is the classic way to flex your skills.
 

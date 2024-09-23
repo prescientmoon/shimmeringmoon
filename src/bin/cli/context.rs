@@ -5,9 +5,10 @@ use std::str::FromStr;
 
 use poise::serenity_prelude::{CreateAttachment, CreateMessage};
 
-use crate::assets::get_var;
-use crate::context::Error;
-use crate::{commands::discord::MessageContext, context::UserContext};
+extern crate shimmeringmoon;
+use shimmeringmoon::assets::get_var;
+use shimmeringmoon::context::Error;
+use shimmeringmoon::{commands::discord::MessageContext, context::UserContext};
 // }}}
 
 /// Similar in scope to [crate::commands::discord::mock::MockContext],

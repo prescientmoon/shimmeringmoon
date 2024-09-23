@@ -45,7 +45,7 @@ pub fn guess_song_and_chart<'a>(
 		.or_else(|| strip_case_insensitive_suffix(name, "[ETR]").zip(Some(Difficulty::ETR)))
 		.or_else(|| strip_case_insensitive_suffix(name, "BYD").zip(Some(Difficulty::BYD)))
 		.or_else(|| strip_case_insensitive_suffix(name, "[BYD]").zip(Some(Difficulty::BYD)))
-		.unwrap_or((&name, Difficulty::FTR));
+		.unwrap_or((name, Difficulty::FTR));
 
 	guess_chart_name(name, &ctx.song_cache, Some(difficulty), true)
 }
@@ -85,7 +85,7 @@ pub fn guess_chart_name<'a>(
 				distance_vec.clear();
 
 				// Apply raw distance
-				let base_distance = edit_distance_with(&text, &song_title, &mut levenshtein_vec);
+				let base_distance = edit_distance_with(text, song_title, &mut levenshtein_vec);
 				if base_distance <= song.title.len() / 3 {
 					distance_vec.push(base_distance * 10 + 2);
 				}
@@ -95,7 +95,7 @@ pub fn guess_chart_name<'a>(
 				if let Some(sliced) = &song_title.get(..shortest_len)
 					&& (text.len() >= 6 || unsafe_heuristics)
 				{
-					let slice_distance = edit_distance_with(&text, sliced, &mut levenshtein_vec);
+					let slice_distance = edit_distance_with(text, sliced, &mut levenshtein_vec);
 					if slice_distance == 0 {
 						distance_vec.push(3);
 					}
@@ -105,7 +105,7 @@ pub fn guess_chart_name<'a>(
 				if let Some(shorthand) = &chart.shorthand
 					&& unsafe_heuristics
 				{
-					let short_distance = edit_distance_with(&text, shorthand, &mut levenshtein_vec);
+					let short_distance = edit_distance_with(text, shorthand, &mut levenshtein_vec);
 					if short_distance <= shorthand.len() / 3 {
 						distance_vec.push(short_distance * 10 + 1);
 					}
@@ -121,7 +121,7 @@ pub fn guess_chart_name<'a>(
 		close_enough.sort_by_key(|(song, _, _)| song.id);
 		close_enough.dedup_by_key(|(song, _, _)| song.id);
 
-		if close_enough.len() == 0 {
+		if close_enough.is_empty() {
 			if text.len() <= 1 {
 				bail!(
 					"Could not find match for chart name '{}' [{:?}]",
@@ -133,13 +133,11 @@ pub fn guess_chart_name<'a>(
 			}
 		} else if close_enough.len() == 1 {
 			break (close_enough[0].0, close_enough[0].1);
+		} else if unsafe_heuristics {
+			close_enough.sort_by_key(|(_, _, distance)| *distance);
+			break (close_enough[0].0, close_enough[0].1);
 		} else {
-			if unsafe_heuristics {
-				close_enough.sort_by_key(|(_, _, distance)| *distance);
-				break (close_enough[0].0, close_enough[0].1);
-			} else {
-				bail!("Name '{}' is too vague to choose a match", raw_text);
-			};
+			bail!("Name '{}' is too vague to choose a match", raw_text);
 		};
 	};
 

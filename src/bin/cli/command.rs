@@ -1,7 +1,3 @@
-pub mod analyse;
-pub mod context;
-pub mod prepare_jackets;
-
 #[derive(clap::Parser)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
@@ -11,8 +7,6 @@ pub struct Cli {
 
 #[derive(clap::Subcommand)]
 pub enum Command {
-	/// Start the discord bot
-	Discord {},
 	PrepareJackets {},
-	Analyse(analyse::Args),
+	Analyse(crate::commands::analyse::Args),
 }

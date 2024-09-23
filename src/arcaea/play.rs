@@ -2,6 +2,7 @@
 use std::array;
 use std::num::NonZeroU64;
 
+use anyhow::anyhow;
 use anyhow::Context;
 use chrono::NaiveDateTime;
 use chrono::Utc;
@@ -13,6 +14,9 @@ use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateEmbedAuthor, 
 use rusqlite::Row;
 
 use crate::arcaea::chart::{Chart, Song};
+use crate::context::ErrorKind;
+use crate::context::TagError;
+use crate::context::TaggedError;
 use crate::context::{Error, UserContext};
 use crate::user::User;
 
@@ -61,7 +65,7 @@ impl CreatePlay {
 	}
 
 	// {{{ Save
-	pub fn save(self, ctx: &UserContext, user: &User, chart: &Chart) -> Result<Play, Error> {
+	pub fn save(self, ctx: &UserContext, user: &User, chart: &Chart) -> Result<Play, TaggedError> {
 		let conn = ctx.db.get()?;
 		let attachment_id = self.discord_attachment_id.map(|i| i.get() as i64);
 
@@ -104,9 +108,7 @@ impl CreatePlay {
 
 		for system in ScoringSystem::SCORING_SYSTEMS {
 			let i = system.to_index();
-			let plays = get_best_plays(ctx, user.id, system, 30, 30, None)?.ok();
-
-			let creation_ptt: Option<_> = try { rating_as_fixed(compute_b30_ptt(system, &plays?)) };
+			let creation_ptt = try_compute_ptt(ctx, user.id, system, None)?;
 
 			conn.prepare_cached(
 				"
@@ -321,10 +323,9 @@ impl Play {
 			self.score(ScoringSystem::Standard).0,
 			index
 		);
-		let icon_attachement = match chart.cached_jacket.as_ref() {
-			Some(jacket) => Some(CreateAttachment::bytes(jacket.raw, &attachement_name)),
-			None => None,
-		};
+		let icon_attachement = chart
+			.cached_jacket
+			.map(|jacket| CreateAttachment::bytes(jacket.raw, &attachement_name));
 
 		let mut embed = CreateEmbed::default()
 			.title(format!(
@@ -378,7 +379,7 @@ impl Play {
 				if let Some(max_recall) = self.max_recall {
 					format!("{}", max_recall)
 				} else {
-					format!("-")
+					"-".to_string()
 				},
 				true,
 			)
@@ -409,14 +410,14 @@ impl Play {
 // {{{ General functions
 pub type PlayCollection<'a> = Vec<(Play, &'a Song, &'a Chart)>;
 
-pub fn get_best_plays<'a>(
-	ctx: &'a UserContext,
+pub fn get_best_plays(
+	ctx: &UserContext,
 	user_id: u32,
 	scoring_system: ScoringSystem,
 	min_amount: usize,
 	max_amount: usize,
 	before: Option<NaiveDateTime>,
-) -> Result<Result<PlayCollection<'a>, String>, Error> {
+) -> Result<PlayCollection<'_>, TaggedError> {
 	let conn = ctx.db.get()?;
 	// {{{ DB data fetching
 	let mut plays = conn
@@ -453,10 +454,11 @@ pub fn get_best_plays<'a>(
 	// }}}
 
 	if plays.len() < min_amount {
-		return Ok(Err(format!(
+		return Err(anyhow!(
 			"Not enough plays found ({} out of a minimum of {min_amount})",
 			plays.len()
-		)));
+		)
+		.tag(crate::context::ErrorKind::User));
 	}
 
 	// {{{ B30 computation
@@ -464,7 +466,27 @@ pub fn get_best_plays<'a>(
 	plays.truncate(max_amount);
 	// }}}
 
-	Ok(Ok(plays))
+	Ok(plays)
+}
+
+/// Compute the current ptt of a given user.
+///
+/// This is similar to directly calling [get_best_plays] and then passing the
+/// result into [compute_b30_ptt], except any user errors (i.e.: not enough
+/// plays available) get turned into [None] values.
+pub fn try_compute_ptt(
+	ctx: &UserContext,
+	user_id: u32,
+	system: ScoringSystem,
+	before: Option<NaiveDateTime>,
+) -> Result<Option<i32>, Error> {
+	match get_best_plays(ctx, user_id, system, 30, 30, before) {
+		Err(err) => match err.kind {
+			ErrorKind::User => Ok(None),
+			ErrorKind::Internal => Err(err.error),
+		},
+		Ok(plays) => Ok(Some(rating_as_fixed(compute_b30_ptt(system, &plays)))),
+	}
 }
 
 #[inline]
@@ -478,7 +500,7 @@ pub fn compute_b30_ptt(scoring_system: ScoringSystem, plays: &PlayCollection<'_>
 }
 // }}}
 // {{{ Maintenance functions
-pub async fn generate_missing_scores(ctx: &UserContext) -> Result<(), Error> {
+pub async fn generate_missing_scores(ctx: &UserContext) -> Result<(), TaggedError> {
 	let conn = ctx.db.get()?;
 	let mut query = conn.prepare_cached(
 		"
@@ -504,10 +526,8 @@ pub async fn generate_missing_scores(ctx: &UserContext) -> Result<(), Error> {
 		let play = play?;
 		for system in ScoringSystem::SCORING_SYSTEMS {
 			let i = system.to_index();
-			let plays =
-				get_best_plays(&ctx, play.user_id, system, 30, 30, Some(play.created_at))?.ok();
+			let creation_ptt = try_compute_ptt(ctx, play.user_id, system, Some(play.created_at))?;
 
-			let creation_ptt: Option<_> = try { rating_as_fixed(compute_b30_ptt(system, &plays?)) };
 			let raw_score = play.scores.0[i].0;
 
 			conn.prepare_cached(

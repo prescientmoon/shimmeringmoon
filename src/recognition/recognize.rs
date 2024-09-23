@@ -6,7 +6,8 @@ use hypertesseract::{PageSegMode, Tesseract};
 use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView};
 use num::integer::Roots;
-use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateMessage};
+use poise::serenity_prelude::{CreateAttachment, CreateEmbed};
+use poise::CreateReply;
 
 use crate::arcaea::chart::{Chart, Difficulty, Song, DIFFICULTY_MENU_PIXEL_COLORS};
 use crate::arcaea::jacket::IMAGE_VEC_DIM;
@@ -114,13 +115,16 @@ impl ImageAnalyzer {
 				"An error occurred, around the time I was extracting data for {ui_rect:?}"
 			));
 
-			let msg = CreateMessage::default().embed(embed);
-			ctx.send_files([error_attachement], msg).await?;
+			ctx.send(
+				CreateReply::default()
+					.embed(embed)
+					.attachment(error_attachement),
+			)
+			.await?;
 		} else {
 			embed = embed.title("An error occurred");
 
-			let msg = CreateMessage::default().embed(embed);
-			ctx.send_files([], msg).await?;
+			ctx.send(CreateReply::default().embed(embed)).await?;
 		}
 
 		Ok(())
@@ -355,9 +359,9 @@ impl ImageAnalyzer {
 	}
 	// }}}
 	// {{{ Read max recall
-	pub fn read_max_recall<'a>(
+	pub fn read_max_recall(
 		&mut self,
-		ctx: &'a UserContext,
+		ctx: &UserContext,
 		image: &DynamicImage,
 	) -> Result<u32, Error> {
 		let image = self.interp_crop(ctx, image, ScoreScreen(ScoreScreenRect::MaxRecall))?;

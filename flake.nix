@@ -1,17 +1,22 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/release-24.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     fenix.url = "github:nix-community/fenix";
     fenix.inputs.nixpkgs.follows = "nixpkgs";
+    rust-overlay.url = "github:oxalica/rust-overlay";
+    rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
-    { ... }@inputs:
+    inputs:
     inputs.flake-utils.lib.eachSystem (with inputs.flake-utils.lib.system; [ x86_64-linux ]) (
       system:
       let
-        pkgs = inputs.nixpkgs.legacyPackages.${system}.extend inputs.fenix.overlays.default;
+        pkgs = inputs.nixpkgs.legacyPackages.${system}.extend (import inputs.rust-overlay);
+        # toolchain = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default);
+        # toolchain = pkgs.rust-bin.stable.latest.default;
+        toolchain = inputs.fenix.packages.${system}.complete.toolchain;
         inherit (pkgs) lib;
       in
       {
@@ -29,41 +34,35 @@
             };
           };
         };
-        devShell = pkgs.mkShell rec {
-          packages = with pkgs; [
-            (fenix.complete.withComponents [
-              "cargo"
-              "clippy"
-              "rust-src"
-              "rustc"
-              "rustfmt"
-            ])
-            rust-analyzer-nightly
-            ruff
-            imagemagick
-            fontconfig
-            freetype
-
-            clang
-            llvmPackages.clang
+        devShell = pkgs.mkShell {
+          nativeBuildInputs = with pkgs; [
+            toolchain
+            # ruff
+            # imagemagick
             pkg-config
 
+            # clang
+            # llvmPackages.clang
+          ];
+          buildInputs = with pkgs; [
+            toolchain
+            freetype
+            fontconfig
             leptonica
             tesseract
-            openssl
+            # openssl
             sqlite
           ];
 
-          LD_LIBRARY_PATH = lib.makeLibraryPath packages;
+          # LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
 
           # compilation of -sys packages requires manually setting LIBCLANG_PATH
-          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+          # LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
         };
       }
     );
 
   # {{{ Caching and whatnot
-  # TODO: persist trusted substituters file
   nixConfig = {
     extra-substituters = [ "https://nix-community.cachix.org" ];
 
