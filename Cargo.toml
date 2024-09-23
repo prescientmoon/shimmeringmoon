@@ -9,11 +9,11 @@ name = "shimmeringmoon"
 path = "src/lib.rs"
 
 [[bin]]
-name = "shimmeringmoon-discord-bot"
+name = "shimmering-discord-bot"
 path = "src/bin/discord-bot/main.rs"
 
 [[bin]]
-name = "shimmeringmoon-cli"
+name = "shimmering-cli"
 path = "src/bin/cli/main.rs"
 
 [dependencies]

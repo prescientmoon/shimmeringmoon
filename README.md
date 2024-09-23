@@ -24,7 +24,7 @@ No neural-networks/machine-learning is used by this project. All image analysis 
 
 ## Running locally
 
-The bot needs the following environment variables to be set in order to run:
+The programs need (sometimes a subset of) the following environment variables in order to run:
 
 ```
 SHIMMERING_DISCORD_TOKEN=yourtoken
@@ -33,6 +33,21 @@ SHIMMERING_ASSET_DIR=shimmering/assets
 SHIMMERING_CONFIG_DIR=shimmering/config
 SHIMMERING_LOG_DIR=shimmering/logs
 ```
+
+## Binaries
+
+The project currently exposes two binaries:
+
+1. `shimmering-discord-bot` provides the discord bot for `shimmeringmoon`
+2. `shimmering-cli` provides the command line interface for `shimmeringmoon`:
+
+   - The `prepare-jackets` prepares the provided jackets for running the bot (see the section below for more details)
+   - The `analyse <...paths>` command is a command-line version of the `score magic` discord command. This is useful for debugging things like the OCR implementation, without having to transmit files over the network.
+
+## Future binaries
+
+3. `shimmering-server` will be a server which provides scoring data over HTTP.
+4. `shimmering-discord-presence` will be a client application that talks to `shimmeringmoon-server` in order to update your discord "currently playing" status in order to reflect the charts you are currently playing.
 
 ### Fonts
 
@@ -58,11 +73,18 @@ Additionally, you must place a custom `b30` background at `$SHIMMERING_ASSET_DIR
 > [!CAUTION]
 > As far as I am concerned, the code in this repository does not violate the Arcaea terms of service in any way. Importing jackets that have been datamined/ripped out of the game is against the aforementioned TOS, and is highly discouraged.
 
+After everything has been placed in the right directory, run `shimmeringmoon-cli prepare-jackets` to prepare everything. This will:
+
+- Associate each asset with it's database ID
+- Build out a recognition matrix for image recognition purposes (this matrix more or less contains a 64x64 downscaled version of each provided asset, stored in bitmap format together with the associated database ID)
+
 ### Importing charts
 
 The charts are stored in [$SHIMMERING_CONFIG_DIR/charts.csv](./shimmering/config/charts.csv). This is a csv-version of Lumine's [Arcaea song table](https://tinyurl.com/mwd5dkfw) ([with permission](https://discord.com/channels/399106149468733441/399106149917392899/1256043659355226163)). Importing song-data from any other source (such as datamined database files) will not only be more difficult for you (all the scripts I have written are built around the aforementioned spreadsheet), but is also against the Arcaea terms of service.
 
 To add charts that have just been added to the CSV file into the database, run [import-charts.py](./scripts/import-charts.py).
+
+## Testing
 
 ## Thanks
 
