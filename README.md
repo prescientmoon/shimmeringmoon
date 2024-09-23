@@ -38,10 +38,10 @@ SHIMMERING_LOG_DIR=shimmering/logs
 
 The project currently exposes two binaries:
 
-1. `shimmering-discord-bot` provides the discord bot for `shimmeringmoon`
-2. `shimmering-cli` provides the command line interface for `shimmeringmoon`:
+1. `shimmering-discord-bot` provides (as the name suggests) a discord bot exposing the `shimmeringmoon` functionality
+2. `shimmering-cli` provides (again, as the name suggests) a command line interface for administration and debugging purposes:
 
-   - The `prepare-jackets` prepares the provided jackets for running the bot (see the section below for more details)
+   - The `prepare-jackets` command prepares the provided jackets for running the bot (see the section below for more details)
    - The `analyse <...paths>` command is a command-line version of the `score magic` discord command. This is useful for debugging things like the OCR implementation, without having to transmit files over the network.
 
 ## Future binaries
