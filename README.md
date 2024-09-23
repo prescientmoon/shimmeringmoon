@@ -46,8 +46,8 @@ The project currently exposes two binaries:
 
 ## Future binaries
 
-3. `shimmering-server` will be a server which provides scoring data over HTTP.
-4. `shimmering-discord-presence` will be a client application that talks to `shimmeringmoon-server` in order to update your discord "currently playing" status in order to reflect the charts you are currently playing.
+3. `shimmering-server` will be a server providing scoring data over HTTP.
+4. `shimmering-discord-presence` will be a client application that talks to `shimmering-server` in order to update your discord "currently playing" status in order to reflect the charts you are currently playing.
 
 ### Fonts
 
@@ -85,6 +85,23 @@ The charts are stored in [$SHIMMERING_CONFIG_DIR/charts.csv](./shimmering/config
 To add charts that have just been added to the CSV file into the database, run [import-charts.py](./scripts/import-charts.py).
 
 ## Testing
+
+The project provides an always-growing automated test suite for it's core functionality. The command logic is written in terms of a generic `MessagingContext` trait, which allows running the commands in non-discord contexts. The technique employed is called "golden testing" (also known as "snapshot testing") — the output of each test is initially saved to disk (at [test/commands](./test/commands)). On subsequent runs, the output is compared to the existing files, with the test failing on mismatches. You can provide the `SHIMMERING_TEST_REGEN=1` environment variable to override the existing output (make sure the changes are intended).
+
+Each test saves it's output in a directory. The directory contains two kinds of files:
+
+- `in_<i>.toml`: these files track the hash of an attachment the command "downloaded" during execution. The screenshots used for testing are not available in this repository (thousands of Arcaea screenshots are posted to the internet on a daily basis, although I do not want to risk any legal trouble, therefore you need to provide your own), hence these hashes ensure the provided screenshots have not changed.
+- `out_<i>.toml`: each such file tracks the contents of a single response the bot produced during testing. This file contains everything from whether the response was a reply or not, to each field of each provided embed, to the hash of every attachment.
+
+You should only bother setting up a testing environment if you are planning to maintain your own fork of this repository. As mentioned above, you need to provide your own screenshots for testing. The test suite expects the following files to be present in `test/screenshots`❌
+
+| File                         | Description                                 |
+| ---------------------------- | ------------------------------------------- |
+| `alter_ego.jpg`              | a `9_926_250` score on `ALTER EGO [ETR]`    |
+| `fracture_ray_ex.jpg`        | a `9_805_651` score on `Fracture Ray [FTR]` |
+| `fracture_ray_missed_ex.jpg` | a `9_766_531` score on `Fracture Ray [FTR]` |
+| `antithese_74_kerning.jpg`   | a `9_983_744` score on `Antithese [FTR]`    |
+| `genocider_24_kerning.jpg`   | a `9_724_775` score on `GENOCIDER [FTR]`    |
 
 ## Thanks
 
