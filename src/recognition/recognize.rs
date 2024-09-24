@@ -162,14 +162,14 @@ impl ImageAnalyzer {
 		);
 
 		// Discard scores if it's impossible
-		if result.0 <= 10_010_000
-			&& note_count.map_or(true, |note_count| {
-				let (zeta, shinies, score_units) = result.analyse(note_count);
-				8_000_000 <= zeta.0
-					&& zeta.0 <= 10_000_000
-					&& shinies <= note_count
-					&& score_units <= 2 * note_count
-			}) {
+		let valid_analysis = note_count.map_or(true, |note_count| {
+			let (zeta, shinies, score_units) = result.analyse(note_count);
+			8_000_000 <= zeta.0
+				&& zeta.0 <= 10_000_000
+				&& shinies <= note_count
+				&& score_units <= 2 * note_count
+		});
+		if result.0 <= 10_010_000 && valid_analysis {
 			Ok(result)
 		} else {
 			Err(anyhow!("Score {result} is not vaild"))

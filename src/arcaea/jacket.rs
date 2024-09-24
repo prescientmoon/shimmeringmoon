@@ -26,6 +26,7 @@ pub struct ImageVec {
 
 impl ImageVec {
 	// {{{ (Image => vector) encoding
+	#[allow(clippy::identity_op)]
 	pub fn from_image(image: &impl GenericImageView<Pixel = Rgba<u8>>) -> Self {
 		let mut colors = [0.0; IMAGE_VEC_DIM];
 		let chunk_width = image.width() / SPLIT_FACTOR;
@@ -55,7 +56,6 @@ impl ImageVec {
 			let r = (r as f64 / count).sqrt();
 			let g = (g as f64 / count).sqrt();
 			let b = (b as f64 / count).sqrt();
-			#[allow(clippy::identity_op)]
 			colors[i as usize * 3 + 0] = r as f32;
 			colors[i as usize * 3 + 1] = g as f32;
 			colors[i as usize * 3 + 2] = b as f32;

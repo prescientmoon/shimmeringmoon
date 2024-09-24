@@ -145,7 +145,7 @@ pub mod testing {
 
 	pub async fn get_shared_context() -> &'static UserContext {
 		static CELL: tokio::sync::OnceCell<UserContext> = tokio::sync::OnceCell::const_new();
-		CELL.get_or_init(async || {
+		CELL.get_or_init(|| async move {
 			// env::set_var("SHIMMERING_DATA_DIR", "")
 			UserContext::new().await.unwrap()
 		})
@@ -165,6 +165,20 @@ pub mod testing {
 		);
 	}
 
+	// rustfmt fucks up the formatting here,
+	// but the skip attribute doesn't seem to work well on macros 🤔
+	#[macro_export]
+	macro_rules! golden_test {
+		($name:ident, $test_path:expr) => {
+			paste::paste! {
+				#[tokio::test]
+				async fn [<$name _test>]() -> Result<(), $crate::context::Error> {
+			$crate::with_test_ctx!($test_path, $name)
+				  }
+			  }
+		};
+	}
+
 	#[macro_export]
 	macro_rules! with_test_ctx {
 		($test_path:expr, $f:expr) => {{
@@ -179,10 +193,11 @@ pub mod testing {
 			let res = $crate::user::User::create_from_context(&ctx);
 			ctx.handle_error(res).await?;
 
-			let res: Result<(), $crate::context::TaggedError> = $f(&mut ctx).await;
+			let ctx: &mut $crate::commands::discord::mock::MockContext = &mut ctx;
+			let res: Result<(), $crate::context::TaggedError> = $f(ctx).await;
 			ctx.handle_error(res).await?;
 
-			ctx.golden(&std::path::PathBuf::from_str($test_path)?)?;
+			ctx.golden(&std::path::PathBuf::from_str("test")?.join($test_path))?;
 			Ok(())
 		}};
 	}

@@ -363,13 +363,15 @@ impl BitmapCanvas {
 				})?;
 
 			let face = &mut faces[face_index];
-			if let Some((prev_face_index, prev_glyth_index)) = previous
-				&& prev_face_index == face_index
-				&& kerning[face_index]
-			{
-				let delta =
-					face.get_kerning(prev_glyth_index, glyph_index, KerningMode::KerningDefault)?;
-				pen_x += delta.x >> 6; // we shift to get rid of sub-pixel accuracy
+			if let Some((prev_face_index, prev_glyth_index)) = previous {
+				if prev_face_index == face_index && kerning[face_index] {
+					let delta = face.get_kerning(
+						prev_glyth_index,
+						glyph_index,
+						KerningMode::KerningDefault,
+					)?;
+					pen_x += delta.x >> 6; // we shift to get rid of sub-pixel accuracy
+				}
 			}
 
 			face.load_glyph(glyph_index, LoadFlag::DEFAULT)?;
@@ -579,12 +581,13 @@ impl LayoutManager {
 	) {
 		let current = self.boxes[id.0];
 
-		if let Some((current_points_to, dx, dy)) = current.relative_to
-			&& current_points_to != id_relative_to
-		{
-			self.edit_to_relative(current_points_to, id_relative_to, x - dx, y - dy);
-		} else {
-			self.boxes[id.0].relative_to = Some((id_relative_to, x, y));
+		match current.relative_to {
+			Some((current_points_to, dx, dy)) if current_points_to != id_relative_to => {
+				self.edit_to_relative(current_points_to, id_relative_to, x - dx, y - dy);
+			}
+			_ => {
+				self.boxes[id.0].relative_to = Some((id_relative_to, x, y));
+			}
 		}
 
 		{

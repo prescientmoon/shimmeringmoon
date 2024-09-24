@@ -4,7 +4,7 @@ use crate::arcaea::score::Score;
 use crate::context::{Context, Error, ErrorKind, TagError, TaggedError};
 use crate::recognition::recognize::{ImageAnalyzer, ScoreKind};
 use crate::user::User;
-use crate::{get_user_error, timed};
+use crate::{get_user_error, timed, try_block};
 use anyhow::anyhow;
 use image::DynamicImage;
 use poise::{serenity_prelude as serenity, CreateReply};
@@ -48,7 +48,7 @@ pub async fn magic_impl<C: MessageContext>(
 		let mut grayscale_image = DynamicImage::ImageLuma8(image.to_luma8());
 		// }}}
 
-		let result: Result<(), TaggedError> = try {
+		let result: Result<(), TaggedError> = try_block!({
 			// {{{ Detection
 
 			let kind = timed!("read_score_kind", {
@@ -113,7 +113,7 @@ pub async fn magic_impl<C: MessageContext>(
 			embeds.push(embed);
 			attachments.extend(attachment);
 			// }}}
-		};
+		});
 
 		if let Err(err) = result {
 			let user_err = get_user_error!(err);
@@ -140,63 +140,52 @@ pub async fn magic_impl<C: MessageContext>(
 #[cfg(test)]
 mod magic_tests {
 
-	use std::path::PathBuf;
+	use std::{path::PathBuf, str::FromStr};
 
 	use crate::{
 		arcaea::score::ScoringSystem,
 		commands::discord::{mock::MockContext, play_song_title},
-		with_test_ctx,
+		golden_test, with_test_ctx,
 	};
 
 	use super::*;
 
 	#[tokio::test]
 	async fn no_pics() -> Result<(), Error> {
-		with_test_ctx!("test/commands/score/magic/no_pics", async |ctx| {
+		with_test_ctx!("commands/score/magic/no_pics", |ctx| async move {
 			magic_impl(ctx, &[]).await?;
 			Ok(())
 		})
 	}
 
-	#[tokio::test]
-	async fn simple_pic() -> Result<(), Error> {
-		with_test_ctx!(
-			"test/commands/score/magic/single_pic",
-			async |ctx: &mut MockContext| {
-				let plays =
-					magic_impl(ctx, &[PathBuf::from_str("test/screenshots/alter_ego.jpg")?])
-						.await?;
-				assert_eq!(plays.len(), 1);
-				assert_eq!(plays[0].score(ScoringSystem::Standard).0, 9926250);
-				assert_eq!(play_song_title(ctx, &plays[0])?, "ALTER EGO");
-				Ok(())
-			}
-		)
+	golden_test!(simple_pic, "score/magic/single_pic");
+	async fn simple_pic(ctx: &mut MockContext) -> Result<(), TaggedError> {
+		let plays =
+			magic_impl(ctx, &[PathBuf::from_str("test/screenshots/alter_ego.jpg")?]).await?;
+		assert_eq!(plays.len(), 1);
+		assert_eq!(plays[0].score(ScoringSystem::Standard).0, 9926250);
+		assert_eq!(play_song_title(ctx, &plays[0])?, "ALTER EGO");
+		Ok(())
 	}
 
-	#[tokio::test]
-	async fn weird_kerning() -> Result<(), Error> {
-		with_test_ctx!(
-			"test/commands/score/magic/weird_kerning",
-			async |ctx: &mut MockContext| {
-				let plays = magic_impl(
-					ctx,
-					&[
-						PathBuf::from_str("test/screenshots/antithese_74_kerning.jpg")?,
-						PathBuf::from_str("test/screenshots/genocider_24_kerning.jpg")?,
-					],
-				)
-				.await?;
-
-				assert_eq!(plays.len(), 2);
-				assert_eq!(plays[0].score(ScoringSystem::Standard).0, 9983744);
-				assert_eq!(play_song_title(ctx, &plays[0])?, "Antithese");
-				assert_eq!(plays[1].score(ScoringSystem::Standard).0, 9724775);
-				assert_eq!(play_song_title(ctx, &plays[1])?, "GENOCIDER");
-
-				Ok(())
-			}
+	golden_test!(weird_kerning, "score/magic/weird_kerning");
+	async fn weird_kerning(ctx: &mut MockContext) -> Result<(), TaggedError> {
+		let plays = magic_impl(
+			ctx,
+			&[
+				PathBuf::from_str("test/screenshots/antithese_74_kerning.jpg")?,
+				PathBuf::from_str("test/screenshots/genocider_24_kerning.jpg")?,
+			],
 		)
+		.await?;
+
+		assert_eq!(plays.len(), 2);
+		assert_eq!(plays[0].score(ScoringSystem::Standard).0, 9983744);
+		assert_eq!(play_song_title(ctx, &plays[0])?, "Antithese");
+		assert_eq!(plays[1].score(ScoringSystem::Standard).0, 9724775);
+		assert_eq!(play_song_title(ctx, &plays[1])?, "GENOCIDER");
+
+		Ok(())
 	}
 }
 // }}}
@@ -293,12 +282,12 @@ pub async fn show_impl<C: MessageContext>(
 #[cfg(test)]
 mod show_tests {
 	use super::*;
-	use crate::{commands::discord::mock::MockContext, with_test_ctx};
-	use std::path::PathBuf;
+	use crate::{commands::discord::mock::MockContext, golden_test, with_test_ctx};
+	use std::{path::PathBuf, str::FromStr};
 
 	#[tokio::test]
 	async fn no_ids() -> Result<(), Error> {
-		with_test_ctx!("test/commands/score/show/no_ids", async |ctx| {
+		with_test_ctx!("commands/score/show/no_ids", |ctx| async move {
 			show_impl(ctx, &[]).await?;
 			Ok(())
 		})
@@ -306,35 +295,30 @@ mod show_tests {
 
 	#[tokio::test]
 	async fn nonexistent_id() -> Result<(), Error> {
-		with_test_ctx!("test/commands/score/show/nonexistent_id", async |ctx| {
+		with_test_ctx!("commands/score/show/nonexistent_id", |ctx| async move {
 			show_impl(ctx, &[666]).await?;
 			Ok(())
 		})
 	}
 
-	#[tokio::test]
-	async fn agrees_with_magic() -> Result<(), Error> {
-		with_test_ctx!(
-			"test/commands/score/show/agrees_with_magic",
-			async |ctx: &mut MockContext| {
-				let created_plays = magic_impl(
-					ctx,
-					&[
-						PathBuf::from_str("test/screenshots/alter_ego.jpg")?,
-						PathBuf::from_str("test/screenshots/antithese_74_kerning.jpg")?,
-						PathBuf::from_str("test/screenshots/genocider_24_kerning.jpg")?,
-					],
-				)
-				.await?;
-
-				let ids = created_plays.iter().map(|p| p.id).collect::<Vec<_>>();
-				let plays = show_impl(ctx, &ids).await?;
-
-				assert_eq!(plays.len(), 3);
-				assert_eq!(created_plays, plays);
-				Ok(())
-			}
+	golden_test!(agrees_with_magic, "commands/score/show/agrees_with_magic");
+	async fn agrees_with_magic(ctx: &mut MockContext) -> Result<(), TaggedError> {
+		let created_plays = magic_impl(
+			ctx,
+			&[
+				PathBuf::from_str("test/screenshots/alter_ego.jpg")?,
+				PathBuf::from_str("test/screenshots/antithese_74_kerning.jpg")?,
+				PathBuf::from_str("test/screenshots/genocider_24_kerning.jpg")?,
+			],
 		)
+		.await?;
+
+		let ids = created_plays.iter().map(|p| p.id).collect::<Vec<_>>();
+		let plays = show_impl(ctx, &ids).await?;
+
+		assert_eq!(plays.len(), 3);
+		assert_eq!(created_plays, plays);
+		Ok(())
 	}
 }
 // }}}
@@ -392,13 +376,13 @@ mod delete_tests {
 	use super::*;
 	use crate::{
 		commands::discord::{mock::MockContext, play_song_title},
-		with_test_ctx,
+		golden_test, with_test_ctx,
 	};
-	use std::path::PathBuf;
+	use std::{path::PathBuf, str::FromStr};
 
 	#[tokio::test]
 	async fn no_ids() -> Result<(), Error> {
-		with_test_ctx!("test/commands/score/delete/no_ids", async |ctx| {
+		with_test_ctx!("commands/score/delete/no_ids", |ctx| async move {
 			delete_impl(ctx, &[]).await?;
 			Ok(())
 		})
@@ -406,74 +390,60 @@ mod delete_tests {
 
 	#[tokio::test]
 	async fn nonexistent_id() -> Result<(), Error> {
-		with_test_ctx!("test/commands/score/delete/nonexistent_id", async |ctx| {
+		with_test_ctx!("commands/score/delete/nonexistent_id", |ctx| async move {
 			delete_impl(ctx, &[666]).await?;
 			Ok(())
 		})
 	}
 
-	#[tokio::test]
-	async fn delete_twice() -> Result<(), Error> {
-		with_test_ctx!(
-			"test/commands/score/delete/delete_twice",
-			async |ctx: &mut MockContext| {
-				let plays =
-					magic_impl(ctx, &[PathBuf::from_str("test/screenshots/alter_ego.jpg")?])
-						.await?;
+	golden_test!(delete_twice, "commands/score/delete/delete_twice");
+	async fn delete_twice(ctx: &mut MockContext) -> Result<(), TaggedError> {
+		let plays =
+			magic_impl(ctx, &[PathBuf::from_str("test/screenshots/alter_ego.jpg")?]).await?;
 
-				let id = plays[0].id;
-				delete_impl(ctx, &[id, id]).await?;
-				Ok(())
-			}
-		)
+		let id = plays[0].id;
+		delete_impl(ctx, &[id, id]).await?;
+		Ok(())
 	}
 
-	#[tokio::test]
-	async fn no_show_after_delete() -> Result<(), Error> {
-		with_test_ctx!(
-			"test/commands/score/delete/no_show_after_delete",
-			async |ctx: &mut MockContext| {
-				let plays =
-					magic_impl(ctx, &[PathBuf::from_str("test/screenshots/alter_ego.jpg")?])
-						.await?;
+	golden_test!(
+		no_show_after_delete,
+		"commands/score/delete/no_show_after_delete"
+	);
+	async fn no_show_after_delete(ctx: &mut MockContext) -> Result<(), TaggedError> {
+		let plays =
+			magic_impl(ctx, &[PathBuf::from_str("test/screenshots/alter_ego.jpg")?]).await?;
 
-				// Showcase proper usage
-				let ids = [plays[0].id];
-				delete_impl(ctx, &ids).await?;
+		// Showcase proper usage
+		let ids = [plays[0].id];
+		delete_impl(ctx, &ids).await?;
 
-				// This will tell the user the play doesn't exist
-				let shown_plays = show_impl(ctx, &ids).await?;
-				assert_eq!(shown_plays.len(), 0);
+		// This will tell the user the play doesn't exist
+		let shown_plays = show_impl(ctx, &ids).await?;
+		assert_eq!(shown_plays.len(), 0);
 
-				Ok(())
-			}
-		)
+		Ok(())
 	}
 
-	#[tokio::test]
-	async fn delete_multiple() -> Result<(), Error> {
-		with_test_ctx!(
-			"test/commands/score/delete/delete_multiple",
-			async |ctx: &mut MockContext| {
-				let plays = magic_impl(
-					ctx,
-					&[
-						PathBuf::from_str("test/screenshots/antithese_74_kerning.jpg")?,
-						PathBuf::from_str("test/screenshots/alter_ego.jpg")?,
-						PathBuf::from_str("test/screenshots/genocider_24_kerning.jpg")?,
-					],
-				)
-				.await?;
-
-				delete_impl(ctx, &[plays[0].id, plays[2].id]).await?;
-
-				// Ensure the second play still exists
-				let shown_plays = show_impl(ctx, &[plays[1].id]).await?;
-				assert_eq!(play_song_title(ctx, &shown_plays[0])?, "ALTER EGO");
-
-				Ok(())
-			}
+	golden_test!(delete_multiple, "commands/score/delete/delete_multiple");
+	async fn delete_multiple(ctx: &mut MockContext) -> Result<(), TaggedError> {
+		let plays = magic_impl(
+			ctx,
+			&[
+				PathBuf::from_str("test/screenshots/antithese_74_kerning.jpg")?,
+				PathBuf::from_str("test/screenshots/alter_ego.jpg")?,
+				PathBuf::from_str("test/screenshots/genocider_24_kerning.jpg")?,
+			],
 		)
+		.await?;
+
+		delete_impl(ctx, &[plays[0].id, plays[2].id]).await?;
+
+		// Ensure the second play still exists
+		let shown_plays = show_impl(ctx, &[plays[1].id]).await?;
+		assert_eq!(play_song_title(ctx, &shown_plays[0])?, "ALTER EGO");
+
+		Ok(())
 	}
 }
 // }}}

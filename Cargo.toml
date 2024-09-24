@@ -16,6 +16,14 @@ path = "src/bin/discord-bot/main.rs"
 name = "shimmering-cli"
 path = "src/bin/cli/main.rs"
 
+[[bin]]
+name = "shimmering-server"
+path = "src/bin/server/main.rs"
+
+[[bin]]
+name = "shimmering-discord-presence"
+path = "src/bin/discord-presence/main.rs"
+
 [dependencies]
 chrono = "0.4.38"
 freetype-rs = "0.36.0"
@@ -40,6 +48,10 @@ serde_with = "3.9.0"
 anyhow = "1.0.87"
 sha2 = "0.10.8"
 base16ct = { version = "0.2.0", features = ["alloc"] }
+axum = { version = "0.7.6", features = ["macros"] }
+paste = "1.0.15"
+discord-rich-presence = "0.2.4"
+reqwest = { version = "0.12.7", features = ["json"] }
 
-[profile.dev.package."*"]
-opt-level = 3
+# [profile.dev.package."*"]
+# opt-level = 3

@@ -101,13 +101,13 @@ async fn info_impl(ctx: &mut impl MessageContext, name: &str) -> Result<(), Tagg
 // {{{ Tests
 #[cfg(test)]
 mod info_tests {
-	use crate::{commands::discord::mock::MockContext, with_test_ctx};
+	use crate::{commands::discord::mock::MockContext, golden_test, with_test_ctx};
 
 	use super::*;
 
 	#[tokio::test]
 	async fn no_suffix() -> Result<(), Error> {
-		with_test_ctx!("test/commands/chart/info/no_suffix", async |ctx| {
+		with_test_ctx!("commands/commands/chart/info/no_suffix", |ctx| async move {
 			info_impl(ctx, "Pentiment").await?;
 			Ok(())
 		})
@@ -115,22 +115,20 @@ mod info_tests {
 
 	#[tokio::test]
 	async fn specify_difficulty() -> Result<(), Error> {
-		with_test_ctx!("test/commands/chart/info/specify_difficulty", async |ctx| {
-			info_impl(ctx, "Hellohell [ETR]").await?;
-			Ok(())
-		})
-	}
-
-	#[tokio::test]
-	async fn last_byd() -> Result<(), Error> {
 		with_test_ctx!(
-			"test/commands/chart/info/last_byd",
-			async |ctx: &mut MockContext| {
-				info_impl(ctx, "Last | Moment [BYD]").await?;
-				info_impl(ctx, "Last | Eternity [BYD]").await?;
+			"commands/commands/chart/info/specify_difficulty",
+			|ctx| async move {
+				info_impl(ctx, "Hellohell [ETR]").await?;
 				Ok(())
 			}
 		)
+	}
+
+	golden_test!(last_byd, "commands/chart/info/last_byd");
+	async fn last_byd(ctx: &mut MockContext) -> Result<(), TaggedError> {
+		info_impl(ctx, "Last | Moment [BYD]").await?;
+		info_impl(ctx, "Last | Eternity [BYD]").await?;
+		Ok(())
 	}
 }
 // }}}
@@ -208,46 +206,41 @@ async fn best_impl<C: MessageContext>(ctx: &mut C, name: &str) -> Result<Play, T
 // {{{ Tests
 #[cfg(test)]
 mod best_tests {
-	use std::path::PathBuf;
+	use std::{path::PathBuf, str::FromStr};
 
 	use crate::{
 		commands::{discord::mock::MockContext, score::magic_impl},
-		with_test_ctx,
+		golden_test, with_test_ctx,
 	};
 
 	use super::*;
 
 	#[tokio::test]
 	async fn no_scores() -> Result<(), Error> {
-		with_test_ctx!("test/commands/chart/best/no_scores", async |ctx| {
+		with_test_ctx!("commands/chart/best/no_scores", |ctx| async move {
 			best_impl(ctx, "Pentiment").await?;
 			Ok(())
 		})
 	}
 
-	#[tokio::test]
-	async fn pick_correct_score() -> Result<(), Error> {
-		with_test_ctx!(
-			"test/commands/chart/best/pick_correct_score",
-			async |ctx: &mut MockContext| {
-				let plays = magic_impl(
-					ctx,
-					&[
-						PathBuf::from_str("test/screenshots/fracture_ray_ex.jpg")?,
-						// Make sure we aren't considering higher scores from other stuff
-						PathBuf::from_str("test/screenshots/antithese_74_kerning.jpg")?,
-						PathBuf::from_str("test/screenshots/fracture_ray_missed_ex.jpg")?,
-					],
-				)
-				.await?;
-
-				let play = best_impl(ctx, "Fracture ray").await?;
-				assert_eq!(play.score(ScoringSystem::Standard).0, 9_805_651);
-				assert_eq!(plays[0], play);
-
-				Ok(())
-			}
+	golden_test!(pick_correct_score, "commands/chart/best/pick_correct_score");
+	async fn pick_correct_score(ctx: &mut MockContext) -> Result<(), TaggedError> {
+		let plays = magic_impl(
+			ctx,
+			&[
+				PathBuf::from_str("test/screenshots/fracture_ray_ex.jpg")?,
+				// Make sure we aren't considering higher scores from other stuff
+				PathBuf::from_str("test/screenshots/antithese_74_kerning.jpg")?,
+				PathBuf::from_str("test/screenshots/fracture_ray_missed_ex.jpg")?,
+			],
 		)
+		.await?;
+
+		let play = best_impl(ctx, "Fracture ray").await?;
+		assert_eq!(play.score(ScoringSystem::Standard).0, 9_805_651);
+		assert_eq!(plays[0], play);
+
+		Ok(())
 	}
 }
 // }}}

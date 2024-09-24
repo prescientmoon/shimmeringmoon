@@ -41,7 +41,12 @@
         };
         devShell = pkgs.mkShell rec {
           nativeBuildInputs = with pkgs; [
-            toolchain
+            cargo
+            rustc
+            clippy
+            rust-analyzer
+            rustfmt
+
             ruff
             imagemagick
             pkg-config

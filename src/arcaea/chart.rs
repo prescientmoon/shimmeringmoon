@@ -5,13 +5,14 @@ use std::{fmt::Display, num::NonZeroU16, path::PathBuf};
 use anyhow::anyhow;
 use image::{ImageBuffer, Rgb};
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ValueRef};
+use serde::{Deserialize, Serialize};
 
 use crate::bitmap::Color;
 use crate::context::{DbConnection, Error};
 // }}}
 
 // {{{ Difficuly
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Difficulty {
 	PST,
 	PRS,
@@ -69,7 +70,7 @@ pub const DIFFICULTY_MENU_PIXEL_COLORS: [Color; Difficulty::DIFFICULTIES.len()] 
 ];
 // }}}
 // {{{ Level
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Level {
 	Unknown,
 	One,
@@ -144,7 +145,7 @@ impl FromSql for Level {
 }
 // }}}
 // {{{ Side
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum Side {
 	Light,
 	Conflict,
@@ -178,7 +179,7 @@ impl FromSql for Side {
 }
 // }}}
 // {{{ Song
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Song {
 	pub id: u32,
 	pub title: String,
@@ -199,7 +200,7 @@ pub struct Jacket {
 	pub bitmap: &'static ImageBuffer<Rgb<u8>, Vec<u8>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chart {
 	pub id: u32,
 	pub song_id: u32,
@@ -212,16 +213,8 @@ pub struct Chart {
 	pub note_count: u32,
 	pub chart_constant: u32,
 
+	#[serde(skip)]
 	pub cached_jacket: Option<Jacket>,
-}
-
-impl Chart {
-	#[inline]
-	pub fn jacket_path(&self, data_dir: &Path) -> PathBuf {
-		data_dir
-			.join("jackets")
-			.join(format!("{}-{}.jpg", self.song_id, self.id))
-	}
 }
 // }}}
 // {{{ Cached song

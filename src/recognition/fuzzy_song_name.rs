@@ -74,9 +74,7 @@ pub fn guess_chart_name<'a>(
 		let mut close_enough: Vec<_> = cache
 			.charts()
 			.filter_map(|chart| {
-				if let Some(difficulty) = difficulty
-					&& chart.difficulty != difficulty
-				{
+				if difficulty.map_or(false, |d| d != chart.difficulty) {
 					return None;
 				}
 
@@ -92,22 +90,24 @@ pub fn guess_chart_name<'a>(
 
 				// Cut title to the length of the text, and then check
 				let shortest_len = Ord::min(song_title.len(), text.len());
-				if let Some(sliced) = &song_title.get(..shortest_len)
-					&& (text.len() >= 6 || unsafe_heuristics)
-				{
-					let slice_distance = edit_distance_with(text, sliced, &mut levenshtein_vec);
-					if slice_distance == 0 {
-						distance_vec.push(3);
+				if let Some(sliced) = &song_title.get(..shortest_len) {
+					if text.len() >= 6 || unsafe_heuristics {
+						let slice_distance = edit_distance_with(text, sliced, &mut levenshtein_vec);
+						if slice_distance == 0 {
+							distance_vec.push(3);
+						}
 					}
 				}
 
 				// Shorthand-based matching
-				if let Some(shorthand) = &chart.shorthand
-					&& unsafe_heuristics
-				{
-					let short_distance = edit_distance_with(text, shorthand, &mut levenshtein_vec);
-					if short_distance <= shorthand.len() / 3 {
-						distance_vec.push(short_distance * 10 + 1);
+				if let Some(shorthand) = &chart.shorthand {
+					if unsafe_heuristics {
+						let short_distance =
+							edit_distance_with(text, shorthand, &mut levenshtein_vec);
+
+						if short_distance <= shorthand.len() / 3 {
+							distance_vec.push(short_distance * 10 + 1);
+						}
 					}
 				}
 

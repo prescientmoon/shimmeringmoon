@@ -2,6 +2,7 @@
 use std::fmt::{Display, Write};
 
 use num::{Rational32, Rational64};
+use serde::{Deserialize, Serialize};
 
 use crate::context::Error;
 
@@ -71,7 +72,7 @@ impl Display for Grade {
 }
 // }}}
 // {{{ Score
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Score(pub u32);
 
 impl Score {

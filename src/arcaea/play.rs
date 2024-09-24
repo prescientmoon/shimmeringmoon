@@ -12,6 +12,8 @@ use num::Rational32;
 use num::Zero;
 use poise::serenity_prelude::{CreateAttachment, CreateEmbed, CreateEmbedAuthor, Timestamp};
 use rusqlite::Row;
+use serde::Deserialize;
+use serde::Serialize;
 
 use crate::arcaea::chart::{Chart, Song};
 use crate::context::ErrorKind;
@@ -140,7 +142,7 @@ impl CreatePlay {
 }
 // }}}
 // {{{ Score data
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScoreCollection([Score; ScoringSystem::SCORING_SYSTEMS.len()]);
 
 impl ScoreCollection {
@@ -152,7 +154,7 @@ impl ScoreCollection {
 }
 // }}}
 // {{{ Play
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Play {
 	pub id: u32,
 	#[allow(unused)]
@@ -267,9 +269,7 @@ impl Play {
 			} else {
 				Some('P')
 			}
-		} else if let Some(distribution) = self.distribution(chart.note_count)
-			&& distribution.3 == 0
-		{
+		} else if let Some((_, _, _, 0)) = self.distribution(chart.note_count) {
 			Some('F')
 		} else {
 			Some('C')
@@ -553,5 +553,13 @@ pub async fn generate_missing_scores(ctx: &UserContext) -> Result<(), Error> {
 		println!("Processed {i} plays");
 	}
 	Ok(())
+}
+// }}}
+// {{{ Play + chart + song triplet
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayWithDetails {
+	pub play: Play,
+	pub song: Song,
+	pub chart: Chart,
 }
 // }}}

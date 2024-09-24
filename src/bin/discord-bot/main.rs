@@ -6,12 +6,8 @@ use std::{env::var, sync::Arc, time::Duration};
 
 // {{{ Error handler
 async fn on_error(error: poise::FrameworkError<'_, UserContext, Error>) {
-	match error {
-		error => {
-			if let Err(e) = poise::builtins::on_error(error).await {
-				println!("Error while handling error: {}", e)
-			}
-		}
+	if let Err(e) = poise::builtins::on_error(error).await {
+		println!("Error while handling error: {}", e)
 	}
 }
 // }}}
@@ -34,7 +30,7 @@ async fn main() {
 					} else if message.content.starts_with("!") {
 						Ok(Some(message.content.split_at(1)))
 					} else if message.guild_id.is_none() {
-						if message.content.trim().len() == 0 {
+						if message.content.trim().is_empty() {
 							Ok(Some(("", "score magic")))
 						} else {
 							Ok(Some(("", &message.content[..])))

@@ -70,10 +70,10 @@ impl ComponentVec {
 
 			for x in x_start..x_end {
 				for y in y_start..y_end {
-					if let Some(p) = components.components.get_pixel_checked(x, y)
-						&& p.0[0] == component
-					{
-						count += 255 - components.image[(x, y)].0[0] as u32;
+					if let Some(p) = components.components.get_pixel_checked(x, y) {
+						if p.0[0] == component {
+							count += 255 - components.image[(x, y)].0[0] as u32;
+						}
 					}
 				}
 			}
