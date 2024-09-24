@@ -76,7 +76,7 @@ Additionally, you must place a custom `b30` background at `$SHIMMERING_ASSET_DIR
 After everything has been placed in the right directory, run `shimmeringmoon-cli prepare-jackets` to prepare everything. This will:
 
 - Associate each asset with it's database ID
-- Build out a recognition matrix for image recognition purposes (this matrix more or less contains a 64x64 downscaled version of each provided asset, stored in bitmap format together with the associated database ID)
+- Build out a recognition matrix for image recognition purposes (this matrix more or less contains a 8x8 downscaled version of each provided asset, stored in bitmap format together with the associated database ID)
 
 ### Importing charts
 
