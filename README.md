@@ -77,9 +77,9 @@ Additionally, you must place a custom `b30` background at `$SHIMMERING_ASSET_DIR
 After everything has been placed in the right directory, run `shimmeringmoon-cli prepare-jackets` to prepare everything. This will:
 
 - Associate each asset with it's database ID
-- Build out a recognition matrix (~30kb) for image recognition purposes. This file contains:
-  - about ~3 pixels worth of information for each jacket, stored together with their associated database IDs
-  - a projection matrix which transforms a $8 \times 8$ downscaled vectorized version of an image (that's $192$ dimensions — $64 \text{pixels} \times 3 \text{channels}$) and projects it to a $10$-dimensional space (the matrix is built using [singular value decomposition](https://en.wikipedia.org/wiki/Singular_value_decomposition)).
+- Build out a recognition matrix (about $30\text{K}$) for image recognition purposes. This file contains:
+  - about $3$ pixels worth of information for each jacket, stored together with the respective database ID
+  - a projection matrix which transforms a $8 \times 8$ downscaled vectorized version of an image (that's $192$ dimensions — $64 \text{ pixels} \times 3 \text{ channels}$) and projects it to a $10$-dimensional space (the matrix is built using [truncated singular value decomposition](https://en.wikipedia.org/wiki/Singular_value_decomposition)).
 
 ### Importing charts
 
