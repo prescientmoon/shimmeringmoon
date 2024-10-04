@@ -1,6 +1,8 @@
 #![allow(async_fn_in_trait)]
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::redundant_closure)]
+// This sometimes triggers for rationals, where it doesn't make sense
+#![allow(clippy::int_plus_one)]
 
 pub mod arcaea;
 pub mod assets;

@@ -32,22 +32,23 @@ pub fn guess_song_and_chart<'a>(
 	ctx: &'a UserContext,
 	name: &'a str,
 ) -> Result<(&'a Song, &'a Chart), Error> {
-	let name = name.trim();
-	let (name, difficulty) = name
-		.strip_suffix("PST")
-		.zip(Some(Difficulty::PST))
-		.or_else(|| strip_case_insensitive_suffix(name, "[PST]").zip(Some(Difficulty::PST)))
-		.or_else(|| strip_case_insensitive_suffix(name, "PRS").zip(Some(Difficulty::PRS)))
-		.or_else(|| strip_case_insensitive_suffix(name, "[PRS]").zip(Some(Difficulty::PRS)))
-		.or_else(|| strip_case_insensitive_suffix(name, "FTR").zip(Some(Difficulty::FTR)))
-		.or_else(|| strip_case_insensitive_suffix(name, "[FTR]").zip(Some(Difficulty::FTR)))
-		.or_else(|| strip_case_insensitive_suffix(name, "ETR").zip(Some(Difficulty::ETR)))
-		.or_else(|| strip_case_insensitive_suffix(name, "[ETR]").zip(Some(Difficulty::ETR)))
-		.or_else(|| strip_case_insensitive_suffix(name, "BYD").zip(Some(Difficulty::BYD)))
-		.or_else(|| strip_case_insensitive_suffix(name, "[BYD]").zip(Some(Difficulty::BYD)))
-		.unwrap_or((name, Difficulty::FTR));
+	let mut name = name.trim();
+	let mut inferred_difficulty = None;
 
-	guess_chart_name(name, &ctx.song_cache, Some(difficulty), true)
+	for difficulty in Difficulty::DIFFICULTIES {
+		for shorthand in [
+			Difficulty::DIFFICULTY_SHORTHANDS[difficulty.to_index()],
+			Difficulty::DIFFICULTY_SHORTHANDS_IN_BRACKETS[difficulty.to_index()],
+		] {
+			if let Some(stripped) = strip_case_insensitive_suffix(name, shorthand) {
+				inferred_difficulty = Some(difficulty);
+				name = stripped;
+				break;
+			}
+		}
+	}
+
+	guess_chart_name(name, &ctx.song_cache, inferred_difficulty, true)
 }
 // }}}
 // {{{ Guess chart by name
@@ -74,11 +75,20 @@ pub fn guess_chart_name<'a>(
 		let mut close_enough: Vec<_> = cache
 			.charts()
 			.filter_map(|chart| {
-				if difficulty.map_or(false, |d| d != chart.difficulty) {
+				let cached_song = &cache.lookup_song(chart.song_id).ok()?;
+				let song = &cached_song.song;
+				let plausible_difficulty = match difficulty {
+					Some(difficulty) => difficulty == chart.difficulty,
+					None => {
+						let chart_count = cached_song.charts().count();
+						chart_count == 1 || chart.difficulty == Difficulty::FTR
+					}
+				};
+
+				if !plausible_difficulty {
 					return None;
 				}
 
-				let song = &cache.lookup_song(chart.song_id).ok()?.song;
 				let song_title = &song.lowercase_title;
 				distance_vec.clear();
 

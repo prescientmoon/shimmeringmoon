@@ -1,5 +1,5 @@
-use anyhow::anyhow;
 // {{{ Imports
+use anyhow::anyhow;
 use poise::serenity_prelude::{CreateAttachment, CreateEmbed};
 
 use crate::arcaea::{chart::Side, play::Play};
@@ -138,7 +138,7 @@ mod info_tests {
 async fn info(
 	mut ctx: Context<'_>,
 	#[rest]
-	#[description = "Name of chart to show (difficulty at the end)"]
+	#[description = "Name of chart (difficulty at the end)"]
 	name: String,
 ) -> Result<(), Error> {
 	let res = info_impl(&mut ctx, &name).await;
@@ -251,7 +251,7 @@ mod best_tests {
 async fn best(
 	mut ctx: Context<'_>,
 	#[rest]
-	#[description = "Name of chart to show (difficulty at the end)"]
+	#[description = "Name of chart (difficulty at the end)"]
 	name: String,
 ) -> Result<(), Error> {
 	let res = best_impl(&mut ctx, &name).await;
@@ -403,7 +403,7 @@ async fn plot(
 	mut ctx: Context<'_>,
 	scoring_system: Option<ScoringSystem>,
 	#[rest]
-	#[description = "Name of chart to show (difficulty at the end)"]
+	#[description = "Name of chart (difficulty at the end)"]
 	name: String,
 ) -> Result<(), Error> {
 	let res = plot_impl(&mut ctx, scoring_system, name).await;

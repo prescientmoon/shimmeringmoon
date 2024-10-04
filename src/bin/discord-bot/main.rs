@@ -21,6 +21,7 @@ async fn main() {
 			commands::score::score(),
 			commands::stats::stats(),
 			commands::chart::chart(),
+			commands::calc::calc(),
 		],
 		prefix_options: poise::PrefixFrameworkOptions {
 			stripped_dynamic_prefix: Some(|_ctx, message, _user_ctx| {

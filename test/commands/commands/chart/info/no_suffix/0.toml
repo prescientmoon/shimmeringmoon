@@ -1,0 +1,52 @@
+reply = true
+
+[[embeds]]
+title = "Pentiment [FTR 10]"
+type = "rich"
+
+[embeds.thumbnail]
+url = "attachment://chart.png"
+
+[[embeds.fields]]
+name = "Note count"
+value = "1345"
+inline = true
+
+[[embeds.fields]]
+name = "Chart constant"
+value = "10.3"
+inline = true
+
+[[embeds.fields]]
+name = "Total plays"
+value = "0"
+inline = true
+
+[[embeds.fields]]
+name = "BPM"
+value = "200-222"
+inline = true
+
+[[embeds.fields]]
+name = "Side"
+value = "conflict"
+inline = true
+
+[[embeds.fields]]
+name = "Artist"
+value = "Pentiment"
+inline = true
+
+[[embeds.fields]]
+name = "Note design"
+value = "Paradox Blight"
+inline = true
+
+[[embeds.fields]]
+name = "Pack"
+value = "Final Verdict"
+inline = true
+
+[[attachments]]
+filename = "chart.png"
+hash = "sha256_5ffda660ce1c6ddd7c60bbb7f34443a7772e608f930768a147e423cc62b7e25d"

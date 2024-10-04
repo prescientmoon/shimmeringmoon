@@ -5,6 +5,7 @@ pub mod discord;
 pub mod score;
 pub mod stats;
 pub mod utils;
+pub mod calc;
 
 // {{{ Help
 /// Show this help menu

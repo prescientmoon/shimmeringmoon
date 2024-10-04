@@ -199,6 +199,9 @@ pub mod mock {
 		pub user_id: u64,
 		pub data: UserContext,
 
+		/// If true, messages will be saved in a vec.
+		pub save_messages: bool,
+
 		messages: Vec<ReplyEssence>,
 	}
 
@@ -207,6 +210,7 @@ pub mod mock {
 			Self {
 				data,
 				user_id: 666,
+				save_messages: true,
 				messages: vec![],
 			}
 		}
@@ -274,7 +278,10 @@ pub mod mock {
 		}
 
 		async fn send(&mut self, message: CreateReply) -> Result<(), Error> {
-			self.messages.push(ReplyEssence::from_reply(message));
+			if self.save_messages {
+				self.messages.push(ReplyEssence::from_reply(message));
+			}
+
 			Ok(())
 		}
 

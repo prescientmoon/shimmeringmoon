@@ -36,7 +36,7 @@ pub fn run() -> Result<(), Error> {
 	let entries = fs::read_dir(&raw_songs_dir)
 		.with_context(|| "Couldn't read songs directory")?
 		.collect::<Result<Vec<_>, _>>()
-		.with_context(|| format!("Could not read member of `songs/raw`"))?;
+		.with_context(|| "Could not read member of `songs/raw`")?;
 
 	for (i, dir) in entries.iter().enumerate() {
 		let raw_dir_name = dir.file_name();
@@ -48,10 +48,7 @@ pub fn run() -> Result<(), Error> {
 		}
 
 		print!("{}/{}: {dir_name}", i, entries.len());
-
-		if i % 5 == 0 {
-			stdout().flush()?;
-		}
+		stdout().flush()?;
 		// }}}
 
 		let entries = fs::read_dir(dir.path())
@@ -126,13 +123,31 @@ pub fn run() -> Result<(), Error> {
 
 			jacket_vectors.push((song.id, ImageVec::from_image(&image)));
 
-			let image = image.resize(BITMAP_IMAGE_SIZE, BITMAP_IMAGE_SIZE, FilterType::Gaussian);
-			let image_out_path =
-				out_dir.join(format!("{difficulty_string}_{BITMAP_IMAGE_SIZE}.jpg"));
-			image
-				// .blur(27.5)
-				.save(&image_out_path)
-				.with_context(|| format!("Could not save image to {image_out_path:?}"))?;
+			let small_image =
+				image.resize(BITMAP_IMAGE_SIZE, BITMAP_IMAGE_SIZE, FilterType::Gaussian);
+
+			{
+				let image_small_path =
+					out_dir.join(format!("{difficulty_string}_{BITMAP_IMAGE_SIZE}.jpg"));
+				small_image
+					.save(&image_small_path)
+					.with_context(|| format!("Could not save image to {image_small_path:?}"))?;
+			}
+
+			{
+				let image_full_path = out_dir.join(format!("{difficulty_string}_full.jpg"));
+				image
+					.save(&image_full_path)
+					.with_context(|| format!("Could not save image to {image_full_path:?}"))?;
+			}
+
+			{
+				let blurred_out_path = out_dir.join(format!("{difficulty_string}_blurred.jpg"));
+				small_image
+					.blur(27.5)
+					.save(&blurred_out_path)
+					.with_context(|| format!("Could not save image to {blurred_out_path:?}"))?;
+			}
 		}
 	}
 
@@ -152,9 +167,9 @@ pub fn run() -> Result<(), Error> {
 	{
 		println!("Encoded {} images", jacket_vectors.len());
 		let bytes = postcard::to_allocvec(&jacket_vectors)
-			.with_context(|| format!("Coult not encode jacket matrix"))?;
+			.with_context(|| "Coult not encode jacket matrix")?;
 		fs::write(songs_dir.join("recognition_matrix"), bytes)
-			.with_context(|| format!("Could not write jacket matrix"))?;
+			.with_context(|| "Could not write jacket matrix")?;
 	}
 
 	Ok(())

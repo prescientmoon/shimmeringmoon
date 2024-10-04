@@ -141,6 +141,10 @@ impl UserContext {
 // {{{ Testing helpers
 #[cfg(test)]
 pub mod testing {
+	use tempfile::TempDir;
+
+	use crate::commands::discord::mock::MockContext;
+
 	use super::*;
 
 	pub async fn get_shared_context() -> &'static UserContext {
@@ -165,6 +169,16 @@ pub mod testing {
 		);
 	}
 
+	pub async fn get_mock_context() -> Result<(MockContext, TempDir), Error> {
+		let mut data = (*get_shared_context().await).clone();
+		let dir = tempfile::tempdir()?;
+		data.db = connect_db(dir.path());
+		import_songs_and_jackets_from(dir.path());
+
+		let ctx = MockContext::new(data);
+		Ok((ctx, dir))
+	}
+
 	// rustfmt fucks up the formatting here,
 	// but the skip attribute doesn't seem to work well on macros 🤔
 	#[macro_export]
@@ -184,12 +198,7 @@ pub mod testing {
 		($test_path:expr, $f:expr) => {{
 			use std::str::FromStr;
 
-			let mut data = (*$crate::context::testing::get_shared_context().await).clone();
-			let dir = tempfile::tempdir()?;
-			data.db = $crate::context::connect_db(dir.path());
-			$crate::context::testing::import_songs_and_jackets_from(dir.path());
-
-			let mut ctx = $crate::commands::discord::mock::MockContext::new(data);
+			let (mut ctx, _guard) = $crate::context::testing::get_mock_context().await?;
 			let res = $crate::user::User::create_from_context(&ctx);
 			ctx.handle_error(res).await?;
 

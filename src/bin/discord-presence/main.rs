@@ -21,7 +21,7 @@ async fn main() -> Result<(), Error> {
 	ipc.connect().map_err(|e| anyhow!("{}", e))?;
 
 	println!("Starting presence loop...");
-	for i in 0.. {
+	loop {
 		println!("Getting most recent score...");
 		let res = reqwest::get(format!("{}/plays/latest", server_url)).await;
 
@@ -42,7 +42,6 @@ async fn main() -> Result<(), Error> {
 			"{}/jackets/by_chart_id/{}.png",
 			server_url, &triplet.chart.id
 		);
-		let jacket_url = "https://static.wikia.nocookie.net/iowiro/images/c/c2/Fracture_Ray.jpg/revision/latest?cb=20230928061927";
 		println!("Jacket url: {}", jacket_url);
 
 		let jacket_text = format!("{} — {}", &triplet.song.title, &triplet.song.artist);
@@ -68,6 +67,4 @@ async fn main() -> Result<(), Error> {
 		ipc.set_activity(activity).map_err(|e| anyhow!("{}", e))?;
 		tokio::time::sleep(Duration::from_secs(30)).await;
 	}
-
-	Ok(())
 }

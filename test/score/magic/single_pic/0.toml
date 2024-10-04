@@ -1,0 +1,57 @@
+reply = true
+
+[[embeds]]
+title = "ALTER EGO [FTR 10]"
+type = "rich"
+
+[embeds.thumbnail]
+url = "attachment://416-9926250-0.png"
+
+[[embeds.fields]]
+name = "Score"
+value = "9'926'250"
+inline = true
+
+[[embeds.fields]]
+name = "Rating"
+value = "12.13"
+inline = true
+
+[[embeds.fields]]
+name = "Grade"
+value = "EX+"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Score"
+value = "9'693'042"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Rating"
+value = "11.14"
+inline = true
+
+[[embeds.fields]]
+name = "ξ-Grade"
+value = "AA"
+inline = true
+
+[[embeds.fields]]
+name = "Status"
+value = "C (-164/-12/-5)"
+inline = true
+
+[[embeds.fields]]
+name = "Max recall"
+value = "397"
+inline = true
+
+[[embeds.fields]]
+name = "ID"
+value = "1"
+inline = true
+
+[[attachments]]
+filename = "416-9926250-0.png"
+hash = "sha256_5f1febcdf44bc22bf7ef5bff0cee197a65a221277ebe9615d469002b4324ada3"

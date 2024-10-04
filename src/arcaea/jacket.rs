@@ -106,6 +106,7 @@ impl JacketCache {
 
 			Vec::new()
 		} else {
+			let suffix = format!("_{BITMAP_IMAGE_SIZE}.jpg");
 			let songs_dir = get_asset_dir().join("songs/by_id");
 			let entries =
 				fs::read_dir(songs_dir).with_context(|| "Couldn't read songs directory")?;
@@ -127,7 +128,12 @@ impl JacketCache {
 				for entry in entries {
 					let file = entry?;
 					let raw_name = file.file_name();
-					let name = raw_name.to_str().unwrap().strip_suffix(".jpg").unwrap();
+					let name = raw_name.to_str().unwrap();
+					if !name.ends_with(&suffix) {
+						continue;
+					}
+
+					let name = name.strip_suffix(&suffix).unwrap();
 
 					let difficulty = Difficulty::DIFFICULTY_SHORTHANDS
 						.iter()
@@ -146,6 +152,7 @@ impl JacketCache {
 						let chart = song_cache
 							.lookup_by_difficulty_mut(song_id, difficulty)
 							.unwrap();
+						chart.jacket_source = Some(difficulty);
 						chart.cached_jacket = Some(Jacket {
 							raw: contents,
 							bitmap,
@@ -153,11 +160,12 @@ impl JacketCache {
 					} else {
 						for chart_id in song_cache.lookup_song(song_id)?.charts() {
 							let chart = song_cache.lookup_chart_mut(chart_id)?;
-							if chart.cached_jacket.is_none() {
+							if chart.jacket_source.is_none() {
 								chart.cached_jacket = Some(Jacket {
 									raw: contents,
 									bitmap,
 								});
+								chart.jacket_source = None;
 							}
 						}
 					}

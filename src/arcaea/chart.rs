@@ -1,6 +1,5 @@
-use std::path::Path;
 // {{{ Imports
-use std::{fmt::Display, num::NonZeroU16, path::PathBuf};
+use std::{fmt::Display, num::NonZeroU16};
 
 use anyhow::anyhow;
 use image::{ImageBuffer, Rgb};
@@ -26,6 +25,8 @@ impl Difficulty {
 		[Self::PST, Self::PRS, Self::FTR, Self::ETR, Self::BYD];
 
 	pub const DIFFICULTY_SHORTHANDS: [&'static str; 5] = ["PST", "PRS", "FTR", "ETR", "BYD"];
+	pub const DIFFICULTY_SHORTHANDS_IN_BRACKETS: [&'static str; 5] =
+		["[PST]", "[PRS]", "[FTR]", "[ETR]", "[BYD]"];
 	pub const DIFFICULTY_STRINGS: [&'static str; 5] =
 		["PAST", "PRESENT", "FUTURE", "ETERNAL", "BEYOND"];
 
@@ -53,11 +54,7 @@ impl FromSql for Difficulty {
 
 impl Display for Difficulty {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(
-			f,
-			"{}",
-			Self::DIFFICULTY_SHORTHANDS[self.to_index()].to_lowercase()
-		)
+		write!(f, "{}", Self::DIFFICULTY_SHORTHANDS[self.to_index()])
 	}
 }
 
@@ -192,6 +189,24 @@ pub struct Song {
 	pub pack: Option<String>,
 	pub side: Side,
 }
+
+impl Song {
+	/// Returns true if multiple songs are known to exist with the given title.
+	#[inline]
+	pub fn ambigous_name(&self) -> bool {
+		self.title == "Genesis" || self.title == "Quon"
+	}
+}
+
+impl Display for Song {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		if self.ambigous_name() {
+			write!(f, "{} ({})", self.title, self.artist)
+		} else {
+			write!(f, "{}", self.title)
+		}
+	}
+}
 // }}}
 // {{{ Chart
 #[derive(Debug, Clone, Copy)]
@@ -215,6 +230,10 @@ pub struct Chart {
 
 	#[serde(skip)]
 	pub cached_jacket: Option<Jacket>,
+
+	/// If `None`, the default jacket is used.
+	/// Otherwise, a difficulty-specific jacket exists.
+	pub jacket_source: Option<Difficulty>,
 }
 // }}}
 // {{{ Cached song
@@ -374,6 +393,7 @@ impl SongCache {
 				note_count: row.get("note_count")?,
 				note_design: row.get("note_design")?,
 				cached_jacket: None,
+				jacket_source: None,
 			})
 		})?;
 
