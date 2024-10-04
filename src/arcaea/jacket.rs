@@ -158,7 +158,7 @@ impl JacketCache {
 							bitmap,
 						});
 					} else {
-						for chart_id in song_cache.lookup_song(song_id)?.charts() {
+						for (_, chart_id) in song_cache.lookup_song(song_id)?.charts() {
 							let chart = song_cache.lookup_chart_mut(chart_id)?;
 							if chart.jacket_source.is_none() {
 								chart.cached_jacket = Some(Jacket {

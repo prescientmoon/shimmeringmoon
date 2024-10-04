@@ -323,7 +323,7 @@ mod show_tests {
 }
 // }}}
 // {{{ Discord wrapper
-/// Show scores given their ides
+/// Show scores given their IDs.
 #[poise::command(prefix_command, slash_command)]
 pub async fn show(
 	mut ctx: Context<'_>,

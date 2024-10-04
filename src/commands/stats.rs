@@ -26,7 +26,7 @@ use super::discord::MessageContext;
 // }}}
 
 // {{{ Stats
-/// Stats display
+/// Query various stats.
 #[poise::command(
 	prefix_command,
 	slash_command,

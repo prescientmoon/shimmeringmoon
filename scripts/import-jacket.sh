@@ -17,8 +17,8 @@ mkdir -p $dir_path
 cd $dir_path
 
 http GET "$url" > temp
-convert ./temp ./base.jpg
-convert ./base.jpg -resize 256x256 ./base_256.jpg
+magick ./temp ./base.jpg
+magick ./base.jpg -resize 256x256 ./base_256.jpg
 rm temp
 img2sixel ./base.jpg
 

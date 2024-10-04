@@ -80,8 +80,16 @@ pub fn guess_chart_name<'a>(
 				let plausible_difficulty = match difficulty {
 					Some(difficulty) => difficulty == chart.difficulty,
 					None => {
-						let chart_count = cached_song.charts().count();
-						chart_count == 1 || chart.difficulty == Difficulty::FTR
+						let has_ftr = cached_song.charts().any(|(d, _)| d == Difficulty::FTR);
+						let main_diff = if has_ftr {
+							Difficulty::FTR
+						} else {
+							let (max_diff, _) =
+								cached_song.charts().max_by_key(|(d, _)| *d).unwrap();
+							max_diff
+						};
+
+						chart.difficulty == main_diff
 					}
 				};
 

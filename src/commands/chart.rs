@@ -24,7 +24,7 @@ use super::discord::{CreateReplyExtra, MessageContext};
 // }}}
 
 // {{{ Top command
-/// Chart-related stats
+/// Chart-related utilities.
 #[poise::command(
 	prefix_command,
 	slash_command,

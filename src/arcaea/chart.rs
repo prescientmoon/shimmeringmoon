@@ -240,7 +240,7 @@ pub struct Chart {
 #[derive(Debug, Clone)]
 pub struct CachedSong {
 	pub song: Song,
-	chart_ids: [Option<NonZeroU16>; 5],
+	chart_ids: [Option<NonZeroU16>; Difficulty::DIFFICULTIES.len()],
 }
 
 impl CachedSong {
@@ -253,8 +253,11 @@ impl CachedSong {
 	}
 
 	#[inline]
-	pub fn charts(&self) -> impl Iterator<Item = u32> {
-		self.chart_ids.into_iter().flatten().map(|i| i.get() as u32)
+	pub fn charts(&self) -> impl Iterator<Item = (Difficulty, u32)> {
+		self.chart_ids
+			.into_iter()
+			.enumerate()
+			.filter_map(|(i, id)| id.map(|id| (Difficulty::DIFFICULTIES[i], id.get() as u32)))
 	}
 }
 // }}}

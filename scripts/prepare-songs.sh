@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-dir_path=$SHIMMERING_DATA_DIR/songs
+dir_path=$SHIMMERING_ASSETS_DIR/songs/raw
 
 # Find all files in the directory and its subdirectories
 find "$dir_path" -type f | while read -r file; do

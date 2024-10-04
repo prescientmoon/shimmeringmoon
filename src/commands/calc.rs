@@ -13,7 +13,7 @@ use super::discord::MessageContext;
 // }}}
 
 // {{{ Top command
-/// Compute different things
+/// Compute various things
 #[poise::command(
 	prefix_command,
 	slash_command,
