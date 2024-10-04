@@ -72,11 +72,6 @@ pub static UNI_FONT: RefCell<Face> = get_font("unifont.otf");
 // }}}
 // {{{ Asset art helpers
 #[inline]
-pub fn should_skip_jacket_art() -> bool {
-	var("SHIMMERING_NO_JACKETS").unwrap_or_default() == "1"
-}
-
-#[inline]
 #[allow(dead_code)]
 pub fn should_blur_jacket_art() -> bool {
 	var("SHIMMERING_BLUR_JACKETS").unwrap_or_default() == "1"

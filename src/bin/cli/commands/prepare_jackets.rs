@@ -3,10 +3,14 @@ use std::fs;
 use std::io::{stdout, Write};
 
 use anyhow::{anyhow, bail, Context};
+use faer::Mat;
 use image::imageops::FilterType;
 
 use shimmeringmoon::arcaea::chart::{Difficulty, SongCache};
-use shimmeringmoon::arcaea::jacket::{ImageVec, BITMAP_IMAGE_SIZE};
+use shimmeringmoon::arcaea::jacket::{
+	image_to_vec, read_jackets, JacketCache, BITMAP_IMAGE_SIZE, IMAGE_VEC_DIM,
+	JACKET_RECOGNITITION_DIMENSIONS,
+};
 use shimmeringmoon::assets::{get_asset_dir, get_data_dir};
 use shimmeringmoon::context::{connect_db, Error};
 use shimmeringmoon::recognition::fuzzy_song_name::guess_chart_name;
@@ -15,13 +19,17 @@ use shimmeringmoon::recognition::fuzzy_song_name::guess_chart_name;
 /// Hacky function which clears the current line of the standard output.
 #[inline]
 fn clear_line() {
-	print!("\r                                       \r");
+	print!("\r                                                                        \r");
 }
 
 pub fn run() -> Result<(), Error> {
 	let db = connect_db(&get_data_dir());
-	let song_cache = SongCache::new(&db)?;
+	let mut song_cache = SongCache::new(&db)?;
 
+	let mut jacket_vector_ids = vec![];
+	let mut jacket_vectors = vec![];
+
+	// {{{ Prepare directories
 	let songs_dir = get_asset_dir().join("songs");
 	let raw_songs_dir = songs_dir.join("raw");
 
@@ -30,9 +38,8 @@ pub fn run() -> Result<(), Error> {
 		fs::remove_dir_all(&by_id_dir).with_context(|| "Could not remove `by_id` dir")?;
 	}
 	fs::create_dir_all(&by_id_dir).with_context(|| "Could not create `by_id` dir")?;
-
-	let mut jacket_vectors = vec![];
-
+	// }}}
+	// {{{ Traverse raw songs directory
 	let entries = fs::read_dir(&raw_songs_dir)
 		.with_context(|| "Couldn't read songs directory")?
 		.collect::<Result<Vec<_>, _>>()
@@ -84,12 +91,7 @@ pub fn run() -> Result<(), Error> {
 			// the same directory. To do this, we only allow the base jacket to refer
 			// to the FUTURE difficulty, unless it's the only jacket present
 			// (or unless we are parsing the tutorial)
-			let search_difficulty =
-				if entries.len() > 1 && difficulty.is_none() && dir_name != "tutorial" {
-					Some(Difficulty::FTR)
-				} else {
-					difficulty
-				};
+			let search_difficulty = difficulty;
 
 			let (song, _) = guess_chart_name(dir_name, &song_cache, search_difficulty, true)
 				.with_context(|| format!("Could not recognise chart name from '{dir_name}'"))?;
@@ -120,11 +122,11 @@ pub fn run() -> Result<(), Error> {
 				.with_context(|| format!("Could not read image for file {:?}", file.path()))?
 				.leak();
 			let image = image::load_from_memory(contents)?;
-
-			jacket_vectors.push((song.id, ImageVec::from_image(&image)));
-
 			let small_image =
 				image.resize(BITMAP_IMAGE_SIZE, BITMAP_IMAGE_SIZE, FilterType::Gaussian);
+
+			jacket_vector_ids.push(song.id);
+			jacket_vectors.push(image_to_vec(&image));
 
 			{
 				let image_small_path =
@@ -150,27 +152,100 @@ pub fn run() -> Result<(), Error> {
 			}
 		}
 	}
+	// }}}
 
 	clear_line();
+	println!("Successfully processed jackets");
 
-	// NOTE: this is N^2, but it's a one-off warning thing, so it's fine
+	read_jackets(&mut song_cache)?;
+	println!("Successfully read jackets");
+
+	// {{{ Warn on missing jackets
 	for chart in song_cache.charts() {
-		if jacket_vectors.iter().all(|(i, _)| chart.song_id != *i) {
+		if chart.cached_jacket.is_none() {
 			println!(
 				"No jacket found for '{} [{:?}]'",
-				song_cache.lookup_song(chart.song_id)?.song.title,
+				song_cache.lookup_song(chart.song_id)?.song,
 				chart.difficulty
 			)
 		}
 	}
 
+	println!("No missing jackets detected");
+	// }}}
+	// {{{ Compute jacket vec matrix
+	let mut jacket_matrix: Mat<f32> = Mat::zeros(IMAGE_VEC_DIM, jacket_vectors.len());
+
+	for (i, v) in jacket_vectors.iter().enumerate() {
+		jacket_matrix.subcols_mut(i, 1).copy_from(v);
+	}
+	// }}}
+	// {{{ Compute transform matrix
+	let transform_matrix = {
+		let svd = jacket_matrix.thin_svd();
+
+		svd.u()
+			.transpose()
+			.submatrix(0, 0, JACKET_RECOGNITITION_DIMENSIONS, IMAGE_VEC_DIM)
+			.to_owned()
+	};
+	// }}}
+	// {{{ Build jacket cache
+	let jacket_cache = JacketCache {
+		jacket_ids: jacket_vector_ids,
+		jacket_matrix: &transform_matrix * &jacket_matrix,
+		transform_matrix,
+	};
+	// }}}
+
+	// {{{ Perform jacket recognition test
+	let chart_count = song_cache.charts().count();
+	for (i, chart) in song_cache.charts().enumerate() {
+		let song = &song_cache.lookup_song(chart.song_id)?.song;
+
+		// {{{ Update console display
+		if i != 0 {
+			clear_line();
+		}
+
+		print!("{}/{}: {song}", i, chart_count);
+
+		if i % 5 == 0 {
+			stdout().flush()?;
+		}
+		// }}}
+
+		if let Some(jacket) = chart.cached_jacket {
+			if let Some((_, song_id)) = jacket_cache.recognise(jacket.bitmap) {
+				if song_id != song.id {
+					let mistake = &song_cache.lookup_song(song_id)?.song;
+					bail!(
+						"Could not recognise jacket for {song} [{}]. Found song {mistake} instead.",
+						chart.difficulty
+					)
+				}
+			} else {
+				bail!(
+					"Could not recognise jacket for {song} [{}].",
+					chart.difficulty
+				)
+			}
+		}
+	}
+	// }}}
+
+	clear_line();
+	println!("Successfully tested jacket recognition");
+
+	// {{{ Save recognition matrix to disk
 	{
 		println!("Encoded {} images", jacket_vectors.len());
-		let bytes = postcard::to_allocvec(&jacket_vectors)
+		let bytes = postcard::to_allocvec(&jacket_cache)
 			.with_context(|| "Coult not encode jacket matrix")?;
 		fs::write(songs_dir.join("recognition_matrix"), bytes)
 			.with_context(|| "Could not write jacket matrix")?;
 	}
+	// }}}
 
 	Ok(())
 }

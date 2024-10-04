@@ -21,7 +21,7 @@
         # };
         # toolchain = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default);
         # toolchain = pkgs.rust-bin.stable.latest.default;
-        # toolchain = inputs.fenix.packages.${system}.complete.toolchain;
+        toolchain = inputs.fenix.packages.${system}.complete.toolchain;
         spkgs = inputs.self.packages.${system};
         inherit (pkgs) lib;
       in
@@ -46,11 +46,12 @@
         #  {{{ Devshell
         devShell = pkgs.mkShell rec {
           nativeBuildInputs = with pkgs; [
-            cargo
-            rustc
-            clippy
-            rust-analyzer
-            rustfmt
+            # cargo
+            # rustc
+            # clippy
+            # rust-analyzer
+            # rustfmt
+            toolchain
 
             ruff
             imagemagick

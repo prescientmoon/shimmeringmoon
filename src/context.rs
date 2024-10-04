@@ -7,6 +7,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 
+use crate::arcaea::jacket::read_jackets;
 use crate::arcaea::{chart::SongCache, jacket::JacketCache};
 use crate::assets::{get_data_dir, EXO_FONT, GEOSANS_FONT, KAZESAWA_BOLD_FONT, KAZESAWA_FONT};
 use crate::recognition::{hyperglass::CharMeasurements, ui::UIMeasurements};
@@ -109,7 +110,10 @@ impl UserContext {
 
 			let mut song_cache = SongCache::new(&db)?;
 			let ui_measurements = UIMeasurements::read()?;
-			let jacket_cache = timed!("make_jacket_cache", { JacketCache::new(&mut song_cache)? });
+			let jacket_cache = JacketCache::new()?;
+			timed!("read_jackets", {
+				read_jackets(&mut song_cache)?;
+			});
 
 			// {{{ Font measurements
 			static WHITELIST: &str = "0123456789'abcdefghklmnopqrstuvwxyzABCDEFGHIJKLMNOPRSTUVWXYZ";

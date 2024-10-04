@@ -327,7 +327,7 @@ impl ImageAnalyzer {
 			bail!("No known jacket looks like this");
 		}
 
-		let (song, chart) = ctx.song_cache.lookup_by_difficulty(*song_id, difficulty)?;
+		let (song, chart) = ctx.song_cache.lookup_by_difficulty(song_id, difficulty)?;
 
 		Ok((song, chart))
 	}
