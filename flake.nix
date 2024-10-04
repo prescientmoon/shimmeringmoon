@@ -21,24 +21,29 @@
         # };
         # toolchain = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default);
         # toolchain = pkgs.rust-bin.stable.latest.default;
-        toolchain = inputs.fenix.packages.${system}.complete.toolchain;
+        # toolchain = inputs.fenix.packages.${system}.complete.toolchain;
+        spkgs = inputs.self.packages.${system};
         inherit (pkgs) lib;
       in
       {
-        packages.shimmeringmoon = pkgs.rustPlatform.buildRustPackage {
-          pname = "shimmeringmoon";
-          version = "unstable-2024-09-06";
+        packages = {
+          kazesawa = pkgs.callPackage ./nix/kazesawa.nix { };
+          exo = pkgs.callPackage ./nix/exo.nix { };
+          geosans-light = pkgs.callPackage ./nix/geosans-light.nix { };
 
-          src = lib.cleanSource ./.;
+          shimmering-fonts = pkgs.callPackage ./nix/fonts.nix {
+            # Pass custom-packaged fonts
+            inherit (spkgs) exo kazesawa geosans-light;
+          };
 
-          cargoLock = {
-            lockFile = ./Cargo.lock;
-            outputHashes = {
-              "hypertesseract-0.1.0" = "sha256-G0dos5yvvcfBKznAo1IIzLgXqRDxmyZwB93QQ6hVZSo=";
-              "plotters-0.4.0" = "sha256-9wtd7lig1vQ2RJVaEHdicfPZy2AyuoNav8shPMZ1EuE=";
-            };
+          default = spkgs.shimmeringmoon;
+          shimmeringmoon = pkgs.callPackage ./nix/shimmeringmoon.nix {
+            # Pass the directory of fonts
+            inherit (spkgs) shimmering-fonts;
           };
         };
+
+        #  {{{ Devshell
         devShell = pkgs.mkShell rec {
           nativeBuildInputs = with pkgs; [
             cargo
@@ -50,24 +55,20 @@
             ruff
             imagemagick
             pkg-config
-
-            # clang
-            # llvmPackages.clang
           ];
+
           buildInputs = with pkgs; [
             freetype
             fontconfig
             leptonica
             tesseract
-            # openssl
             sqlite
           ];
 
           LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
-
-          # compilation of -sys packages requires manually setting LIBCLANG_PATH
-          # LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+          SHIMMERING_FONTS_DIR = spkgs.shimmering-fonts;
         };
+        #  }}}
       }
     );
 

@@ -43,8 +43,9 @@ pub fn get_asset_dir() -> PathBuf {
 // {{{ Font helpers
 #[inline]
 fn get_font(name: &str) -> RefCell<Face> {
+	let fonts_dir = get_path("SHIMMERING_FONTS_DIR");
 	let face = FREETYPE_LIB.with(|lib| {
-		lib.new_face(get_asset_dir().join("fonts").join(name), 0)
+		lib.new_face(fonts_dir.join(name), 0)
 			.unwrap_or_else(|_| panic!("Could not load {} font", name))
 	});
 	RefCell::new(face)
@@ -55,25 +56,17 @@ pub fn with_font<T>(
 	primary: &'static LocalKey<RefCell<Face>>,
 	f: impl FnOnce(&mut [&mut Face]) -> T,
 ) -> T {
-	UNI_FONT.with_borrow_mut(|uni| {
-		// NOTO_SANS_FONT.with_borrow_mut(|noto| {
-		// ARIAL_FONT.with_borrow_mut(|arial| {
-		primary.with_borrow_mut(|primary| f(&mut [primary, uni]))
-		// })
-		// })
-	})
+	UNI_FONT.with_borrow_mut(|uni| primary.with_borrow_mut(|primary| f(&mut [primary, uni])))
 }
 // }}}
 // {{{ Font loading
+// TODO: I might want to embed those into the binary 🤔
 thread_local! {
 pub static FREETYPE_LIB: Library = Library::init().unwrap();
-pub static SAIRA_FONT: RefCell<Face> = get_font("saira-variable.ttf");
-pub static EXO_FONT: RefCell<Face> = get_font("exo-variable.ttf");
-pub static GEOSANS_FONT: RefCell<Face> = get_font("geosans-light.ttf");
-pub static KAZESAWA_FONT: RefCell<Face> = get_font("kazesawa-regular.ttf");
-pub static KAZESAWA_BOLD_FONT: RefCell<Face> = get_font("kazesawa-bold.ttf");
-pub static NOTO_SANS_FONT: RefCell<Face> = get_font("noto-sans.ttf");
-pub static ARIAL_FONT: RefCell<Face> = get_font("arial.ttf");
+pub static EXO_FONT: RefCell<Face> = get_font("Exo[wght].ttf");
+pub static GEOSANS_FONT: RefCell<Face> = get_font("GeosansLight.ttf");
+pub static KAZESAWA_FONT: RefCell<Face> = get_font("Kazesawa-Regular.ttf");
+pub static KAZESAWA_BOLD_FONT: RefCell<Face> = get_font("Kazesawa-Bold.ttf");
 pub static UNI_FONT: RefCell<Face> = get_font("unifont.otf");
 }
 // }}}

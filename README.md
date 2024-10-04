@@ -34,7 +34,7 @@ SHIMMERING_CONFIG_DIR=shimmering/config
 SHIMMERING_LOG_DIR=shimmering/logs
 ```
 
-## Binaries
+### Binaries
 
 The project currently exposes two binaries:
 
@@ -44,25 +44,26 @@ The project currently exposes two binaries:
    - The `prepare-jackets` command prepares the provided jackets for running the bot (see the section below for more details)
    - The `analyse <...paths>` command is a command-line version of the `score magic` discord command. This is useful for debugging things like the OCR implementation, without having to transmit files over the network.
 
-## Future binaries
+### Work in progress
 
-3. `shimmering-server` will be a server providing scoring data over HTTP.
-4. `shimmering-discord-presence` will be a client application that talks to `shimmering-server` in order to update your discord "currently playing" status in order to reflect the charts you are currently playing.
+These binaries are unstable at best, and broken at worst.
+
+3. `shimmering-server` provides functionality over HTTP
+4. `shimmering-discord-presence` is a client application that talks to `shimmering-server` in order to update your discord "currently playing", showing off the scores you are getting.
 
 ### Fonts
 
-The following fonts must be present in `$SHIMMERING_ASSET_DIR/fonts`:
+The following fonts must be present in `$SHIMMERING_FONTS_DIR`:
 
 ```
-arial.ttf
-exo-variable.ttf
-geosans-light.ttf
-kazesawa-bold.ttf
-kazesawa-regular.ttf
-noto-sans.ttf
-saira-variable.ttf
+Exo[wght].ttf
+GeosansLight.ttf
+Kazesawa-Bold.ttf
+Kazesawa-Regular.ttf
 unifont.otf
 ```
+
+The `shimmering-fonts` derivation of the nix flake builds the aforementioned directory.
 
 ### Assets
 
