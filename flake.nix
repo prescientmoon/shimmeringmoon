@@ -13,7 +13,8 @@
     inputs.flake-utils.lib.eachSystem (with inputs.flake-utils.lib.system; [ x86_64-linux ]) (
       system:
       let
-        pkgs = inputs.nixpkgs.legacyPackages.${system};
+        # pkgs = inputs.nixpkgs.legacyPackages.${system};
+        pkgs = inputs.nixpkgs.legacyPackages.${system}.extend inputs.fenix.overlays.default;
         # pkgs = inputs.nixpkgs.legacyPackages.${system}.extend (import inputs.rust-overlay);
         # pkgs = import inputs.nixpkgs {
         #   inherit system;
@@ -21,12 +22,14 @@
         # };
         # toolchain = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default);
         # toolchain = pkgs.rust-bin.stable.latest.default;
-        toolchain = inputs.fenix.packages.${system}.complete.toolchain;
+        rust-toolchain = pkgs.fenix.complete.toolchain;
         spkgs = inputs.self.packages.${system};
         inherit (pkgs) lib;
       in
       {
         packages = {
+          inherit rust-toolchain;
+
           kazesawa = pkgs.callPackage ./nix/kazesawa.nix { };
           exo = pkgs.callPackage ./nix/exo.nix { };
           geosans-light = pkgs.callPackage ./nix/geosans-light.nix { };
@@ -38,24 +41,23 @@
 
           default = spkgs.shimmeringmoon;
           shimmeringmoon = pkgs.callPackage ./nix/shimmeringmoon.nix {
-            # Pass the directory of fonts
-            inherit (spkgs) shimmering-fonts;
+            inherit (spkgs) shimmering-fonts rust-toolchain;
           };
         };
 
         #  {{{ Devshell
         devShell = pkgs.mkShell rec {
           nativeBuildInputs = with pkgs; [
-            # cargo
-            # rustc
-            # clippy
-            # rust-analyzer
-            # rustfmt
-            toolchain
+            # pkgs.cargo
+            # pkgs.rustc
+            # pkgs.clippy
+            # pkgs.rust-analyzer
+            # pkgs.rustfmt
+            spkgs.rust-toolchain
 
-            ruff
-            imagemagick
-            pkg-config
+            pkgs.ruff
+            pkgs.imagemagick
+            pkgs.pkg-config
           ];
 
           buildInputs = with pkgs; [
