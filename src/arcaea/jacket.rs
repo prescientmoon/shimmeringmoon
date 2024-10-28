@@ -16,7 +16,7 @@ use crate::context::Error;
 pub const SPLIT_FACTOR: u32 = 8;
 pub const IMAGE_VEC_DIM: usize = (SPLIT_FACTOR * SPLIT_FACTOR * 3) as usize;
 pub const BITMAP_IMAGE_SIZE: u32 = 174;
-pub const JACKET_RECOGNITITION_DIMENSIONS: usize = 10;
+pub const JACKET_RECOGNITITION_DIMENSIONS: usize = 20;
 
 // {{{ (Image => vector) encoding
 #[allow(clippy::identity_op)]

@@ -61,7 +61,7 @@ pub fn run() -> Result<(), Error> {
 		let entries = fs::read_dir(dir.path())
 			.with_context(|| "Couldn't read song directory")?
 			.map(|f| f.unwrap())
-			.filter(|f| f.file_name().to_str().unwrap().ends_with("_256.jpg"))
+			.filter(|f| !f.file_name().to_str().unwrap().ends_with("_256.jpg"))
 			.collect::<Vec<_>>();
 
 		for file in &entries {
@@ -69,10 +69,8 @@ pub fn run() -> Result<(), Error> {
 			let name = raw_name
 				.to_str()
 				.unwrap()
-				.strip_suffix("_256.jpg")
-				.ok_or_else(|| {
-					anyhow!("No '_256.jpg' suffix to remove from filename {raw_name:?}")
-				})?;
+				.strip_suffix(".jpg")
+				.ok_or_else(|| anyhow!("No '.jpg' suffix to remove from filename {raw_name:?}"))?;
 
 			let difficulty = match name {
 				"0" => Some(Difficulty::PST),
