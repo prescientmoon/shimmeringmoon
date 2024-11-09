@@ -69,7 +69,7 @@
           ];
 
           LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
-          SHIMMERING_FONTS_DIR = spkgs.shimmering-fonts;
+          SHIMMERING_FONT_DIR = spkgs.shimmering-fonts;
         };
         #  }}}
       }

@@ -18,7 +18,7 @@ use crate::assets::{
 	TOP_BACKGROUND,
 };
 use crate::bitmap::{Align, BitmapCanvas, Color, LayoutDrawer, LayoutManager, Rect};
-use crate::context::{Context, Error, TaggedError};
+use crate::context::{Error, PoiseContext, TaggedError};
 use crate::logs::debug_image_log;
 use crate::user::User;
 
@@ -33,7 +33,7 @@ use super::discord::MessageContext;
 	subcommands("meta", "b30", "bany"),
 	subcommand_required
 )]
-pub async fn stats(_ctx: Context<'_>) -> Result<(), Error> {
+pub async fn stats(_ctx: PoiseContext<'_>) -> Result<(), Error> {
 	Ok(())
 }
 // }}}
@@ -429,7 +429,10 @@ pub async fn b30_impl<C: MessageContext>(
 // {{{ Discord wrapper
 /// Show the 30 best scores
 #[poise::command(prefix_command, slash_command, user_cooldown = 30)]
-pub async fn b30(mut ctx: Context<'_>, scoring_system: Option<ScoringSystem>) -> Result<(), Error> {
+pub async fn b30(
+	mut ctx: PoiseContext<'_>,
+	scoring_system: Option<ScoringSystem>,
+) -> Result<(), Error> {
 	let res = b30_impl(&mut ctx, scoring_system).await;
 	ctx.handle_error(res).await?;
 	Ok(())
@@ -461,7 +464,7 @@ async fn bany_impl<C: MessageContext>(
 // {{{ Discord wrapper
 #[poise::command(prefix_command, slash_command, hide_in_help, global_cooldown = 5)]
 pub async fn bany(
-	mut ctx: Context<'_>,
+	mut ctx: PoiseContext<'_>,
 	scoring_system: Option<ScoringSystem>,
 	width: u32,
 	height: u32,
@@ -537,7 +540,7 @@ async fn meta_impl<C: MessageContext>(ctx: &mut C) -> Result<(), TaggedError> {
 // {{{ Discord wrapper
 /// Show stats about the bot itself.
 #[poise::command(prefix_command, slash_command, user_cooldown = 1)]
-async fn meta(mut ctx: Context<'_>) -> Result<(), Error> {
+async fn meta(mut ctx: PoiseContext<'_>) -> Result<(), Error> {
 	let res = meta_impl(&mut ctx).await;
 	ctx.handle_error(res).await?;
 

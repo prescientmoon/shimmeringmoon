@@ -53,6 +53,7 @@ paste = "1.0.15"
 discord-rich-presence = "0.2.4"
 reqwest = { version = "0.12.7", features = ["json"] }
 faer = { git = "https://github.com/sarah-ek/faer-rs", rev = "4f3eb7e65c69f7f7df3bdd93aa868d5666db3656", features = ["serde"] }
+memmap2 = "0.9.5"
 
 [profile.dev.package.imageproc]
 opt-level = 3

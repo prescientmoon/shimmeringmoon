@@ -1,10 +1,7 @@
 // {{{ Imports
-use std::fs;
-
 use anyhow::anyhow;
 use image::GenericImage;
 
-use crate::assets::get_config_dir;
 use crate::bitmap::Rect;
 use crate::context::Error;
 // }}}
@@ -103,11 +100,10 @@ impl UIMeasurements {
 		let mut measurements = Vec::new();
 		let mut measurement = UIMeasurement::default();
 
-		let path = get_config_dir().join("ui.txt");
-		let contents = fs::read_to_string(path)?;
+		const CONTENTS: &str = include_str!(concat!(env!("SHIMMERING_CONFIG_DIR"), "/ui.txt"));
 
 		// {{{ Parse measurement file
-		for (i, line) in contents.split('\n').enumerate() {
+		for (i, line) in CONTENTS.split('\n').enumerate() {
 			let i = i % (UI_RECT_COUNT + 2);
 			if i == 0 {
 				for (j, str) in line.split_whitespace().enumerate().take(2) {
@@ -141,7 +137,7 @@ impl UIMeasurements {
 		}
 		// }}}
 
-		println!("Read {} UI measurements", measurements.len());
+		println!("✅ Read {} UI measurements", measurements.len());
 		Ok(Self { measurements })
 	}
 	// }}}

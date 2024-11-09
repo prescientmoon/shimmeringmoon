@@ -8,7 +8,7 @@ use num::{Integer, ToPrimitive};
 use serde::{Deserialize, Serialize};
 
 use crate::arcaea::chart::{Difficulty, Jacket, SongCache};
-use crate::assets::get_asset_dir;
+use crate::context::paths::ShimmeringPaths;
 use crate::context::Error;
 // }}}
 
@@ -83,9 +83,9 @@ pub struct JacketCache {
 }
 
 // {{{ Read jackets
-pub fn read_jackets(song_cache: &mut SongCache) -> Result<(), Error> {
+pub fn read_jackets(paths: &ShimmeringPaths, song_cache: &mut SongCache) -> Result<(), Error> {
 	let suffix = format!("_{BITMAP_IMAGE_SIZE}.jpg");
-	let songs_dir = get_asset_dir().join("songs/by_id");
+	let songs_dir = paths.jackets_path();
 	let entries = fs::read_dir(songs_dir).with_context(|| "Couldn't read songs directory")?;
 
 	for entry in entries {
@@ -150,8 +150,8 @@ pub fn read_jackets(song_cache: &mut SongCache) -> Result<(), Error> {
 
 impl JacketCache {
 	// {{{ Generate
-	pub fn new() -> Result<Self, Error> {
-		let bytes = fs::read(get_asset_dir().join("songs/recognition_matrix"))
+	pub fn new(paths: &ShimmeringPaths) -> Result<Self, Error> {
+		let bytes = fs::read(paths.recognition_matrix_path())
 			.with_context(|| "Could not read jacket recognition matrix")?;
 
 		let result = postcard::from_bytes(&bytes)?;

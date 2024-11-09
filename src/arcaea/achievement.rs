@@ -1,8 +1,9 @@
+use std::path::PathBuf;
+
 // {{{ Imports
 use anyhow::anyhow;
 use image::RgbaImage;
 
-use crate::assets::get_data_dir;
 use crate::context::{ErrorKind, TagError, TaggedError, UserContext};
 use crate::user::User;
 
@@ -208,14 +209,17 @@ pub struct Achievement {
 }
 
 impl Achievement {
+	#[allow(unreachable_code)]
+	#[allow(clippy::diverging_sub_expression)]
+	#[allow(unused_variables)]
 	pub fn new(goal: Goal) -> Self {
 		let texture_name = goal.texture_name();
+		let path: PathBuf = todo!("achivements root path thingy?");
 		Self {
 			goal,
 			texture: Box::leak(Box::new(
 				image::open(
-					get_data_dir()
-						.join("achievements")
+					path.join("achievements")
 						.join(format!("{texture_name}.png")),
 				)
 				.unwrap_or_else(|_| {

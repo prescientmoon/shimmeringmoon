@@ -1,94 +1,61 @@
 // {{{ Imports
 use std::cell::RefCell;
-use std::env::var;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::{LazyLock, OnceLock};
+use std::sync::LazyLock;
 use std::thread::LocalKey;
 
 use freetype::{Face, Library};
 use image::{DynamicImage, RgbaImage};
 
 use crate::arcaea::chart::Difficulty;
-use crate::timed;
 // }}}
 
-// {{{ Path helpers
-#[inline]
-pub fn get_var(name: &str) -> String {
-	var(name).unwrap_or_else(|_| panic!("Missing `{name}` environment variable"))
-}
-
-#[inline]
-pub fn get_path(name: &str) -> PathBuf {
-	PathBuf::from_str(&get_var(name))
-		.unwrap_or_else(|_| panic!("`{name}` environment variable is not a valid path"))
-}
-
-#[inline]
-pub fn get_data_dir() -> PathBuf {
-	get_path("SHIMMERING_DATA_DIR")
-}
-
-#[inline]
-pub fn get_config_dir() -> PathBuf {
-	get_path("SHIMMERING_CONFIG_DIR")
-}
-
-#[inline]
-pub fn get_asset_dir() -> PathBuf {
-	get_path("SHIMMERING_ASSET_DIR")
-}
-// }}}
 // {{{ Font helpers
-#[inline]
-fn get_font(name: &str) -> RefCell<Face> {
-	let fonts_dir = get_path("SHIMMERING_FONTS_DIR");
-	let face = FREETYPE_LIB.with(|lib| {
-		lib.new_face(fonts_dir.join(name), 0)
-			.unwrap_or_else(|_| panic!("Could not load {} font", name))
-	});
-	RefCell::new(face)
+pub type Font = Face<&'static [u8]>;
+
+macro_rules! get_font {
+	($name: literal) => {{
+		static FONT_CONTENTS: &[u8] =
+			include_bytes!(concat!(env!("SHIMMERING_FONT_DIR"), "/", $name));
+		let face = FREETYPE_LIB.with(|lib| {
+			lib.new_memory_face2(FONT_CONTENTS, 0)
+				.unwrap_or_else(|_| panic!("Could not load {} font", $name))
+		});
+		RefCell::new(face)
+	}};
 }
 
 #[inline]
 pub fn with_font<T>(
-	primary: &'static LocalKey<RefCell<Face>>,
-	f: impl FnOnce(&mut [&mut Face]) -> T,
+	primary: &'static LocalKey<RefCell<Font>>,
+	f: impl FnOnce(&mut [&mut Font]) -> T,
 ) -> T {
 	UNI_FONT.with_borrow_mut(|uni| primary.with_borrow_mut(|primary| f(&mut [primary, uni])))
 }
 // }}}
 // {{{ Font loading
-// TODO: I might want to embed those into the binary 🤔
 thread_local! {
 pub static FREETYPE_LIB: Library = Library::init().unwrap();
-pub static EXO_FONT: RefCell<Face> = get_font("Exo[wght].ttf");
-pub static GEOSANS_FONT: RefCell<Face> = get_font("GeosansLight.ttf");
-pub static KAZESAWA_FONT: RefCell<Face> = get_font("Kazesawa-Regular.ttf");
-pub static KAZESAWA_BOLD_FONT: RefCell<Face> = get_font("Kazesawa-Bold.ttf");
-pub static UNI_FONT: RefCell<Face> = get_font("unifont.otf");
+pub static EXO_FONT: RefCell<Font> = get_font!("Exo[wght].ttf");
+pub static GEOSANS_FONT: RefCell<Font> = get_font!("GeosansLight.ttf");
+pub static KAZESAWA_FONT: RefCell<Font> = get_font!("Kazesawa-Regular.ttf");
+pub static KAZESAWA_BOLD_FONT: RefCell<Font> = get_font!("Kazesawa-Bold.ttf");
+pub static UNI_FONT: RefCell<Font> = get_font!("unifont.otf");
 }
 // }}}
 // {{{ Asset art helpers
-#[inline]
-#[allow(dead_code)]
-pub fn should_blur_jacket_art() -> bool {
-	var("SHIMMERING_BLUR_JACKETS").unwrap_or_default() == "1"
-}
-
 macro_rules! get_asset {
 	($name: ident, $path:expr) => {
-		get_asset!($name, $path, |d: DynamicImage| d);
+		get_asset!($name, $path, "SHIMMERING_ASSET_DIR", |d: DynamicImage| d);
 	};
-	($name: ident, $path:expr, $f:expr) => {
+	($name: ident, $path:expr, $env_var: literal, $f:expr) => {
 		pub static $name: LazyLock<RgbaImage> = LazyLock::new(move || {
-			timed!($path, {
-				let image = image::open(get_asset_dir().join($path))
-					.unwrap_or_else(|_| panic!("Could no read asset `{}`", $path));
-				let f = $f;
-				f(image).into_rgba8()
-			})
+			static IMAGE_BYTES: &[u8] = include_bytes!(concat!(env!($env_var), "/", $path));
+
+			let image = image::load_from_memory(&IMAGE_BYTES)
+				.unwrap_or_else(|_| panic!("Could no read asset `{}`", $path));
+
+			let f = $f;
+			f(image).into_rgba8()
 		});
 	};
 }
@@ -104,22 +71,23 @@ get_asset!(PTT_EMBLEM, "ptt_emblem.png");
 get_asset!(
 	B30_BACKGROUND,
 	"b30_background.jpg",
+	"SHIMMERING_PRIVATE_CONFIG_DIR",
 	|image: DynamicImage| image.blur(7.0)
 );
 
 pub fn get_difficulty_background(difficulty: Difficulty) -> &'static RgbaImage {
-	static CELL: OnceLock<[RgbaImage; 5]> = OnceLock::new();
-	&CELL.get_or_init(|| {
-		timed!("load_difficulty_background", {
-			let assets_dir = get_asset_dir();
-			Difficulty::DIFFICULTY_SHORTHANDS.map(|shorthand| {
-				image::open(assets_dir.join(format!("diff_{}.png", shorthand.to_lowercase())))
-					.unwrap_or_else(|_| {
-						panic!("Could not get background for difficulty {shorthand:?}")
-					})
-					.into_rgba8()
-			})
-		})
-	})[difficulty.to_index()]
+	get_asset!(PST_BACKGROUND, "diff_pst.png");
+	get_asset!(PRS_BACKGROUND, "diff_prs.png");
+	get_asset!(FTR_BACKGROUND, "diff_ftr.png");
+	get_asset!(ETR_BACKGROUND, "diff_etr.png");
+	get_asset!(BYD_BACKGROUND, "diff_byd.png");
+
+	[
+		&PST_BACKGROUND,
+		&PRS_BACKGROUND,
+		&FTR_BACKGROUND,
+		&ETR_BACKGROUND,
+		&BYD_BACKGROUND,
+	][difficulty.to_index()]
 }
 // }}}

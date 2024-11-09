@@ -7,14 +7,14 @@ use discord_rich_presence::{DiscordIpc, DiscordIpcClient};
 use shimmeringmoon::arcaea::chart::Difficulty;
 use shimmeringmoon::arcaea::play::PlayWithDetails;
 use shimmeringmoon::arcaea::score::ScoringSystem;
-use shimmeringmoon::assets::get_var;
+use shimmeringmoon::context::paths::get_var;
 use shimmeringmoon::context::Error;
 // }}}
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-	let server_url = get_var("SHIMMERING_SERVER_URL");
-	let client_id = get_var("SHIMMERING_DISCORD_ID");
+	let server_url = get_var("SHIMMERING_SERVER_URL")?;
+	let client_id = get_var("SHIMMERING_DISCORD_ID")?;
 
 	println!("Connecting to discord...");
 	let mut ipc = DiscordIpcClient::new(&client_id).map_err(|e| anyhow!("{}", e))?;

@@ -1,7 +1,7 @@
 // {{{ Imports
 use crate::arcaea::play::{CreatePlay, Play};
 use crate::arcaea::score::Score;
-use crate::context::{Context, Error, ErrorKind, TagError, TaggedError};
+use crate::context::{Error, ErrorKind, PoiseContext, TagError, TaggedError};
 use crate::recognition::recognize::{ImageAnalyzer, ScoreKind};
 use crate::user::User;
 use crate::{get_user_error, timed, try_block};
@@ -20,7 +20,7 @@ use super::discord::{CreateReplyExtra, MessageContext};
 	subcommands("magic", "delete", "show"),
 	subcommand_required
 )]
-pub async fn score(_ctx: Context<'_>) -> Result<(), Error> {
+pub async fn score(_ctx: PoiseContext<'_>) -> Result<(), Error> {
 	Ok(())
 }
 // }}}
@@ -55,7 +55,6 @@ pub async fn magic_impl<C: MessageContext>(
 				analyzer.read_score_kind(ctx.data(), &grayscale_image)?
 			});
 
-			// Do not use `ocr_image` because this reads the colors
 			let difficulty = timed!("read_difficulty", {
 				analyzer.read_difficulty(ctx.data(), &image, &grayscale_image, kind)?
 			});
@@ -104,7 +103,6 @@ pub async fn magic_impl<C: MessageContext>(
 			// }}}
 			// }}}
 			// {{{ Deliver embed
-
 			let (embed, attachment) = timed!("to embed", {
 				play.to_embed(ctx.data(), &user, song, chart, i, None)?
 			});
@@ -193,7 +191,7 @@ mod magic_tests {
 /// Identify scores from attached images.
 #[poise::command(prefix_command, slash_command)]
 pub async fn magic(
-	mut ctx: Context<'_>,
+	mut ctx: PoiseContext<'_>,
 	#[description = "Images containing scores"] files: Vec<serenity::Attachment>,
 ) -> Result<(), Error> {
 	let res = magic_impl(&mut ctx, &files).await;
@@ -326,7 +324,7 @@ mod show_tests {
 /// Show scores given their IDs.
 #[poise::command(prefix_command, slash_command)]
 pub async fn show(
-	mut ctx: Context<'_>,
+	mut ctx: PoiseContext<'_>,
 	#[description = "Ids of score to show"] ids: Vec<u32>,
 ) -> Result<(), Error> {
 	let res = show_impl(&mut ctx, &ids).await;
@@ -451,7 +449,7 @@ mod delete_tests {
 /// Delete scores, given their IDs.
 #[poise::command(prefix_command, slash_command)]
 pub async fn delete(
-	mut ctx: Context<'_>,
+	mut ctx: PoiseContext<'_>,
 	#[description = "Id of score to delete"] ids: Vec<u32>,
 ) -> Result<(), Error> {
 	let res = delete_impl(&mut ctx, &ids).await;

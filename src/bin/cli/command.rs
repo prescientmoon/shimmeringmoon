@@ -7,6 +7,5 @@ pub struct Cli {
 
 #[derive(clap::Subcommand)]
 pub enum Command {
-	PrepareJackets {},
 	Analyse(crate::commands::analyse::Args),
 }

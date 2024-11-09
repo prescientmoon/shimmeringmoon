@@ -3,7 +3,7 @@ use anyhow::anyhow;
 use poise::serenity_prelude::{CreateAttachment, CreateEmbed};
 
 use crate::arcaea::{chart::Side, play::Play};
-use crate::context::{Context, Error, ErrorKind, TagError, TaggedError};
+use crate::context::{Error, ErrorKind, PoiseContext, TagError, TaggedError};
 use crate::recognition::fuzzy_song_name::guess_song_and_chart;
 use crate::user::User;
 use std::io::Cursor;
@@ -31,7 +31,7 @@ use super::discord::{CreateReplyExtra, MessageContext};
 	subcommands("info", "best", "plot"),
 	subcommand_required
 )]
-pub async fn chart(_ctx: Context<'_>) -> Result<(), Error> {
+pub async fn chart(_ctx: PoiseContext<'_>) -> Result<(), Error> {
 	Ok(())
 }
 // }}}
@@ -136,7 +136,7 @@ mod info_tests {
 /// Show a chart given it's name
 #[poise::command(prefix_command, slash_command, user_cooldown = 1)]
 async fn info(
-	mut ctx: Context<'_>,
+	mut ctx: PoiseContext<'_>,
 	#[rest]
 	#[description = "Name of chart (difficulty at the end)"]
 	name: String,
@@ -249,7 +249,7 @@ mod best_tests {
 /// Show the best score on a given chart
 #[poise::command(prefix_command, slash_command, user_cooldown = 1)]
 async fn best(
-	mut ctx: Context<'_>,
+	mut ctx: PoiseContext<'_>,
 	#[rest]
 	#[description = "Name of chart (difficulty at the end)"]
 	name: String,
@@ -400,7 +400,7 @@ async fn plot_impl<C: MessageContext>(
 /// Show the best score on a given chart
 #[poise::command(prefix_command, slash_command, user_cooldown = 10)]
 async fn plot(
-	mut ctx: Context<'_>,
+	mut ctx: PoiseContext<'_>,
 	scoring_system: Option<ScoringSystem>,
 	#[rest]
 	#[description = "Name of chart (difficulty at the end)"]

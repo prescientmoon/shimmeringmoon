@@ -54,9 +54,9 @@ async fn main() {
 	let framework = poise::Framework::builder()
 		.setup(move |ctx, _ready, framework| {
 			Box::pin(async move {
-				println!("Logged in as {}", _ready.user.name);
+				println!("🔒 Logged in as {}", _ready.user.name);
 				poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-				let ctx = UserContext::new().await?;
+				let ctx = UserContext::new()?;
 
 				if var("SHIMMERING_REGEN_SCORES").unwrap_or_default() == "1" {
 					timed!("generate_missing_scores", {

@@ -5,7 +5,7 @@ macro_rules! timed {
 		let start = Instant::now();
 		let result = { $code }; // Execute the code block
 		let duration = start.elapsed();
-		println!("{}: {:?}", $label, duration);
+		println!("📊 {}: {:?}", $label, duration);
 		result
 	}};
 }

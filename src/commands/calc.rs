@@ -3,7 +3,7 @@ use num::{FromPrimitive, Rational32};
 
 use crate::arcaea::play::{compute_b30_ptt, get_best_plays};
 use crate::arcaea::rating::{rating_as_float, rating_from_fixed, Rating};
-use crate::context::{Context, Error, TaggedError};
+use crate::context::{Error, PoiseContext, TaggedError};
 use crate::recognition::fuzzy_song_name::guess_song_and_chart;
 use crate::user::User;
 
@@ -20,7 +20,7 @@ use super::discord::MessageContext;
 	subcommands("expected", "rating"),
 	subcommand_required
 )]
-pub async fn calc(_ctx: Context<'_>) -> Result<(), Error> {
+pub async fn calc(_ctx: PoiseContext<'_>) -> Result<(), Error> {
 	Ok(())
 }
 // }}}
@@ -114,7 +114,7 @@ mod expected_tests {
 /// Computes the expected score for a player of some potential on a given chart.
 #[poise::command(prefix_command, slash_command, user_cooldown = 1)]
 async fn expected(
-	mut ctx: Context<'_>,
+	mut ctx: PoiseContext<'_>,
 	#[description = "The potential to compute the expected score for"] ptt: Option<f32>,
 	#[rest]
 	#[description = "Name of chart (difficulty at the end)"]
@@ -169,7 +169,7 @@ mod rating_tests {
 /// Computes the rating (potential) of a play on a given chart.
 #[poise::command(prefix_command, slash_command, user_cooldown = 1)]
 async fn rating(
-	mut ctx: Context<'_>,
+	mut ctx: PoiseContext<'_>,
 	score: u32,
 	#[rest]
 	#[description = "Name of chart (difficulty at the end)"]

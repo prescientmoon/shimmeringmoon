@@ -1,49 +1,56 @@
 // {{{ Imports
+use std::fmt::Write;
 use std::fs;
-use std::io::{stdout, Write};
+use std::io::{stdout, Write as IOWrite};
 
 use anyhow::{anyhow, bail, Context};
 use faer::Mat;
 use image::imageops::FilterType;
 
-use shimmeringmoon::arcaea::chart::{Difficulty, SongCache};
-use shimmeringmoon::arcaea::jacket::{
+use crate::arcaea::chart::{Difficulty, SongCache};
+use crate::arcaea::jacket::{
 	image_to_vec, read_jackets, JacketCache, BITMAP_IMAGE_SIZE, IMAGE_VEC_DIM,
 	JACKET_RECOGNITITION_DIMENSIONS,
 };
-use shimmeringmoon::assets::{get_asset_dir, get_data_dir};
-use shimmeringmoon::context::{connect_db, Error};
-use shimmeringmoon::recognition::fuzzy_song_name::guess_chart_name;
+use crate::context::paths::create_empty_directory;
+use crate::recognition::fuzzy_song_name::guess_chart_name;
+
+use super::paths::ShimmeringPaths;
 // }}}
 
-/// Hacky function which clears the current line of the standard output.
-#[inline]
-fn clear_line() {
-	print!("\r                                                                        \r");
-}
-
-pub fn run() -> Result<(), Error> {
-	let db = connect_db(&get_data_dir());
-	let mut song_cache = SongCache::new(&db)?;
+/// Runs the entire jacket processing pipeline:
+/// 1. Read all the jackets in the input directory, and infer
+///    what song/chart they belong to.
+/// 2. Save the jackets under a new file structure. The jackets
+///    are saved in multiple qualities, together with a blurred version.
+/// 3. Ensure we can read the entire jacket tree from the new location.
+/// 4. Ensure no charts are missing a jacket.
+/// 5. Create a matrix we can use for image recognition.
+/// 6. Compress said matrix using singular value decomposition.
+/// 7. Ensure the recognition matrix correctly detects every jacket it's given.
+/// 8. Finally, save the recognition matrix on disk for future use.
+pub fn process_jackets(paths: &ShimmeringPaths, conn: &rusqlite::Connection) -> anyhow::Result<()> {
+	let mut song_cache = SongCache::new(conn)?;
 
 	let mut jacket_vector_ids = vec![];
 	let mut jacket_vectors = vec![];
 
-	// {{{ Prepare directories
-	let songs_dir = get_asset_dir().join("songs");
-	let raw_songs_dir = songs_dir.join("raw");
+	// Contains a dir_name -> song_name map that's useful when debugging
+	// name recognition. This will get written to disk in case a missing
+	// jacket is detected.
+	let mut debug_name_mapping = String::new();
 
-	let by_id_dir = songs_dir.join("by_id");
-	if by_id_dir.exists() {
-		fs::remove_dir_all(&by_id_dir).with_context(|| "Could not remove `by_id` dir")?;
-	}
-	fs::create_dir_all(&by_id_dir).with_context(|| "Could not create `by_id` dir")?;
+	// {{{ Prepare directories
+	let jackets_dir = paths.jackets_path();
+	let raw_jackets_dir = paths.raw_jackets_path();
+
+	create_empty_directory(&jackets_dir)?;
 	// }}}
 	// {{{ Traverse raw songs directory
-	let entries = fs::read_dir(&raw_songs_dir)
-		.with_context(|| "Couldn't read songs directory")?
+	let entries = fs::read_dir(&raw_jackets_dir)
+		.with_context(|| "Could not list contents of $SHIMMERING_PRIVATE_CONFIG/jackets")?
 		.collect::<Result<Vec<_>, _>>()
-		.with_context(|| "Could not read member of `songs/raw`")?;
+		.with_context(|| "Could not read member of $SHIMMERING_PRIVATE_CONFIG/jackets")?;
 
 	for (i, dir) in entries.iter().enumerate() {
 		let raw_dir_name = dir.file_name();
@@ -54,7 +61,7 @@ pub fn run() -> Result<(), Error> {
 			clear_line();
 		}
 
-		print!("{}/{}: {dir_name}", i, entries.len());
+		print!("  🕒 {}/{}: {dir_name}", i, entries.len());
 		stdout().flush()?;
 		// }}}
 
@@ -84,31 +91,15 @@ pub fn run() -> Result<(), Error> {
 				_ => bail!("Unknown jacket suffix {}", name),
 			};
 
-			// Sometimes it's useful to distinguish between separate (but related)
-			// charts like "Vicious Heroism" and "Vicious [ANTi] Heroism" being in
-			// the same directory. To do this, we only allow the base jacket to refer
-			// to the FUTURE difficulty, unless it's the only jacket present
-			// (or unless we are parsing the tutorial)
-			let search_difficulty = difficulty;
-
-			let (song, _) = guess_chart_name(dir_name, &song_cache, search_difficulty, true)
+			let (song, _) = guess_chart_name(dir_name, &song_cache, difficulty, true)
 				.with_context(|| format!("Could not recognise chart name from '{dir_name}'"))?;
 
-			// {{{ Set up `out_dir` paths
-			let out_dir = {
-				let out = by_id_dir.join(song.id.to_string());
-				if !out.exists() {
-					fs::create_dir_all(&out).with_context(|| {
-						format!(
-							"Could not create parent dir for song '{}' inside `by_id`",
-							song.title
-						)
-					})?;
-				}
+			writeln!(debug_name_mapping, "{dir_name} -> {}", song.title)?;
 
-				out
-			};
-			// }}}
+			let out_dir = jackets_dir.join(song.id.to_string());
+			fs::create_dir_all(&out_dir).with_context(|| {
+				format!("Could not create jacket dir for song '{}'", song.title)
+			})?;
 
 			let difficulty_string = if let Some(difficulty) = difficulty {
 				&Difficulty::DIFFICULTY_SHORTHANDS[difficulty.to_index()].to_lowercase()
@@ -119,6 +110,7 @@ pub fn run() -> Result<(), Error> {
 			let contents: &'static _ = fs::read(file.path())
 				.with_context(|| format!("Could not read image for file {:?}", file.path()))?
 				.leak();
+
 			let image = image::load_from_memory(contents)?;
 			let small_image =
 				image.resize(BITMAP_IMAGE_SIZE, BITMAP_IMAGE_SIZE, FilterType::Gaussian);
@@ -153,23 +145,26 @@ pub fn run() -> Result<(), Error> {
 	// }}}
 
 	clear_line();
-	println!("Successfully processed jackets");
+	println!("  ✅ Successfully processed jackets");
 
-	read_jackets(&mut song_cache)?;
-	println!("Successfully read jackets");
+	read_jackets(paths, &mut song_cache)?;
+	println!("  ✅ Successfully read processed jackets");
 
-	// {{{ Warn on missing jackets
+	// {{{ Error out on missing jackets
 	for chart in song_cache.charts() {
 		if chart.cached_jacket.is_none() {
-			println!(
-				"No jacket found for '{} [{:?}]'",
+			let out_path = paths.log_dir().join("name_mapping.txt");
+			std::fs::write(&out_path, debug_name_mapping)?;
+
+			bail!(
+				"No jacket found for '{} [{:?}]'. A complete name map has been written to {out_path:?}",
 				song_cache.lookup_song(chart.song_id)?.song,
 				chart.difficulty
 			)
 		}
 	}
 
-	println!("No missing jackets detected");
+	println!("  ✅ No missing jackets detected");
 	// }}}
 	// {{{ Compute jacket vec matrix
 	let mut jacket_matrix: Mat<f32> = Mat::zeros(IMAGE_VEC_DIM, jacket_vectors.len());
@@ -206,7 +201,7 @@ pub fn run() -> Result<(), Error> {
 			clear_line();
 		}
 
-		print!("{}/{}: {song}", i, chart_count);
+		print!("  {}/{}: {song}", i, chart_count);
 
 		if i % 5 == 0 {
 			stdout().flush()?;
@@ -233,17 +228,23 @@ pub fn run() -> Result<(), Error> {
 	// }}}
 
 	clear_line();
-	println!("Successfully tested jacket recognition");
+	println!("  ✅ Successfully tested jacket recognition");
 
 	// {{{ Save recognition matrix to disk
 	{
-		println!("Encoded {} images", jacket_vectors.len());
+		println!("  ✅ Encoded {} images", jacket_vectors.len());
 		let bytes = postcard::to_allocvec(&jacket_cache)
 			.with_context(|| "Coult not encode jacket matrix")?;
-		fs::write(songs_dir.join("recognition_matrix"), bytes)
+		fs::write(paths.recognition_matrix_path(), bytes)
 			.with_context(|| "Could not write jacket matrix")?;
 	}
 	// }}}
 
 	Ok(())
+}
+
+/// Hacky function which "clears" the current line of the standard output.
+#[inline]
+fn clear_line() {
+	print!("\r                                                                        \r");
 }

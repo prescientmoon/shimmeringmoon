@@ -10,7 +10,7 @@ use std::{env, ops::Deref, path::PathBuf, sync::OnceLock, time::Instant};
 
 use image::{DynamicImage, EncodableLayout, ImageBuffer, PixelWithColorType};
 
-use crate::assets::get_path;
+use crate::context::paths::get_env_dir_path;
 
 #[inline]
 fn should_save_debug_images() -> bool {
@@ -21,7 +21,7 @@ fn should_save_debug_images() -> bool {
 
 #[inline]
 fn get_log_dir() -> PathBuf {
-	get_path("SHIMMERING_LOG_DIR")
+	get_env_dir_path("SHIMMERING_LOG_DIR").unwrap()
 }
 
 #[inline]

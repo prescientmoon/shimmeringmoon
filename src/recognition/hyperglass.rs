@@ -24,12 +24,12 @@
 //!    startup using my very own bitmap rendering module (`crate::bitmap`).
 // {{{ Imports
 use anyhow::{anyhow, bail};
-use freetype::Face;
 use image::{DynamicImage, ImageBuffer, Luma};
 use imageproc::contrast::{threshold, ThresholdType};
 use imageproc::region_labelling::{connected_components, Connectivity};
 use num::traits::Euclid;
 
+use crate::assets::Font;
 use crate::bitmap::{Align, BitmapCanvas, Color, TextStyle};
 use crate::context::Error;
 use crate::logs::{debug_image_buffer_log, debug_image_log};
@@ -235,7 +235,7 @@ pub struct CharMeasurements {
 
 impl CharMeasurements {
 	// {{{ Creation
-	pub fn from_text(face: &mut Face, string: &str, weight: Option<u32>) -> Result<Self, Error> {
+	pub fn from_text(face: &mut Font, string: &str, weight: Option<u32>) -> Result<Self, Error> {
 		// These are bad estimates lol
 		let style = TextStyle {
 			stroke: None,

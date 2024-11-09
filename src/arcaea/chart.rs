@@ -7,7 +7,7 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ValueRef};
 use serde::{Deserialize, Serialize};
 
 use crate::bitmap::Color;
-use crate::context::{DbConnection, Error};
+use crate::context::Error;
 // }}}
 
 // {{{ Difficuly
@@ -354,8 +354,7 @@ impl SongCache {
 	}
 
 	// {{{ Populate cache
-	pub fn new(conn: &DbConnection) -> Result<Self, Error> {
-		let conn = conn.get()?;
+	pub fn new(conn: &rusqlite::Connection) -> Result<Self, Error> {
 		let mut result = Self::default();
 
 		// {{{ Songs

@@ -4,9 +4,10 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 extern crate shimmeringmoon;
+use anyhow::Context;
 use poise::CreateReply;
-use shimmeringmoon::assets::get_var;
 use shimmeringmoon::commands::discord::mock::ReplyEssence;
+use shimmeringmoon::context::paths::get_var;
 use shimmeringmoon::context::Error;
 use shimmeringmoon::{commands::discord::MessageContext, context::UserContext};
 // }}}
@@ -22,13 +23,13 @@ pub struct CliContext {
 }
 
 impl CliContext {
-	pub fn new(data: UserContext) -> Self {
-		Self {
+	pub fn new(data: UserContext) -> anyhow::Result<Self> {
+		Ok(Self {
 			data,
-			user_id: get_var("SHIMMERING_DISCORD_USER_ID")
+			user_id: get_var("SHIMMERING_DISCORD_USER_ID")?
 				.parse()
-				.expect("invalid user id"),
-		}
+				.with_context(|| "$SHIMMERING_DISCORD_USER_ID contains an invalid user id")?,
+		})
 	}
 }
 

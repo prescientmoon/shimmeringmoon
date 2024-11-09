@@ -10,11 +10,11 @@ use anyhow::anyhow;
 use freetype::bitmap::PixelMode;
 use freetype::face::{KerningMode, LoadFlag};
 use freetype::ffi::{FT_Set_Var_Design_Coordinates, FT_GLYPH_BBOX_PIXELS};
-use freetype::{Bitmap, BitmapGlyph, Face, Glyph, StrokerLineCap, StrokerLineJoin};
+use freetype::{Bitmap, BitmapGlyph, Glyph, StrokerLineCap, StrokerLineJoin};
 use image::{GenericImage, RgbImage, RgbaImage};
 use num::traits::Euclid;
 
-use crate::assets::FREETYPE_LIB;
+use crate::assets::{Font, FREETYPE_LIB};
 use crate::context::Error;
 // }}}
 
@@ -304,7 +304,7 @@ impl BitmapCanvas {
 	#[allow(clippy::type_complexity)]
 	pub fn plan_text_rendering(
 		pos: Position,
-		faces: &mut [&mut Face],
+		faces: &mut [&mut Font],
 		style: TextStyle,
 		text: &str,
 	) -> Result<(Position, Rect, Vec<(i64, Glyph)>), Error> {
@@ -430,7 +430,7 @@ impl BitmapCanvas {
 	pub fn text(
 		&mut self,
 		pos: Position,
-		faces: &mut [&mut Face],
+		faces: &mut [&mut Font],
 		style: TextStyle,
 		text: &str,
 	) -> Result<(), Error> {
@@ -770,7 +770,7 @@ impl LayoutDrawer {
 		&mut self,
 		id: LayoutBoxId,
 		pos: Position,
-		faces: &mut [&mut Face],
+		faces: &mut [&mut Font],
 		style: TextStyle,
 		text: &str,
 	) -> Result<(), Error> {

@@ -4,9 +4,7 @@ result
 
 shimmering/data
 shimmering/logs
-shimmering/assets/fonts
-shimmering/assets/songs*
-shimmering/assets/b30_background.*
+shimmering/private_config
 
 target
 backups

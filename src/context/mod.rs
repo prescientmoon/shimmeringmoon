@@ -1,22 +1,23 @@
 // {{{ Imports
-use include_dir::{include_dir, Dir};
-use r2d2::Pool;
-use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite_migration::Migrations;
-use std::fs;
-use std::path::Path;
-use std::sync::LazyLock;
+use db::{connect_db, SqlitePool};
+use std::ops::Deref;
 
 use crate::arcaea::jacket::read_jackets;
 use crate::arcaea::{chart::SongCache, jacket::JacketCache};
-use crate::assets::{get_data_dir, EXO_FONT, GEOSANS_FONT, KAZESAWA_BOLD_FONT, KAZESAWA_FONT};
+use crate::assets::{EXO_FONT, GEOSANS_FONT, KAZESAWA_BOLD_FONT, KAZESAWA_FONT};
+use crate::context::paths::ShimmeringPaths;
 use crate::recognition::{hyperglass::CharMeasurements, ui::UIMeasurements};
 use crate::timed;
 // }}}
 
+pub mod db;
+mod hash;
+pub mod paths;
+mod process_jackets;
+
 // {{{ Common types
 pub type Error = anyhow::Error;
-pub type Context<'a> = poise::Context<'a, UserContext, Error>;
+pub type PoiseContext<'a> = poise::Context<'a, UserContext, Error>;
 // }}}
 // {{{ Error handling
 #[derive(Debug, Clone, Copy)]
@@ -64,36 +65,16 @@ impl TagError for Error {
 	}
 }
 // }}}
-// {{{ DB connection
-pub type DbConnection = r2d2::Pool<SqliteConnectionManager>;
-
-pub fn connect_db(data_dir: &Path) -> DbConnection {
-	fs::create_dir_all(data_dir).expect("Could not create $SHIMMERING_DATA_DIR");
-
-	let data_dir = data_dir.to_str().unwrap().to_owned();
-
-	let db_path = format!("{}/db.sqlite", data_dir);
-	let mut conn = rusqlite::Connection::open(&db_path).unwrap();
-	static MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations");
-	static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
-		Migrations::from_directory(&MIGRATIONS_DIR).expect("Could not load migrations")
-	});
-
-	MIGRATIONS
-		.to_latest(&mut conn)
-		.expect("Could not run migrations");
-
-	Pool::new(SqliteConnectionManager::file(&db_path)).expect("Could not open sqlite database.")
-}
-// }}}
 // {{{ UserContext
 /// Custom user data passed to all command functions
 #[derive(Clone)]
 pub struct UserContext {
-	pub db: DbConnection,
+	pub db: SqlitePool,
 	pub song_cache: SongCache,
 	pub jacket_cache: JacketCache,
 	pub ui_measurements: UIMeasurements,
+
+	pub paths: ShimmeringPaths,
 
 	pub geosans_measurements: CharMeasurements,
 	pub exo_measurements: CharMeasurements,
@@ -104,16 +85,16 @@ pub struct UserContext {
 
 impl UserContext {
 	#[inline]
-	pub async fn new() -> Result<Self, Error> {
+	pub fn new() -> Result<Self, Error> {
 		timed!("create_context", {
-			let db = connect_db(&get_data_dir());
+			let paths = ShimmeringPaths::new()?;
+			let db = connect_db(&paths)?;
 
-			let mut song_cache = SongCache::new(&db)?;
+			let mut song_cache = SongCache::new(db.get()?.deref())?;
 			let ui_measurements = UIMeasurements::read()?;
-			let jacket_cache = JacketCache::new()?;
-			timed!("read_jackets", {
-				read_jackets(&mut song_cache)?;
-			});
+			let jacket_cache = JacketCache::new(&paths)?;
+
+			read_jackets(&paths, &mut song_cache)?;
 
 			// {{{ Font measurements
 			static WHITELIST: &str = "0123456789'abcdefghklmnopqrstuvwxyzABCDEFGHIJKLMNOPRSTUVWXYZ";
@@ -130,6 +111,7 @@ impl UserContext {
 
 			Ok(Self {
 				db,
+				paths,
 				song_cache,
 				jacket_cache,
 				ui_measurements,
@@ -145,24 +127,20 @@ impl UserContext {
 // {{{ Testing helpers
 #[cfg(test)]
 pub mod testing {
+	use std::cell::OnceCell;
 	use tempfile::TempDir;
 
+	use super::*;
 	use crate::commands::discord::mock::MockContext;
 
-	use super::*;
-
-	pub async fn get_shared_context() -> &'static UserContext {
-		static CELL: tokio::sync::OnceCell<UserContext> = tokio::sync::OnceCell::const_new();
-		CELL.get_or_init(|| async move {
-			// env::set_var("SHIMMERING_DATA_DIR", "")
-			UserContext::new().await.unwrap()
-		})
-		.await
+	pub fn get_shared_context() -> &'static UserContext {
+		static CELL: OnceCell<UserContext> = OnceCell::new();
+		CELL.get_or_init(|| UserContext::new().unwrap())
 	}
 
-	pub fn import_songs_and_jackets_from(to: &Path) {
+	pub fn import_songs_and_jackets_from(paths: &ShimmeringPaths, to: &Path) {
 		let out = std::process::Command::new("scripts/copy-chart-info.sh")
-			.arg(get_data_dir())
+			.arg(paths.data_dir())
 			.arg(to)
 			.output()
 			.expect("Could not run sh chart info copy script");
@@ -173,11 +151,11 @@ pub mod testing {
 		);
 	}
 
-	pub async fn get_mock_context() -> Result<(MockContext, TempDir), Error> {
-		let mut data = (*get_shared_context().await).clone();
+	pub fn get_mock_context() -> Result<(MockContext, TempDir), Error> {
+		let mut data = (*get_shared_context()).clone();
 		let dir = tempfile::tempdir()?;
 		data.db = connect_db(dir.path());
-		import_songs_and_jackets_from(dir.path());
+		import_songs_and_jackets_from(&data.paths, dir.path());
 
 		let ctx = MockContext::new(data);
 		Ok((ctx, dir))
@@ -202,7 +180,7 @@ pub mod testing {
 		($test_path:expr, $f:expr) => {{
 			use std::str::FromStr;
 
-			let (mut ctx, _guard) = $crate::context::testing::get_mock_context().await?;
+			let (mut ctx, _guard) = $crate::context::testing::get_mock_context()?;
 			let res = $crate::user::User::create_from_context(&ctx);
 			ctx.handle_error(res).await?;
 

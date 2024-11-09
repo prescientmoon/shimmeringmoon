@@ -1,7 +1,7 @@
 use context::AppContext;
 use routes::jacket::get_jacket_image;
 use routes::recent_plays::get_recent_play;
-use shimmeringmoon::assets::get_var;
+use shimmeringmoon::context::paths::get_var;
 use shimmeringmoon::context::{Error, UserContext};
 
 mod context;
@@ -10,7 +10,7 @@ mod routes;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-	let ctx = Box::leak(Box::new(UserContext::new().await?));
+	let ctx = Box::leak(Box::new(UserContext::new()?));
 
 	let app = axum::Router::new()
 		.route("/plays/latest", axum::routing::get(get_recent_play))
@@ -20,7 +20,7 @@ async fn main() -> Result<(), Error> {
 		)
 		.with_state(AppContext::new(ctx));
 
-	let port: u32 = get_var("SHIMMERING_SERVER_PORT").parse()?;
+	let port: u32 = get_var("SHIMMERING_SERVER_PORT")?.parse()?;
 	let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
 		.await
 		.unwrap();
