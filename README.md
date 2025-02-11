@@ -24,6 +24,8 @@ No neural-networks/machine-learning is used by this project. All image analysis 
 
 ## Running locally
 
+> WARNING: the instructions in this file are a bit outdated.
+
 The programs need (sometimes a subset of) the following environment variables in order to run:
 
 ```

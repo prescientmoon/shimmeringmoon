@@ -2,8 +2,6 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    fenix.url = "github:nix-community/fenix";
-    fenix.inputs.nixpkgs.follows = "nixpkgs";
     shimmeringdarkness.url = "git+ssh://forgejo@ssh.git.moonythm.dev/prescientmoon/shimmeringdarkness.git";
     shimmeringdarkness.flake = false;
   };
@@ -13,15 +11,12 @@
     inputs.flake-utils.lib.eachSystem (with inputs.flake-utils.lib.system; [ x86_64-linux ]) (
       system:
       let
-        pkgs = inputs.nixpkgs.legacyPackages.${system}.extend inputs.fenix.overlays.default;
-        rust-toolchain = pkgs.fenix.complete.toolchain;
+        pkgs = inputs.nixpkgs.legacyPackages.${system};
         spkgs = inputs.self.packages.${system};
         inherit (pkgs) lib;
       in
       {
         packages = {
-          inherit rust-toolchain;
-
           # {{{ Private config
           shimmeringdarkness = inputs.shimmeringdarkness.outPath;
           glass-bundler = pkgs.callPackage ./nix/glass-bundler.nix { };
@@ -43,23 +38,27 @@
             inherit (spkgs) exo kazesawa geosans-light;
           };
           # }}}
-
+          # {{{ Shimmeringmoon
           cc-data = pkgs.callPackage ./nix/cc-data.nix { };
           default = spkgs.shimmeringmoon;
           shimmeringmoon = pkgs.callPackage ./nix/shimmeringmoon.nix {
             inherit (spkgs)
               shimmering-fonts
-              rust-toolchain
               cc-data
               private-config
               ;
           };
+          # }}}
         };
 
         #  {{{ Devshell
         devShell = pkgs.mkShell rec {
-          nativeBuildInputs = with pkgs; [
-            spkgs.rust-toolchain
+          nativeBuildInputs = [
+            pkgs.rustc
+            pkgs.cargo
+            pkgs.rustfmt
+            pkgs.clippy
+            pkgs.rust-analyzer
 
             pkgs.ruff
             pkgs.imagemagick

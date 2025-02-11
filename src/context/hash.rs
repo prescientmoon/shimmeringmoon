@@ -27,6 +27,5 @@ pub fn hash_bytes(bytes: &[u8]) -> String {
 	let mut hasher = Sha256::default();
 	hasher.update(bytes);
 	let res = hasher.finalize();
-	let string = base16ct::lower::encode_string(&res);
-	string
+	base16ct::lower::encode_string(&res)
 }

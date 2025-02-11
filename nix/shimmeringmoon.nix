@@ -1,5 +1,4 @@
 {
-  lib,
   pkg-config,
   makeWrapper,
 
@@ -7,19 +6,12 @@
   fontconfig,
   openssl,
   sqlite,
-  makeRustPlatform,
-  rust-toolchain,
+  rustPlatform,
 
   shimmering-fonts,
   cc-data,
   private-config,
 }:
-let
-  rustPlatform = makeRustPlatform {
-    cargo = rust-toolchain;
-    rustc = rust-toolchain;
-  };
-in
 rustPlatform.buildRustPackage rec {
   pname = "shimmeringmoon";
   version = "unstable-2025-02-11";

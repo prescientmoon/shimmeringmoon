@@ -32,8 +32,8 @@ async fn main() -> anyhow::Result<()> {
 						return Ok(None);
 					}
 
-					if let (Ok(global_prefix)) = global_prefix {
-						if message.content.starts_with(global_prefix) {
+					if let Ok(global_prefix) = global_prefix {
+						if message.content.starts_with(&global_prefix) {
 							return Ok(Some(message.content.split_at(global_prefix.len())));
 						}
 					}
@@ -46,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
 						}
 					}
 
-					return Ok(None);
+					Ok(None)
 				})
 			}),
 			edit_tracker: Some(Arc::new(poise::EditTracker::for_timespan(

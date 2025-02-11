@@ -4,9 +4,10 @@ use crate::arcaea::score::Score;
 use crate::context::{Error, ErrorKind, PoiseContext, TagError, TaggedError};
 use crate::recognition::recognize::{ImageAnalyzer, ScoreKind};
 use crate::user::User;
-use crate::{async_try_block, get_user_error, timed};
+use crate::{get_user_error, timed};
 use anyhow::anyhow;
 use image::DynamicImage;
+use poise::serenity_prelude::{CreateAttachment, CreateEmbed};
 use poise::{serenity_prelude as serenity, CreateReply};
 
 use super::discord::{CreateReplyExtra, MessageContext};
@@ -26,6 +27,83 @@ pub async fn score(_ctx: PoiseContext<'_>) -> Result<(), Error> {
 // }}}
 // {{{ Score magic
 // {{{ Implementation
+#[allow(clippy::too_many_arguments)]
+async fn magic_detect_one<C: MessageContext>(
+	ctx: &mut C,
+	user: &User,
+	embeds: &mut Vec<CreateEmbed>,
+	attachments: &mut Vec<CreateAttachment>,
+	plays: &mut Vec<Play>,
+	analyzer: &mut ImageAnalyzer,
+	attachment: &C::Attachment,
+	index: usize,
+	image: &mut DynamicImage,
+	grayscale_image: &mut DynamicImage,
+) -> Result<(), TaggedError> {
+	// {{{ Detection
+	let kind = timed!("read_score_kind", {
+		analyzer.read_score_kind(ctx.data(), grayscale_image)?
+	});
+
+	let difficulty = timed!("read_difficulty", {
+		analyzer.read_difficulty(ctx.data(), image, grayscale_image, kind)?
+	});
+
+	let (song, chart) = timed!("read_jacket", {
+		analyzer.read_jacket(ctx.data(), image, kind, difficulty)?
+	});
+
+	let max_recall = match kind {
+		ScoreKind::ScoreScreen => {
+			// NOTE: are we ok with discarding errors like that?
+			analyzer.read_max_recall(ctx.data(), grayscale_image).ok()
+		}
+		ScoreKind::SongSelect => None,
+	};
+
+	grayscale_image.invert();
+	let note_distribution = match kind {
+		ScoreKind::ScoreScreen => Some(analyzer.read_distribution(ctx.data(), grayscale_image)?),
+		ScoreKind::SongSelect => None,
+	};
+
+	let score = timed!("read_score", {
+		analyzer
+			.read_score(ctx.data(), Some(chart.note_count), grayscale_image, kind)
+			.map_err(|err| {
+				anyhow!(
+					"Could not read score for chart {} [{:?}]: {err}",
+					song.title,
+					chart.difficulty
+				)
+			})?
+	});
+
+	// {{{ Build play
+	let maybe_fars =
+		Score::resolve_distibution_ambiguities(score, note_distribution, chart.note_count);
+
+	let play = CreatePlay::new(score)
+		.with_attachment(C::attachment_id(attachment))
+		.with_fars(maybe_fars)
+		.with_max_recall(max_recall)
+		.save(ctx.data(), user, chart)
+		.await?;
+	// }}}
+	// }}}
+	// {{{ Deliver embed
+	let (embed, attachment) = timed!("to embed", {
+		play.to_embed(ctx.data(), user, song, chart, index, None)?
+	});
+
+	plays.push(play);
+	embeds.push(embed);
+	attachments.extend(attachment);
+	// }}}
+
+	Ok(())
+}
+
 pub async fn magic_impl<C: MessageContext>(
 	ctx: &mut C,
 	files: &[C::Attachment],
@@ -43,76 +121,23 @@ pub async fn magic_impl<C: MessageContext>(
 	let mut analyzer = ImageAnalyzer::default();
 
 	for (i, (attachment, bytes)) in files.into_iter().enumerate() {
-		// {{{ Preapare image
+		// {{{ Process attachment
 		let mut image = image::load_from_memory(&bytes)?;
 		let mut grayscale_image = DynamicImage::ImageLuma8(image.to_luma8());
-		// }}}
 
-		let result: Result<(), TaggedError> = async_try_block!({
-			// {{{ Detection
-
-			let kind = timed!("read_score_kind", {
-				analyzer.read_score_kind(ctx.data(), &grayscale_image)?
-			});
-
-			let difficulty = timed!("read_difficulty", {
-				analyzer.read_difficulty(ctx.data(), &image, &grayscale_image, kind)?
-			});
-
-			let (song, chart) = timed!("read_jacket", {
-				analyzer.read_jacket(ctx.data(), &mut image, kind, difficulty)?
-			});
-
-			let max_recall = match kind {
-				ScoreKind::ScoreScreen => {
-					// NOTE: are we ok with discarding errors like that?
-					analyzer.read_max_recall(ctx.data(), &grayscale_image).ok()
-				}
-				ScoreKind::SongSelect => None,
-			};
-
-			grayscale_image.invert();
-			let note_distribution = match kind {
-				ScoreKind::ScoreScreen => {
-					Some(analyzer.read_distribution(ctx.data(), &grayscale_image)?)
-				}
-				ScoreKind::SongSelect => None,
-			};
-
-			let score = timed!("read_score", {
-				analyzer
-					.read_score(ctx.data(), Some(chart.note_count), &grayscale_image, kind)
-					.map_err(|err| {
-						anyhow!(
-							"Could not read score for chart {} [{:?}]: {err}",
-							song.title,
-							chart.difficulty
-						)
-					})?
-			});
-
-			// {{{ Build play
-			let maybe_fars =
-				Score::resolve_distibution_ambiguities(score, note_distribution, chart.note_count);
-
-			let play = CreatePlay::new(score)
-				.with_attachment(C::attachment_id(attachment))
-				.with_fars(maybe_fars)
-				.with_max_recall(max_recall)
-				.save(ctx.data(), &user, chart)
-				.await?;
-			// }}}
-			// }}}
-			// {{{ Deliver embed
-			let (embed, attachment) = timed!("to embed", {
-				play.to_embed(ctx.data(), &user, song, chart, i, None)?
-			});
-
-			plays.push(play);
-			embeds.push(embed);
-			attachments.extend(attachment);
-			// }}}
-		});
+		let result = magic_detect_one(
+			ctx,
+			&user,
+			&mut embeds,
+			&mut attachments,
+			&mut plays,
+			&mut analyzer,
+			attachment,
+			i,
+			&mut image,
+			&mut grayscale_image,
+		)
+		.await;
 
 		if let Err(err) = result {
 			let user_err = get_user_error!(err);
@@ -120,6 +145,7 @@ pub async fn magic_impl<C: MessageContext>(
 				.send_discord_error(ctx, &image, C::filename(attachment), user_err)
 				.await?;
 		}
+		// }}}
 	}
 
 	if !embeds.is_empty() {

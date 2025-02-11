@@ -17,4 +17,3 @@ pub mod recognition;
 pub mod time;
 pub mod transform;
 pub mod user;
-mod utils;
