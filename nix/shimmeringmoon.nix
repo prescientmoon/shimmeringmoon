@@ -26,10 +26,10 @@ rustPlatform.buildRustPackage {
 
   SHIMMERING_FONT_DIR = shimmering-fonts;
   SHIMMERING_CC_DIR = cc-data;
+  SHIMMERING_PRIVATE_CONFIG_DIR = private-config;
 
   nativeBuildInputs = [
     pkg-config
-    rust-toolchain
     makeWrapper
   ];
 
