@@ -41,8 +41,6 @@ rustPlatform.buildRustPackage rec {
     openssl
   ];
 
-  LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
-
   cargoLock = {
     lockFile = ../Cargo.lock;
     outputHashes = {

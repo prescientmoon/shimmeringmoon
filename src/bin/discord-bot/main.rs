@@ -29,18 +29,24 @@ async fn main() -> anyhow::Result<()> {
 				Box::pin(async {
 					let global_prefix = std::env::var("SHIMMERING_GLOBAL_PREFIX");
 					if message.author.bot || Into::<u64>::into(message.author.id) == 1 {
-						Ok(None)
-					} else if let Ok(global_prefix) = global_prefix {
-						Ok(Some(message.content.split_at(global_prefix.len())))
-					} else if message.guild_id.is_none() {
-						if message.content.trim().is_empty() {
-							Ok(Some(("", "score magic")))
-						} else {
-							Ok(Some(("", &message.content[..])))
-						}
-					} else {
-						Ok(None)
+						return Ok(None);
 					}
+
+					if let (Ok(global_prefix)) = global_prefix {
+						if message.content.starts_with(global_prefix) {
+							return Ok(Some(message.content.split_at(global_prefix.len())));
+						}
+					}
+
+					if message.guild_id.is_none() {
+						if message.content.trim().is_empty() {
+							return Ok(Some(("", "score magic")));
+						} else {
+							return Ok(Some(("", &message.content[..])));
+						}
+					}
+
+					return Ok(None);
 				})
 			}),
 			edit_tracker: Some(Arc::new(poise::EditTracker::for_timespan(
