@@ -27,10 +27,11 @@ async fn main() -> anyhow::Result<()> {
 		prefix_options: poise::PrefixFrameworkOptions {
 			stripped_dynamic_prefix: Some(|_ctx, message, _user_ctx| {
 				Box::pin(async {
+          let global_prefix = std::env::var("SHIMMERING_GLOBAL_PREFIX");
 					if message.author.bot || Into::<u64>::into(message.author.id) == 1 {
 						Ok(None)
-					} else if message.content.starts_with("!!") {
-						Ok(Some(message.content.split_at(2)))
+					} else if let Right(global_prefix) = global_prefix {
+						Ok(Some(message.content.split_at(global_prefix.len())))
 					} else if message.guild_id.is_none() {
 						if message.content.trim().is_empty() {
 							Ok(Some(("", "score magic")))
