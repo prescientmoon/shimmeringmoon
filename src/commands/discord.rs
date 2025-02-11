@@ -95,7 +95,6 @@ impl MessageContext for poise::Context<'_, UserContext, Error> {
 
 	async fn send(&mut self, message: CreateReply) -> Result<(), Error> {
 		poise::send_reply(*self, message).await?;
-        poise::say_repl
 		Ok(())
 	}
 
