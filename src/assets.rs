@@ -45,12 +45,7 @@ pub static UNI_FONT: RefCell<Font> = get_font!("unifont.otf");
 // {{{ Asset art helpers
 macro_rules! get_asset {
 	($name: ident, $file:expr) => {
-		get_asset!(
-			$name,
-			$file,
-			concat!(env!("SHIMMERING_SOURCE_DIR"), "/assets"),
-			|d: DynamicImage| d
-		);
+		get_asset!($name, $file, "assets", |d: DynamicImage| d);
 	};
 	($name: ident, $file:expr, $dir: expr, $f:expr) => {
 		pub static $name: LazyLock<RgbaImage> = LazyLock::new(move || {

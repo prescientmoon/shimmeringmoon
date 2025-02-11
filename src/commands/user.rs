@@ -150,7 +150,7 @@ async fn friend_code_impl<C: MessageContext>(
 	ctx: &mut C,
 	target_user: poise::serenity_prelude::User,
 ) -> Result<(), TaggedError> {
-	let user = User::from_context(ctx)?;
+	User::from_context(ctx)?;
 
 	let target = User::by_discord_id(ctx.data(), target_user.id)?;
 

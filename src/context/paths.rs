@@ -39,9 +39,6 @@ pub struct ShimmeringPaths {
 
 	/// This directory contains logs and other debugging info.
 	log_dir: PathBuf,
-
-	/// This location the source-code resides at
-	source_dir: PathBuf,
 }
 
 impl ShimmeringPaths {
@@ -52,7 +49,6 @@ impl ShimmeringPaths {
 			data_dir: get_env_dir_path("SHIMMERING_DATA_DIR", Some("STATE_DIRECTORY"))?,
 			log_dir: get_env_dir_path("SHIMMERING_LOG_DIR", Some("LOGS_DIRECTORY"))?,
 			private_config_dir: get_env_dir_path("SHIMMERING_PRIVATE_CONFIG_DIR", None)?,
-			source_dir: PathBuf::from_str(env!("SHIMMERING_SOURCE_DIR")).unwrap(),
 		};
 
 		Ok(res)
@@ -84,18 +80,6 @@ impl ShimmeringPaths {
 
 	pub fn songlist_path(&self) -> PathBuf {
 		self.private_config_dir.join("songlist.json")
-	}
-
-	pub fn scripts_dir(&self) -> PathBuf {
-		self.source_dir.join("scripts")
-	}
-
-	pub fn config_dir(&self) -> PathBuf {
-		self.source_dir.join("config")
-	}
-
-	pub fn notecount_path(&self) -> PathBuf {
-		self.config_dir().join("notecounts.csv")
 	}
 
 	pub fn cc_data_path(&self) -> PathBuf {

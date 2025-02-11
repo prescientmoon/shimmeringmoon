@@ -21,7 +21,7 @@ fn should_save_debug_images() -> bool {
 
 #[inline]
 fn get_log_dir() -> PathBuf {
-	get_env_dir_path("SHIMMERING_LOG_DIR", "LOGS_DIRECTORY").unwrap()
+	get_env_dir_path("SHIMMERING_LOG_DIR", Some("LOGS_DIRECTORY")).unwrap()
 }
 
 #[inline]

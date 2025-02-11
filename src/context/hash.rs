@@ -22,3 +22,11 @@ pub fn hash_files(path: &std::path::Path) -> anyhow::Result<String> {
 	let string = base16ct::lower::encode_string(&res);
 	Ok(string)
 }
+
+pub fn hash_bytes(bytes: &[u8]) -> String {
+	let mut hasher = Sha256::default();
+	hasher.update(bytes);
+	let res = hasher.finalize();
+	let string = base16ct::lower::encode_string(&res);
+	string
+}

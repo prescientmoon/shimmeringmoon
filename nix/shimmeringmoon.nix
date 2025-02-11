@@ -1,6 +1,4 @@
 {
-  lib,
-
   pkg-config,
   makeWrapper,
 
@@ -16,20 +14,18 @@
   private-config,
 }:
 let
-  src = lib.cleanSource ../.;
   rustPlatform = makeRustPlatform {
     cargo = rust-toolchain;
     rustc = rust-toolchain;
   };
 in
 rustPlatform.buildRustPackage {
-  inherit src;
   pname = "shimmeringmoon";
   version = "unstable-2025-02-11";
+  src = ../.;
 
-  SHIMMERING_FONTS_DIR = shimmering-fonts;
+  SHIMMERING_FONT_DIR = shimmering-fonts;
   SHIMMERING_CC_DIR = cc-data;
-  SHIMMERING_PRIVATE_CONFIG_DIR = private-config;
 
   nativeBuildInputs = [
     pkg-config
@@ -37,19 +33,15 @@ rustPlatform.buildRustPackage {
     makeWrapper
   ];
 
-  preBuild = ''
-    export SHIMMERING_SOURCE_DIR="$src"
-  '';
-
-  # TODO: is this supposed to be here???
-  # LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
   buildInputs = [
     freetype
     fontconfig
     sqlite
     openssl
-    src # Idk if putting this here is correct, but it is required at runtime...
   ];
+
+  # TODO: do I need to add this
+  # LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
 
   cargoLock = {
     lockFile = ../Cargo.lock;
@@ -62,6 +54,14 @@ rustPlatform.buildRustPackage {
 
   # Disable all tests
   doCheck = false;
+
+  postBuild = ''
+    for file in $out/bin/*; do
+      wrapProgram $file \
+        --set SHIMMERING_CC_DIR "${cc-data}" \
+        --set SHIMMERING_PRIVATE_CONFIG_DIR ${private-config}
+    done
+  '';
 
   meta = {
     description = "Arcaea score management toolchain";

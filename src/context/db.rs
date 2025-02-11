@@ -6,8 +6,8 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite_migration::Migrations;
 use std::sync::LazyLock;
 
-use crate::arcaea::import_charts::import_songlist;
-use crate::context::hash::hash_files;
+use crate::arcaea::import_charts::{import_songlist, NOTECOUNT_DATA};
+use crate::context::hash::{hash_bytes, hash_files};
 use crate::context::paths::ShimmeringPaths;
 use crate::context::process_jackets::process_jackets;
 // }}}
@@ -35,7 +35,7 @@ pub fn connect_db(paths: &ShimmeringPaths) -> anyhow::Result<SqlitePool> {
 	let current_raw_jackets_hash = hash_files(&paths.raw_jackets_path())?;
 	let current_songlist_hash = hash_files(&paths.songlist_path())?;
 	let current_cc_data_hash = hash_files(&paths.cc_data_path())?;
-	let current_notecount_hash = hash_files(&paths.notecount_path())?;
+	let current_notecount_hash = hash_bytes(NOTECOUNT_DATA);
 
 	let (prev_raw_jackets_hash, prev_songlist_hash, prev_cc_data_hash, prev_notecount_hash) = conn
 		.query_row("SELECT * FROM metadata", (), |row| {

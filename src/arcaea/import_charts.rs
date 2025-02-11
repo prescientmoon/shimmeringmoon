@@ -21,11 +21,11 @@ struct NotecountEntry {
 	notecount: u32,
 }
 
-fn get_notecount_records(paths: &ShimmeringPaths) -> anyhow::Result<Vec<NotecountEntry>> {
+pub const NOTECOUNT_DATA: &[u8] = include_bytes!("notecounts.csv");
+
+fn get_notecount_records() -> anyhow::Result<Vec<NotecountEntry>> {
 	let mut entries = Vec::new();
-	let mut reader = csv::Reader::from_reader(std::io::BufReader::new(std::fs::File::open(
-		paths.notecount_path(),
-	)?));
+	let mut reader = csv::Reader::from_reader(std::io::Cursor::new(NOTECOUNT_DATA));
 
 	for result in reader.records() {
 		let record = result?;
@@ -167,8 +167,7 @@ pub fn import_songlist(
 	paths: &ShimmeringPaths,
 	conn: &mut rusqlite::Connection,
 ) -> anyhow::Result<()> {
-	let notecount_records =
-		get_notecount_records(paths).context("Failed to read notecount records")?;
+	let notecount_records = get_notecount_records().context("Failed to read notecount records")?;
 	let ptt_entries = get_ptt_entries(paths).context("Failed to read ptt entries")?;
 
 	let transaction = conn.transaction()?;
