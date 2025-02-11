@@ -70,7 +70,7 @@ pub trait MessageContext {
 }
 // }}}
 // {{{ Poise implementation
-impl<'a> MessageContext for poise::Context<'a, UserContext, Error> {
+impl MessageContext for poise::Context<'_, UserContext, Error> {
 	type Attachment = poise::serenity_prelude::Attachment;
 
 	fn data(&self) -> &UserContext {

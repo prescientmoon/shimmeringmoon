@@ -5,8 +5,13 @@ CREATE TABLE IF NOT EXISTS metadata (
   -- The last hash computed for the directory
   -- containing all the raw jackets. If this
   -- hash changes, every jacket is reprocessed.
-  raw_jackets_hash TEXT NOT NULL
+  raw_jackets_hash TEXT DEFAULT "" NOT NULL,
+
+  -- If any of these files change, every chart/song is reprocessed
+  songlist_hash TEXT DEFAULT "" NOT NULL,
+  cc_data_hash TEXT DEFAULT "" NOT NULL,
+  notecount_hash TEXT DEFAULT "" NOT NULL
 ) STRICT;
 
 -- Inserts initial metadata row
-INSERT INTO metadata VALUES(0, "");
+INSERT INTO metadata(id) VALUES(0);

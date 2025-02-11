@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-if [ "$#" != 2 ]; then
-    echo "Usage: $0 <from> <to>"
+if [ "$#" != 1 ]; then
+    echo "Usage: $0 <to>"
     exit 1
 fi
 
-from=$1
-to=$2
+from=$SHIMMERING_DATA_DIR/db.sqlite
+to=$1
 
 echo "Creating destination..."
 rm -rf "$to"

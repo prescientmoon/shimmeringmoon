@@ -2,7 +2,6 @@
 use std::fmt::Display;
 
 use anyhow::{anyhow, bail};
-use hypertesseract::{PageSegMode, Tesseract};
 use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView};
 use num::integer::Roots;
@@ -17,7 +16,6 @@ use crate::commands::discord::MessageContext;
 use crate::context::{Error, UserContext};
 use crate::levenshtein::edit_distance;
 use crate::logs::debug_image_log;
-use crate::recognition::fuzzy_song_name::guess_chart_name;
 use crate::recognition::ui::{
 	ScoreScreenRect, SongSelectRect, UIMeasurementRect, UIMeasurementRect::*,
 };
@@ -162,7 +160,7 @@ impl ImageAnalyzer {
 		);
 
 		// Discard scores if it's impossible
-		let valid_analysis = note_count.map_or(true, |note_count| {
+		let valid_analysis = note_count.is_none_or(|note_count| {
 			let (zeta, shinies, score_units) = result.analyse(note_count);
 			8_000_000 <= zeta.0
 				&& zeta.0 <= 10_000_000
@@ -254,35 +252,6 @@ impl ImageAnalyzer {
 		};
 
 		Ok(result)
-	}
-	// }}}
-	// {{{ Read song
-	pub fn read_song<'a>(
-		&mut self,
-		ctx: &'a UserContext,
-		image: &DynamicImage,
-		difficulty: Difficulty,
-	) -> Result<(&'a Song, &'a Chart), Error> {
-		let (text, conf) = Tesseract::builder()
-			.language(hypertesseract::Language::English)
-			.page_seg_mode(PageSegMode::SingleLine)
-			.whitelist_str("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789,.()- ")?
-			.build()?
-			.recognize_text_cloned_with_conf(
-				&self
-					.interp_crop(ctx, image, ScoreScreen(ScoreScreenRect::Title))?
-					.into_rgba8(),
-			)?;
-
-		if conf < 20 && conf != 0 {
-			bail!(
-				"Title text is not readable (confidence = {}, text = {}).",
-				conf,
-				text.trim()
-			);
-		}
-
-		guess_chart_name(&text, &ctx.song_cache, Some(difficulty), false)
 	}
 	// }}}
 	// {{{ Read jacket

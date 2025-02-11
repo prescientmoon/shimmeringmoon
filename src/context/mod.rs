@@ -20,7 +20,7 @@ pub type Error = anyhow::Error;
 pub type PoiseContext<'a> = poise::Context<'a, UserContext, Error>;
 // }}}
 // {{{ Error handling
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
 	User,
 	Internal,
@@ -81,6 +81,8 @@ pub struct UserContext {
 	// TODO: do we really need both after I've fixed the bug in the ocr code?
 	pub kazesawa_measurements: CharMeasurements,
 	pub kazesawa_bold_measurements: CharMeasurements,
+
+	pub http_client: reqwest::Client,
 }
 
 impl UserContext {
@@ -119,6 +121,7 @@ impl UserContext {
 				exo_measurements,
 				kazesawa_measurements,
 				kazesawa_bold_measurements,
+				http_client: reqwest::Client::builder().build()?,
 			})
 		})
 	}

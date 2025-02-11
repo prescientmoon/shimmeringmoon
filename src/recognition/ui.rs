@@ -100,7 +100,8 @@ impl UIMeasurements {
 		let mut measurements = Vec::new();
 		let mut measurement = UIMeasurement::default();
 
-		const CONTENTS: &str = include_str!(concat!(env!("SHIMMERING_CONFIG_DIR"), "/ui.txt"));
+		const CONTENTS: &str =
+			include_str!(concat!(env!("SHIMMERING_SOURCE_DIR"), "/config/ui.txt"));
 
 		// {{{ Parse measurement file
 		for (i, line) in CONTENTS.split('\n').enumerate() {

@@ -4,8 +4,8 @@
     flake-utils.url = "github:numtide/flake-utils";
     fenix.url = "github:nix-community/fenix";
     fenix.inputs.nixpkgs.follows = "nixpkgs";
-    rust-overlay.url = "github:oxalica/rust-overlay";
-    rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
+    shimmeringdarkness.url = "git+ssh://forgejo@ssh.git.moonythm.dev/prescientmoon/shimmeringdarkness.git";
+    shimmeringdarkness.flake = false;
   };
 
   outputs =
@@ -13,15 +13,7 @@
     inputs.flake-utils.lib.eachSystem (with inputs.flake-utils.lib.system; [ x86_64-linux ]) (
       system:
       let
-        # pkgs = inputs.nixpkgs.legacyPackages.${system};
         pkgs = inputs.nixpkgs.legacyPackages.${system}.extend inputs.fenix.overlays.default;
-        # pkgs = inputs.nixpkgs.legacyPackages.${system}.extend (import inputs.rust-overlay);
-        # pkgs = import inputs.nixpkgs {
-        #   inherit system;
-        #   overlays = [ (import inputs.rust-overlay) ];
-        # };
-        # toolchain = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default);
-        # toolchain = pkgs.rust-bin.stable.latest.default;
         rust-toolchain = pkgs.fenix.complete.toolchain;
         spkgs = inputs.self.packages.${system};
         inherit (pkgs) lib;
@@ -30,6 +22,18 @@
         packages = {
           inherit rust-toolchain;
 
+          # {{{ Private config
+          shimmeringdarkness = inputs.shimmeringdarkness.outPath;
+          glass-bundler = pkgs.callPackage ./nix/glass-bundler.nix { };
+          debundled-darkness = pkgs.callPackage ./nix/debundled-darkness.nix {
+            inherit (spkgs) shimmeringdarkness glass-bundler;
+          };
+
+          private-config = pkgs.callPackage ./nix/private-config.nix {
+            inherit (spkgs) shimmeringdarkness debundled-darkness;
+          };
+          # }}}
+          # {{{ Fonts
           kazesawa = pkgs.callPackage ./nix/kazesawa.nix { };
           exo = pkgs.callPackage ./nix/exo.nix { };
           geosans-light = pkgs.callPackage ./nix/geosans-light.nix { };
@@ -38,21 +42,23 @@
             # Pass custom-packaged fonts
             inherit (spkgs) exo kazesawa geosans-light;
           };
+          # }}}
 
+          cc-data = pkgs.callPackage ./nix/cc-data.nix { };
           default = spkgs.shimmeringmoon;
           shimmeringmoon = pkgs.callPackage ./nix/shimmeringmoon.nix {
-            inherit (spkgs) shimmering-fonts rust-toolchain;
+            inherit (spkgs)
+              shimmering-fonts
+              rust-toolchain
+              cc-data
+              private-config
+              ;
           };
         };
 
         #  {{{ Devshell
         devShell = pkgs.mkShell rec {
           nativeBuildInputs = with pkgs; [
-            # pkgs.cargo
-            # pkgs.rustc
-            # pkgs.clippy
-            # pkgs.rust-analyzer
-            # pkgs.rustfmt
             spkgs.rust-toolchain
 
             pkgs.ruff
@@ -61,15 +67,17 @@
           ];
 
           buildInputs = with pkgs; [
+            python3
             freetype
             fontconfig
-            leptonica
-            tesseract
             sqlite
+            openssl
           ];
 
           LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
           SHIMMERING_FONT_DIR = spkgs.shimmering-fonts;
+          SHIMMERING_CC_DIR = spkgs.cc-data;
+          SHIMMERING_PRIVATE_CONFIG_DIR = spkgs.private-config;
         };
         #  }}}
       }

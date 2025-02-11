@@ -10,6 +10,7 @@ use crate::user::User;
 use crate::arcaea::score::{Score, ScoringSystem};
 
 use super::discord::MessageContext;
+use super::DataSource;
 // }}}
 
 // {{{ Top command
@@ -28,6 +29,8 @@ pub async fn calc(_ctx: PoiseContext<'_>) -> Result<(), Error> {
 // {{{ Implementation
 async fn expected_impl(
 	ctx: &mut impl MessageContext,
+	source: DataSource,
+	system: ScoringSystem,
 	ptt: Option<Rational32>,
 	name: &str,
 ) -> Result<Score, TaggedError> {
@@ -39,7 +42,7 @@ async fn expected_impl(
 		let user = User::from_context(ctx)?;
 		compute_b30_ptt(
 			ScoringSystem::Standard,
-			&get_best_plays(ctx.data(), user.id, ScoringSystem::Standard, 30, 30, None)?,
+			&get_best_plays(ctx.data(), &user, source, system, 30, 30, None).await?,
 		)
 	};
 
@@ -85,9 +88,15 @@ mod expected_tests {
 		for i in 0..1_000 {
 			let score = Score(i * 10_000);
 			let rating = score.play_rating(1140);
-			let res = expected_impl(&mut ctx, Some(rating), "Pentiment [BYD]")
-				.await
-				.map_err(|e| e.error)?;
+			let res = expected_impl(
+				&mut ctx,
+				DataSource::Local,
+				ScoringSystem::Standard,
+				Some(rating),
+				"Pentiment [BYD]",
+			)
+			.await
+			.map_err(|e| e.error)?;
 			assert_eq!(
 				score, res,
 				"Wrong expected score for starting score {score} and rating {rating}"
@@ -101,6 +110,8 @@ mod expected_tests {
 	async fn basic_usage(ctx: &mut MockContext) -> Result<(), TaggedError> {
 		expected_impl(
 			ctx,
+			DataSource::Local,
+			ScoringSystem::Standard,
 			Some(Rational32::from_f32(12.27).unwrap()),
 			"Vicious anti heorism",
 		)
@@ -115,12 +126,21 @@ mod expected_tests {
 #[poise::command(prefix_command, slash_command, user_cooldown = 1)]
 async fn expected(
 	mut ctx: PoiseContext<'_>,
+	source: Option<DataSource>,
+	system: Option<ScoringSystem>,
 	#[description = "The potential to compute the expected score for"] ptt: Option<f32>,
 	#[rest]
 	#[description = "Name of chart (difficulty at the end)"]
 	name: String,
 ) -> Result<(), Error> {
-	let res = expected_impl(&mut ctx, ptt.and_then(Rational32::from_f32), &name).await;
+	let res = expected_impl(
+		&mut ctx,
+		source.unwrap_or_default(),
+		system.unwrap_or_default(),
+		ptt.and_then(Rational32::from_f32),
+		&name,
+	)
+	.await;
 	ctx.handle_error(res).await?;
 
 	Ok(())

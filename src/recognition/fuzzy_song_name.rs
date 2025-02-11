@@ -97,7 +97,11 @@ pub fn guess_chart_name<'a>(
 					return None;
 				}
 
-				let song_title = &song.lowercase_title;
+				let mut song_title = &song.lowercase_title;
+				if let Some(chart_title) = &chart.lowercase_title {
+					song_title = chart_title;
+				}
+
 				distance_vec.clear();
 
 				// Apply raw distance
@@ -118,15 +122,10 @@ pub fn guess_chart_name<'a>(
 				}
 
 				// Shorthand-based matching
-				if let Some(shorthand) = &chart.shorthand {
-					if unsafe_heuristics {
-						let short_distance =
-							edit_distance_with(text, shorthand, &mut levenshtein_vec);
-
-						if short_distance <= shorthand.len() / 3 {
-							distance_vec.push(short_distance * 10 + 1);
-						}
-					}
+				let short_distance =
+					edit_distance_with(text, &song.shorthand, &mut levenshtein_vec);
+				if short_distance <= song.shorthand.len() / 3 {
+					distance_vec.push(short_distance * 10 + 1);
 				}
 
 				distance_vec

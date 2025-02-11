@@ -13,7 +13,6 @@ use crate::arcaea::jacket::{
 	JACKET_RECOGNITITION_DIMENSIONS,
 };
 use crate::context::paths::create_empty_directory;
-use crate::recognition::fuzzy_song_name::guess_chart_name;
 
 use super::paths::ShimmeringPaths;
 // }}}
@@ -68,16 +67,24 @@ pub fn process_jackets(paths: &ShimmeringPaths, conn: &rusqlite::Connection) -> 
 		let entries = fs::read_dir(dir.path())
 			.with_context(|| "Couldn't read song directory")?
 			.map(|f| f.unwrap())
-			.filter(|f| !f.file_name().to_str().unwrap().ends_with("_256.jpg"))
+			.filter(|f| f.file_name().to_str().unwrap().ends_with(".jpg"))
 			.collect::<Vec<_>>();
 
 		for file in &entries {
 			let raw_name = file.file_name();
-			let name = raw_name
+			let mut name = raw_name
 				.to_str()
 				.unwrap()
 				.strip_suffix(".jpg")
 				.ok_or_else(|| anyhow!("No '.jpg' suffix to remove from filename {raw_name:?}"))?;
+
+			if name.starts_with("1080_") {
+				name = name.strip_prefix("1080_").unwrap();
+			}
+
+			if name.ends_with("_256") {
+				name = name.strip_suffix("_256").unwrap();
+			}
 
 			let difficulty = match name {
 				"0" => Some(Difficulty::PST),
@@ -91,8 +98,20 @@ pub fn process_jackets(paths: &ShimmeringPaths, conn: &rusqlite::Connection) -> 
 				_ => bail!("Unknown jacket suffix {}", name),
 			};
 
-			let (song, _) = guess_chart_name(dir_name, &song_cache, difficulty, true)
-				.with_context(|| format!("Could not recognise chart name from '{dir_name}'"))?;
+			let song = song_cache.songs.iter().find_map(|cached_song| {
+				let song = &cached_song.as_ref()?.song;
+				if song.shorthand == dir_name {
+					Some(song)
+				} else {
+					None
+				}
+			});
+
+			let song = if let Some(song) = song {
+				song
+			} else {
+				continue;
+			};
 
 			writeln!(debug_name_mapping, "{dir_name} -> {}", song.title)?;
 

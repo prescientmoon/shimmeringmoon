@@ -18,3 +18,12 @@ macro_rules! try_block {
         }))()
     }
 }
+
+#[macro_export]
+macro_rules! async_try_block {
+    { $($token:tt)* } => {
+        (async || $crate::wrap_ok!({
+            $($token)*
+        }))().await
+    }
+}

@@ -11,8 +11,9 @@ use super::rating::{rating_as_float, rating_from_fixed, Rating};
 // }}}
 
 // {{{ Scoring system
-#[derive(Debug, Clone, Copy, poise::ChoiceParameter)]
+#[derive(Debug, Clone, Copy, Default, poise::ChoiceParameter)]
 pub enum ScoringSystem {
+	#[default]
 	Standard,
 
 	/// Forgives up to 9 missed shinies, then uses EX scoring.
@@ -34,12 +35,6 @@ impl ScoringSystem {
 	#[inline]
 	pub fn to_index(self) -> usize {
 		self as usize
-	}
-}
-
-impl Default for ScoringSystem {
-	fn default() -> Self {
-		Self::Standard
 	}
 }
 // }}}

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use anyhow::anyhow;
 use image::RgbaImage;
 
+use crate::commands::DataSource;
 use crate::context::{ErrorKind, TagError, TaggedError, UserContext};
 use crate::user::User;
 
@@ -121,7 +122,16 @@ impl GoalStats {
 		user: &User,
 		scoring_system: ScoringSystem,
 	) -> Result<Self, TaggedError> {
-		let plays = get_best_plays(ctx, user.id, scoring_system, 0, usize::MAX, None)?;
+		let plays = get_best_plays(
+			ctx,
+			user,
+			DataSource::Local,
+			scoring_system,
+			0,
+			usize::MAX,
+			None,
+		)
+		.await?;
 		let conn = ctx.db.get()?;
 
 		// {{{ PM count

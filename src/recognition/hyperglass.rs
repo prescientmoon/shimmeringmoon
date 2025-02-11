@@ -201,7 +201,7 @@ impl ComponentsWithBounds {
 
 		// {{{ Remove components that are too large
 		for bound in &mut bounds {
-			if bound.map_or(false, |b| {
+			if bound.is_some_and(|b| {
 				(b.x_max - b.x_min) as f32 >= max_sizes.0 * image.width() as f32
 					|| (b.y_max - b.y_min) as f32 >= max_sizes.1 * image.height() as f32
 			}) {

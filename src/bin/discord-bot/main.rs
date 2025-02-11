@@ -13,7 +13,7 @@ async fn on_error(error: poise::FrameworkError<'_, UserContext, Error>) {
 // }}}
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
 	// {{{ Poise options
 	let options = poise::FrameworkOptions {
 		commands: vec![
@@ -22,6 +22,7 @@ async fn main() {
 			commands::stats::stats(),
 			commands::chart::chart(),
 			commands::calc::calc(),
+			commands::user::user(),
 		],
 		prefix_options: poise::PrefixFrameworkOptions {
 			stripped_dynamic_prefix: Some(|_ctx, message, _user_ctx| {
@@ -56,19 +57,17 @@ async fn main() {
 			Box::pin(async move {
 				println!("🔒 Logged in as {}", _ready.user.name);
 				poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-				let ctx = UserContext::new()?;
-
-				if var("SHIMMERING_REGEN_SCORES").unwrap_or_default() == "1" {
-					timed!("generate_missing_scores", {
-						generate_missing_scores(&ctx).await?;
-					});
-				}
-
-				Ok(ctx)
+				Ok(UserContext::new().unwrap())
 			})
 		})
 		.options(options)
 		.build();
+
+	if var("SHIMMERING_REGEN_SCORES").unwrap_or_default() == "1" {
+		timed!("generate_missing_scores", {
+			generate_missing_scores(framework.user_data().await).await?;
+		});
+	}
 
 	let token =
 		var("SHIMMERING_DISCORD_TOKEN").expect("Missing `SHIMMERING_DISCORD_TOKEN` env var");
@@ -79,6 +78,8 @@ async fn main() {
 		.framework(framework)
 		.await;
 
-	client.unwrap().start().await.unwrap()
+	client.unwrap().start().await?;
 	// }}}
+
+	Ok(())
 }

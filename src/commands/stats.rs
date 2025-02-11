@@ -23,6 +23,7 @@ use crate::logs::debug_image_log;
 use crate::user::User;
 
 use super::discord::MessageContext;
+use super::DataSource;
 // }}}
 
 // {{{ Stats
@@ -41,6 +42,7 @@ pub async fn stats(_ctx: PoiseContext<'_>) -> Result<(), Error> {
 async fn best_plays<C: MessageContext>(
 	ctx: &mut C,
 	user: &User,
+	source: DataSource,
 	scoring_system: ScoringSystem,
 	grid_size: (u32, u32),
 	require_full: bool,
@@ -48,7 +50,8 @@ async fn best_plays<C: MessageContext>(
 	let user_ctx = ctx.data();
 	let plays = get_best_plays(
 		user_ctx,
-		user.id,
+		user,
+		source,
 		scoring_system,
 		if require_full {
 			grid_size.0 * grid_size.1
@@ -57,7 +60,8 @@ async fn best_plays<C: MessageContext>(
 		} as usize,
 		(grid_size.0 * grid_size.1) as usize,
 		None,
-	)?;
+	)
+	.await?;
 
 	// {{{ Layout
 	let mut layout = LayoutManager::default();
@@ -419,10 +423,19 @@ async fn best_plays<C: MessageContext>(
 // {{{ Implementation
 pub async fn b30_impl<C: MessageContext>(
 	ctx: &mut C,
+	source: Option<DataSource>,
 	scoring_system: Option<ScoringSystem>,
 ) -> Result<(), TaggedError> {
 	let user = User::from_context(ctx)?;
-	best_plays(ctx, &user, scoring_system.unwrap_or_default(), (5, 6), true).await?;
+	best_plays(
+		ctx,
+		&user,
+		source.unwrap_or_default(),
+		scoring_system.unwrap_or_default(),
+		(5, 6),
+		true,
+	)
+	.await?;
 	Ok(())
 }
 // }}}
@@ -431,9 +444,10 @@ pub async fn b30_impl<C: MessageContext>(
 #[poise::command(prefix_command, slash_command, user_cooldown = 30)]
 pub async fn b30(
 	mut ctx: PoiseContext<'_>,
+	source: Option<DataSource>,
 	scoring_system: Option<ScoringSystem>,
 ) -> Result<(), Error> {
-	let res = b30_impl(&mut ctx, scoring_system).await;
+	let res = b30_impl(&mut ctx, source, scoring_system).await;
 	ctx.handle_error(res).await?;
 	Ok(())
 }
@@ -443,6 +457,7 @@ pub async fn b30(
 // {{{ Implementation
 async fn bany_impl<C: MessageContext>(
 	ctx: &mut C,
+	source: Option<DataSource>,
 	scoring_system: Option<ScoringSystem>,
 	width: u32,
 	height: u32,
@@ -452,6 +467,7 @@ async fn bany_impl<C: MessageContext>(
 	best_plays(
 		ctx,
 		&user,
+		source.unwrap_or_default(),
 		scoring_system.unwrap_or_default(),
 		(width, height),
 		false,
@@ -465,11 +481,12 @@ async fn bany_impl<C: MessageContext>(
 #[poise::command(prefix_command, slash_command, hide_in_help, global_cooldown = 5)]
 pub async fn bany(
 	mut ctx: PoiseContext<'_>,
+	source: Option<DataSource>,
 	scoring_system: Option<ScoringSystem>,
 	width: u32,
 	height: u32,
 ) -> Result<(), Error> {
-	let res = bany_impl(&mut ctx, scoring_system, width, height).await;
+	let res = bany_impl(&mut ctx, source, scoring_system, width, height).await;
 	ctx.handle_error(res).await?;
 	Ok(())
 }

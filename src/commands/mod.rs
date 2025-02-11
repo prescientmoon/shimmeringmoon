@@ -5,7 +5,15 @@ pub mod chart;
 pub mod discord;
 pub mod score;
 pub mod stats;
+pub mod user;
 pub mod utils;
+
+#[derive(Clone, Copy, Default, poise::ChoiceParameter)]
+pub enum DataSource {
+	#[default]
+	Local,
+	Server,
+}
 
 // {{{ Help
 /// Show this help menu

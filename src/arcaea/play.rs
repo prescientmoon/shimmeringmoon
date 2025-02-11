@@ -16,6 +16,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::arcaea::chart::{Chart, Song};
+use crate::commands::DataSource;
 use crate::context::ErrorKind;
 use crate::context::TagError;
 use crate::context::TaggedError;
@@ -67,7 +68,12 @@ impl CreatePlay {
 	}
 
 	// {{{ Save
-	pub fn save(self, ctx: &UserContext, user: &User, chart: &Chart) -> Result<Play, TaggedError> {
+	pub async fn save(
+		self,
+		ctx: &UserContext,
+		user: &User,
+		chart: &Chart,
+	) -> Result<Play, TaggedError> {
 		let conn = ctx.db.get()?;
 		let attachment_id = self.discord_attachment_id.map(|i| i.get() as i64);
 
@@ -110,7 +116,7 @@ impl CreatePlay {
 
 		for system in ScoringSystem::SCORING_SYSTEMS {
 			let i = system.to_index();
-			let creation_ptt = try_compute_ptt(ctx, user.id, system, None)?;
+			let creation_ptt = try_compute_ptt(ctx, user, DataSource::Local, system, None).await?;
 
 			conn.prepare_cached(
 				"
@@ -382,8 +388,11 @@ impl Play {
 					"-".to_string()
 				},
 				true,
-			)
-			.field("ID", format!("{}", self.id), true);
+			);
+
+		if self.id != 0 {
+			embed = embed.field("ID", format!("{}", self.id), true);
+		}
 
 		if icon_attachement.is_some() {
 			embed = embed.thumbnail(format!("attachment://{}", &attachement_name));
@@ -410,19 +419,22 @@ impl Play {
 // {{{ General functions
 pub type PlayCollection<'a> = Vec<(Play, &'a Song, &'a Chart)>;
 
-pub fn get_best_plays(
-	ctx: &UserContext,
-	user_id: u32,
+pub async fn get_best_plays<'a>(
+	ctx: &'a UserContext,
+	user: &User,
+	source: DataSource,
 	scoring_system: ScoringSystem,
 	min_amount: usize,
 	max_amount: usize,
 	before: Option<NaiveDateTime>,
-) -> Result<PlayCollection<'_>, TaggedError> {
-	let conn = ctx.db.get()?;
+) -> Result<PlayCollection<'a>, TaggedError> {
 	// {{{ DB data fetching
-	let mut plays = conn
-		.prepare_cached(
-			"
+	let conn = ctx.db.get()?;
+	let mut plays = match source {
+		DataSource::Local => {
+			// {{{ Fetch plays from db
+			conn.prepare_cached(
+				"
         SELECT 
           p.id, p.chart_id, p.user_id, p.created_at,
           p.max_recall, p.far_notes, s.score,
@@ -437,20 +449,35 @@ pub fn get_best_plays(
         AND p.created_at<=?
         GROUP BY p.chart_id
       ",
-		)?
-		.query_and_then(
-			(
-				ScoringSystem::SCORING_SYSTEM_DB_STRINGS[scoring_system.to_index()],
-				user_id,
-				before.unwrap_or_else(|| Utc::now().naive_utc()),
-			),
-			|row| {
-				let (song, chart) = ctx.song_cache.lookup_chart(row.get("chart_id")?)?;
-				let play = Play::from_sql(chart, row)?;
-				Ok((play, song, chart))
-			},
-		)?
-		.collect::<Result<Vec<_>, Error>>()?;
+			)?
+			.query_and_then(
+				(
+					ScoringSystem::SCORING_SYSTEM_DB_STRINGS[scoring_system.to_index()],
+					user.id,
+					before.unwrap_or_else(|| Utc::now().naive_utc()),
+				),
+				|row| {
+					let (song, chart) = ctx.song_cache.lookup_chart(row.get("chart_id")?)?;
+					let play = Play::from_sql(chart, row)?;
+					Ok((play, song, chart))
+				},
+			)?
+			.collect::<Result<Vec<_>, Error>>()?
+			// }}}
+		}
+		DataSource::Server => {
+			// {{{ Fetch data remotely
+			crate::private_server::best(ctx, user, crate::private_server::BestOptions::default())
+				.await?
+				.into_iter()
+				.map(|play| {
+					let (song, chart) = ctx.song_cache.lookup_chart(play.chart_id)?;
+					Ok((play, song, chart))
+				})
+				.collect::<Result<Vec<_>, Error>>()?
+			// }}}
+		}
+	};
 	// }}}
 
 	if plays.len() < min_amount {
@@ -474,13 +501,14 @@ pub fn get_best_plays(
 /// This is similar to directly calling [get_best_plays] and then passing the
 /// result into [compute_b30_ptt], except any user errors (i.e.: not enough
 /// plays available) get turned into [None] values.
-pub fn try_compute_ptt(
+pub async fn try_compute_ptt(
 	ctx: &UserContext,
-	user_id: u32,
+	user: &User,
+	source: DataSource,
 	system: ScoringSystem,
 	before: Option<NaiveDateTime>,
 ) -> Result<Option<i32>, Error> {
-	match get_best_plays(ctx, user_id, system, 30, 30, before) {
+	match get_best_plays(ctx, user, source, system, 30, 30, before).await {
 		Err(err) => match err.kind {
 			ErrorKind::User => Ok(None),
 			ErrorKind::Internal => Err(err.error),
@@ -526,7 +554,17 @@ pub async fn generate_missing_scores(ctx: &UserContext) -> Result<(), Error> {
 		let play = play?;
 		for system in ScoringSystem::SCORING_SYSTEMS {
 			let i = system.to_index();
-			let creation_ptt = try_compute_ptt(ctx, play.user_id, system, Some(play.created_at))?;
+			let creation_ptt = try_compute_ptt(
+				ctx,
+				&User {
+					id: play.user_id,
+					..Default::default()
+				},
+				DataSource::Local,
+				system,
+				Some(play.created_at),
+			)
+			.await?;
 
 			let raw_score = play.scores.0[i].0;
 

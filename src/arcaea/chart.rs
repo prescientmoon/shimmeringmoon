@@ -1,9 +1,11 @@
+use std::str::FromStr;
 // {{{ Imports
 use std::{fmt::Display, num::NonZeroU16};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use image::{ImageBuffer, Rgb};
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ValueRef};
+use rusqlite::ToSql;
 use serde::{Deserialize, Serialize};
 
 use crate::bitmap::Color;
@@ -36,6 +38,19 @@ impl Difficulty {
 	}
 }
 
+impl FromStr for Difficulty {
+	type Err = anyhow::Error;
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		for (i, level) in Self::DIFFICULTY_SHORTHANDS.iter().enumerate() {
+			if *level == s {
+				return Ok(Self::DIFFICULTIES[i]);
+			}
+		}
+
+		bail!("Invalid level '{s}'");
+	}
+}
+
 impl FromSql for Difficulty {
 	fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
 		let str: String = rusqlite::types::FromSql::column_result(value)?;
@@ -49,6 +64,12 @@ impl FromSql for Difficulty {
 		FromSqlResult::Err(FromSqlError::Other(
 			format!("Cannot convert {} to difficulty", str).into(),
 		))
+	}
+}
+
+impl ToSql for Difficulty {
+	fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+		Self::DIFFICULTY_SHORTHANDS[*self as usize].to_sql()
 	}
 }
 
@@ -85,11 +106,12 @@ pub enum Level {
 	Ten,
 	TenP,
 	Eleven,
+	ElevenP,
 	Twelve,
 }
 
 impl Level {
-	pub const LEVELS: [Self; 17] = [
+	pub const LEVELS: [Self; 18] = [
 		Self::Unknown,
 		Self::One,
 		Self::Two,
@@ -106,16 +128,31 @@ impl Level {
 		Self::Ten,
 		Self::TenP,
 		Self::Eleven,
+		Self::ElevenP,
 		Self::Twelve,
 	];
 
-	pub const LEVEL_STRINGS: [&'static str; 17] = [
-		"?", "1", "2", "3", "4", "5", "6", "7", "7+", "8", "8+", "9", "9+", "10", "10+", "11", "12",
+	pub const LEVEL_STRINGS: [&'static str; 18] = [
+		"?", "1", "2", "3", "4", "5", "6", "7", "7+", "8", "8+", "9", "9+", "10", "10+", "11",
+		"11+", "12",
 	];
 
 	#[inline]
 	pub fn to_index(self) -> usize {
 		self as usize
+	}
+}
+
+impl FromStr for Level {
+	type Err = anyhow::Error;
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		for (i, level) in Self::LEVEL_STRINGS.iter().enumerate() {
+			if *level == s {
+				return Ok(Self::LEVELS[i]);
+			}
+		}
+
+		bail!("Invalid level '{s}'");
 	}
 }
 
@@ -140,6 +177,12 @@ impl FromSql for Level {
 		))
 	}
 }
+
+impl ToSql for Level {
+	fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+		Self::LEVEL_STRINGS[*self as usize].to_sql()
+	}
+}
 // }}}
 // {{{ Side
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -147,11 +190,12 @@ pub enum Side {
 	Light,
 	Conflict,
 	Silent,
+	Lephon,
 }
 
 impl Side {
-	pub const SIDES: [Self; 3] = [Self::Light, Self::Conflict, Self::Silent];
-	pub const SIDE_STRINGS: [&'static str; 3] = ["light", "conflict", "silent"];
+	pub const SIDES: [Self; 4] = [Self::Light, Self::Conflict, Self::Silent, Self::Lephon];
+	pub const SIDE_STRINGS: [&'static str; 4] = ["light", "conflict", "silent", "lephon"];
 
 	#[inline]
 	pub fn to_index(self) -> usize {
@@ -174,11 +218,18 @@ impl FromSql for Side {
 		))
 	}
 }
+
+impl ToSql for Side {
+	fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+		Self::SIDE_STRINGS[*self as usize].to_sql()
+	}
+}
 // }}}
 // {{{ Song
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Song {
 	pub id: u32,
+	pub shorthand: String,
 	pub title: String,
 	pub lowercase_title: String,
 
@@ -186,7 +237,6 @@ pub struct Song {
 	pub artist: String,
 
 	pub bpm: String,
-	pub pack: Option<String>,
 	pub side: Side,
 }
 
@@ -219,7 +269,8 @@ pub struct Jacket {
 pub struct Chart {
 	pub id: u32,
 	pub song_id: u32,
-	pub shorthand: Option<String>,
+	pub title: Option<String>, // Name override for charts like PRAGMATISM
+	pub lowercase_title: Option<String>,
 	pub note_design: Option<String>,
 
 	pub difficulty: Difficulty,
@@ -363,9 +414,9 @@ impl SongCache {
 			Ok(Song {
 				id: row.get("id")?,
 				lowercase_title: row.get::<_, String>("title")?.to_lowercase(),
+				shorthand: row.get("shorthand")?,
 				title: row.get("title")?,
 				artist: row.get("artist")?,
-				pack: row.get("pack")?,
 				bpm: row.get("bpm")?,
 				side: row.get("side")?,
 			})
@@ -388,7 +439,10 @@ impl SongCache {
 			Ok(Chart {
 				id: row.get("id")?,
 				song_id: row.get("song_id")?,
-				shorthand: row.get("shorthand")?,
+				title: row.get("title")?,
+				lowercase_title: row
+					.get::<_, Option<String>>("title")?
+					.map(|t| t.to_lowercase()),
 				difficulty: row.get("difficulty")?,
 				level: row.get("level")?,
 				chart_constant: row.get("chart_constant")?,

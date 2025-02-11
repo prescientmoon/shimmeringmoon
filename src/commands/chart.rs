@@ -21,6 +21,7 @@ use poise::CreateReply;
 use crate::arcaea::score::{Score, ScoringSystem};
 
 use super::discord::{CreateReplyExtra, MessageContext};
+use super::DataSource;
 // }}}
 
 // {{{ Top command
@@ -75,13 +76,9 @@ async fn info_impl(ctx: &mut impl MessageContext, name: &str) -> Result<(), Tagg
 		.field("Side", Side::SIDE_STRINGS[song.side.to_index()], true)
 		.field("Artist", &song.title, true);
 
-	if let Some(note_design) = &chart.note_design {
-		embed = embed.field("Note design", note_design, true);
-	}
-
-	if let Some(pack) = &song.pack {
-		embed = embed.field("Pack", pack, true);
-	}
+	// if let Some(note_design) = &chart.note_design {
+	//	embed = embed.field("Note design", note_design, true);
+	// }
 
 	if icon_attachement.is_some() {
 		embed = embed.thumbnail(format!("attachment://{}", &attachement_name));
@@ -150,16 +147,22 @@ async fn info(
 // }}}
 // {{{ Best score
 // {{{ Implementation
-async fn best_impl<C: MessageContext>(ctx: &mut C, name: &str) -> Result<Play, TaggedError> {
+async fn best_impl<C: MessageContext>(
+	ctx: &mut C,
+	name: &str,
+	source: DataSource,
+) -> Result<Play, TaggedError> {
 	let user = User::from_context(ctx)?;
 
 	let (song, chart) = guess_song_and_chart(ctx.data(), name)?;
-	let play = ctx
-		.data()
-		.db
-		.get()?
-		.prepare_cached(
-			"
+	let play = match source {
+		DataSource::Local => {
+			// {{{ Query local db
+			ctx.data()
+				.db
+				.get()?
+				.prepare_cached(
+					"
         SELECT 
         p.id, p.chart_id, p.user_id, p.created_at,
         p.max_recall, p.far_notes, s.score
@@ -171,16 +174,43 @@ async fn best_impl<C: MessageContext>(ctx: &mut C, name: &str) -> Result<Play, T
         ORDER BY s.score DESC
         LIMIT 1
       ",
-		)?
-		.query_row((user.id, chart.id), |row| Play::from_sql(chart, row))
-		.map_err(|_| {
-			anyhow!(
-				"Could not find any scores for {} [{:?}]",
-				song.title,
-				chart.difficulty
+				)?
+				.query_row((user.id, chart.id), |row| Play::from_sql(chart, row))
+				.map_err(|_| {
+					anyhow!(
+						"Could not find any scores for {} [{:?}]",
+						song.title,
+						chart.difficulty
+					)
+					.tag(ErrorKind::User)
+				})?
+			// }}}
+		}
+		DataSource::Server => {
+			// {{{ Query from private server
+			crate::private_server::best(
+				ctx.data(),
+				&user,
+				crate::private_server::BestOptions {
+					limit: Some(1),
+					offset: None,
+					query: Some(crate::private_server::BestScoreQuery {
+						song_id: Some(&song.shorthand),
+						difficulty: Some(crate::private_server::encode_difficulty(
+							chart.difficulty,
+						)),
+					}),
+				},
 			)
-			.tag(ErrorKind::User)
-		})?;
+			.await?
+			.into_iter()
+			.next()
+			.ok_or_else(|| {
+				anyhow!("The server found no plays for the given song").tag(ErrorKind::User)
+			})?
+			// }}}
+		}
+	};
 
 	let (embed, attachment) = play.to_embed(
 		ctx.data(),
@@ -218,7 +248,7 @@ mod best_tests {
 	#[tokio::test]
 	async fn no_scores() -> Result<(), Error> {
 		with_test_ctx!("commands/chart/best/no_scores", |ctx| async move {
-			best_impl(ctx, "Pentiment").await?;
+			best_impl(ctx, "Pentiment", DataSource::Local).await?;
 			Ok(())
 		})
 	}
@@ -236,7 +266,7 @@ mod best_tests {
 		)
 		.await?;
 
-		let play = best_impl(ctx, "Fracture ray").await?;
+		let play = best_impl(ctx, "Fracture ray", DataSource::Local).await?;
 		assert_eq!(play.score(ScoringSystem::Standard).0, 9_805_651);
 		assert_eq!(plays[0], play);
 
@@ -250,11 +280,16 @@ mod best_tests {
 #[poise::command(prefix_command, slash_command, user_cooldown = 1)]
 async fn best(
 	mut ctx: PoiseContext<'_>,
+
+	#[description = "Whether to use local data or data from some private server"] source: Option<
+		DataSource,
+	>,
+
 	#[rest]
 	#[description = "Name of chart (difficulty at the end)"]
 	name: String,
 ) -> Result<(), Error> {
-	let res = best_impl(&mut ctx, &name).await;
+	let res = best_impl(&mut ctx, &name, source.unwrap_or(DataSource::Local)).await;
 	ctx.handle_error(res).await?;
 
 	Ok(())

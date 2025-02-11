@@ -4,7 +4,7 @@ use crate::arcaea::score::Score;
 use crate::context::{Error, ErrorKind, PoiseContext, TagError, TaggedError};
 use crate::recognition::recognize::{ImageAnalyzer, ScoreKind};
 use crate::user::User;
-use crate::{get_user_error, timed, try_block};
+use crate::{async_try_block, get_user_error, timed};
 use anyhow::anyhow;
 use image::DynamicImage;
 use poise::{serenity_prelude as serenity, CreateReply};
@@ -48,7 +48,7 @@ pub async fn magic_impl<C: MessageContext>(
 		let mut grayscale_image = DynamicImage::ImageLuma8(image.to_luma8());
 		// }}}
 
-		let result: Result<(), TaggedError> = try_block!({
+		let result: Result<(), TaggedError> = async_try_block!({
 			// {{{ Detection
 
 			let kind = timed!("read_score_kind", {
@@ -99,7 +99,8 @@ pub async fn magic_impl<C: MessageContext>(
 				.with_attachment(C::attachment_id(attachment))
 				.with_fars(maybe_fars)
 				.with_max_recall(max_recall)
-				.save(ctx.data(), &user, chart)?;
+				.save(ctx.data(), &user, chart)
+				.await?;
 			// }}}
 			// }}}
 			// {{{ Deliver embed

@@ -6,15 +6,18 @@ use anyhow::Context;
 use std::{path::Path, path::PathBuf, str::FromStr};
 
 /// Wrapper around [std::env::var] which adds [anyhow] context around errors.
-#[inline]
 pub fn get_var(name: &str) -> anyhow::Result<String> {
 	std::env::var(name).with_context(|| format!("Missing ${name} environment variable"))
 }
 
 /// Reads an environment variable containing a directory path,
 /// creating the directory if it doesn't exist.
-pub fn get_env_dir_path(name: &str) -> anyhow::Result<PathBuf> {
-	let var = get_var(name)?;
+pub fn get_env_dir_path(name: &str, default_to: Option<&str>) -> anyhow::Result<PathBuf> {
+	let var = get_var(name);
+	let var = match default_to {
+		None => var?,
+		Some(other) => var.or(get_var(other))?,
+	};
 
 	let path = PathBuf::from_str(&var).with_context(|| format!("${name} is not a valid path"))?;
 
@@ -36,6 +39,9 @@ pub struct ShimmeringPaths {
 
 	/// This directory contains logs and other debugging info.
 	log_dir: PathBuf,
+
+	/// This location the source-code resides at
+	source_dir: PathBuf,
 }
 
 impl ShimmeringPaths {
@@ -43,42 +49,57 @@ impl ShimmeringPaths {
 	/// creating every involved directory in the process.
 	pub fn new() -> anyhow::Result<Self> {
 		let res = Self {
-			data_dir: get_env_dir_path("SHIMMERING_DATA_DIR")?,
-			private_config_dir: get_env_dir_path("SHIMMERING_PRIVATE_CONFIG_DIR")?,
-			log_dir: get_env_dir_path("SHIMMERING_LOG_DIR")?,
+			data_dir: get_env_dir_path("SHIMMERING_DATA_DIR", Some("STATE_DIRECTORY"))?,
+			log_dir: get_env_dir_path("SHIMMERING_LOG_DIR", Some("LOGS_DIRECTORY"))?,
+			private_config_dir: get_env_dir_path("SHIMMERING_PRIVATE_CONFIG_DIR", None)?,
+			source_dir: PathBuf::from_str(env!("SHIMMERING_SOURCE_DIR")).unwrap(),
 		};
 
 		Ok(res)
 	}
 
-	#[inline]
 	pub fn data_dir(&self) -> &PathBuf {
 		&self.data_dir
 	}
 
-	#[inline]
 	pub fn log_dir(&self) -> &PathBuf {
 		&self.log_dir
 	}
 
-	#[inline]
 	pub fn db_path(&self) -> PathBuf {
 		self.data_dir.join("db.sqlite")
 	}
 
-	#[inline]
 	pub fn jackets_path(&self) -> PathBuf {
 		self.data_dir.join("jackets")
 	}
 
-	#[inline]
 	pub fn recognition_matrix_path(&self) -> PathBuf {
 		self.data_dir.join("recognition_matrix")
 	}
 
-	#[inline]
 	pub fn raw_jackets_path(&self) -> PathBuf {
 		self.private_config_dir.join("jackets")
+	}
+
+	pub fn songlist_path(&self) -> PathBuf {
+		self.private_config_dir.join("songlist.json")
+	}
+
+	pub fn scripts_dir(&self) -> PathBuf {
+		self.source_dir.join("scripts")
+	}
+
+	pub fn config_dir(&self) -> PathBuf {
+		self.source_dir.join("config")
+	}
+
+	pub fn notecount_path(&self) -> PathBuf {
+		self.config_dir().join("notecounts.csv")
+	}
+
+	pub fn cc_data_path(&self) -> PathBuf {
+		PathBuf::from_str(concat!(env!("SHIMMERING_CC_DIR"), "/ptt.json")).unwrap()
 	}
 }
 

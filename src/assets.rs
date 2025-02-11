@@ -44,15 +44,20 @@ pub static UNI_FONT: RefCell<Font> = get_font!("unifont.otf");
 // }}}
 // {{{ Asset art helpers
 macro_rules! get_asset {
-	($name: ident, $path:expr) => {
-		get_asset!($name, $path, "SHIMMERING_ASSET_DIR", |d: DynamicImage| d);
+	($name: ident, $file:expr) => {
+		get_asset!(
+			$name,
+			$file,
+			concat!(env!("SHIMMERING_SOURCE_DIR"), "/assets"),
+			|d: DynamicImage| d
+		);
 	};
-	($name: ident, $path:expr, $env_var: literal, $f:expr) => {
+	($name: ident, $file:expr, $dir: expr, $f:expr) => {
 		pub static $name: LazyLock<RgbaImage> = LazyLock::new(move || {
-			static IMAGE_BYTES: &[u8] = include_bytes!(concat!(env!($env_var), "/", $path));
+			static IMAGE_BYTES: &[u8] = include_bytes!(concat!($dir, "/", $file));
 
 			let image = image::load_from_memory(&IMAGE_BYTES)
-				.unwrap_or_else(|_| panic!("Could no read asset `{}`", $path));
+				.unwrap_or_else(|_| panic!("Could no read asset `{}`", $file));
 
 			let f = $f;
 			f(image).into_rgba8()
@@ -71,7 +76,7 @@ get_asset!(PTT_EMBLEM, "ptt_emblem.png");
 get_asset!(
 	B30_BACKGROUND,
 	"b30_background.jpg",
-	"SHIMMERING_PRIVATE_CONFIG_DIR",
+	env!("SHIMMERING_PRIVATE_CONFIG_DIR"),
 	|image: DynamicImage| image.blur(7.0)
 );
 

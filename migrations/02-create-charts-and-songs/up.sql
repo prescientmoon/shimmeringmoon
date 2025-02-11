@@ -1,11 +1,11 @@
 -- {{{ songs
 CREATE TABLE IF NOT EXISTS songs (
     id INTEGER NOT NULL PRIMARY KEY,
+    shorthand TEXT NOT NULL UNIQUE,
     title TEXT NOT NULL,
     artist TEXT NOT NULL,
-    side TEXT NOT NULL CHECK (side IN ('light', 'conflict', 'silent')),
+    side TEXT NOT NULL CHECK (side IN ('light', 'conflict', 'silent', 'lephon')),
     bpm TEXT NOT NULL,
-    pack TEXT,
 
     UNIQUE(title, artist)
 );
@@ -14,8 +14,8 @@ CREATE TABLE IF NOT EXISTS songs (
 CREATE TABLE IF NOT EXISTS charts (
     id INTEGER NOT NULL PRIMARY KEY,
     song_id INTEGER NOT NULL,
+    title TEXT,
     note_design TEXT,
-    shorthand TEXT,
 
     difficulty TEXT NOT NULL CHECK (difficulty IN ('PST','PRS','FTR','ETR','BYD')),
     level TEXT NOT NULL,
