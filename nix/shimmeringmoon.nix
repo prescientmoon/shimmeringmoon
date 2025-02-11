@@ -1,4 +1,5 @@
 {
+  lib,
   pkg-config,
   makeWrapper,
 
@@ -19,7 +20,7 @@ let
     rustc = rust-toolchain;
   };
 in
-rustPlatform.buildRustPackage {
+rustPlatform.buildRustPackage rec {
   pname = "shimmeringmoon";
   version = "unstable-2025-02-11";
   src = ../.;
@@ -40,8 +41,7 @@ rustPlatform.buildRustPackage {
     openssl
   ];
 
-  # TODO: do I need to add this
-  # LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
+  LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
 
   cargoLock = {
     lockFile = ../Cargo.lock;
