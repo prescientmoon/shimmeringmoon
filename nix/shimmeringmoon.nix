@@ -1,4 +1,5 @@
 {
+  lib,
   pkg-config,
   makeWrapper,
 
@@ -15,7 +16,15 @@
 rustPlatform.buildRustPackage rec {
   pname = "shimmeringmoon";
   version = "unstable-2025-02-11";
-  src = ../.;
+  src = lib.fileset.toSource {
+    root = ../.;
+    fileset = lib.fileset.unions [
+      ../Cargo.lock
+      ../Cargo.toml
+      ../migrations
+      ../src
+    ];
+  };
 
   SHIMMERING_FONT_DIR = shimmering-fonts;
   SHIMMERING_CC_DIR = cc-data;
@@ -33,6 +42,7 @@ rustPlatform.buildRustPackage rec {
     openssl
   ];
 
+  useFetchCargoVendor = true;
   cargoLock = {
     lockFile = ../Cargo.lock;
     outputHashes = {
@@ -45,7 +55,7 @@ rustPlatform.buildRustPackage rec {
   # Disable all tests
   doCheck = false;
 
-  postBuild = ''
+  postFixup = ''
     for file in $out/bin/*; do
       wrapProgram $file \
         --set SHIMMERING_CC_DIR "${cc-data}" \
