@@ -290,7 +290,7 @@ async fn best(
 	name: String,
 ) -> Result<(), Error> {
 	ctx.defer().await?;
-	let res = best_impl(&mut ctx, &name, source.unwrap_or(DataSource::Local)).await;
+	let res = best_impl(&mut ctx, &name, source.unwrap_or_default()).await;
 	ctx.handle_error(res).await?;
 
 	Ok(())
