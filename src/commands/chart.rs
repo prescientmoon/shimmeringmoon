@@ -289,6 +289,7 @@ async fn best(
 	#[description = "Name of chart (difficulty at the end)"]
 	name: String,
 ) -> Result<(), Error> {
+	ctx.defer().await?;
 	let res = best_impl(&mut ctx, &name, source.unwrap_or(DataSource::Local)).await;
 	ctx.handle_error(res).await?;
 
@@ -441,6 +442,7 @@ async fn plot(
 	#[description = "Name of chart (difficulty at the end)"]
 	name: String,
 ) -> Result<(), Error> {
+	ctx.defer().await?;
 	let res = plot_impl(&mut ctx, scoring_system, name).await;
 	ctx.handle_error(res).await?;
 

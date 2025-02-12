@@ -441,12 +441,13 @@ pub async fn b30_impl<C: MessageContext>(
 // }}}
 // {{{ Discord wrapper
 /// Show the 30 best scores
-#[poise::command(prefix_command, slash_command, user_cooldown = 30)]
+#[poise::command(prefix_command, slash_command, user_cooldown = 10)]
 pub async fn b30(
 	mut ctx: PoiseContext<'_>,
 	source: Option<DataSource>,
 	scoring_system: Option<ScoringSystem>,
 ) -> Result<(), Error> {
+	ctx.defer().await?;
 	let res = b30_impl(&mut ctx, source, scoring_system).await;
 	ctx.handle_error(res).await?;
 	Ok(())
@@ -486,6 +487,7 @@ pub async fn bany(
 	width: u32,
 	height: u32,
 ) -> Result<(), Error> {
+	ctx.defer().await?;
 	let res = bany_impl(&mut ctx, source, scoring_system, width, height).await;
 	ctx.handle_error(res).await?;
 	Ok(())

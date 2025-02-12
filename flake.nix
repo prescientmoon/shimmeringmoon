@@ -9,47 +9,21 @@
 
   outputs =
     inputs:
-    inputs.flake-utils.lib.eachSystem (with inputs.flake-utils.lib.system; [ x86_64-linux ]) (
+    {
+      overlays.default = (import ./nix/overlay.nix { inherit inputs; });
+    }
+    // inputs.flake-utils.lib.eachSystem (with inputs.flake-utils.lib.system; [ x86_64-linux ]) (
       system:
       let
-        pkgs = inputs.nixpkgs.legacyPackages.${system};
-        spkgs = inputs.self.packages.${system};
-        inherit (pkgs) lib;
+        pkgs = import inputs.nixpkgs {
+          inherit system;
+          overlays = [ inputs.self.overlays.default ];
+        };
       in
       {
         packages = {
-          # {{{ Private config
-          shimmeringdarkness = inputs.shimmeringdarkness.outPath;
-          glass-bundler = pkgs.callPackage ./nix/glass-bundler.nix { };
-          debundled-darkness = pkgs.callPackage ./nix/debundled-darkness.nix {
-            inherit (spkgs) shimmeringdarkness glass-bundler;
-          };
-
-          private-config = pkgs.callPackage ./nix/private-config.nix {
-            inherit (spkgs) shimmeringdarkness debundled-darkness;
-          };
-          # }}}
-          # {{{ Fonts
-          kazesawa = pkgs.callPackage ./nix/kazesawa.nix { };
-          exo = pkgs.callPackage ./nix/exo.nix { };
-          geosans-light = pkgs.callPackage ./nix/geosans-light.nix { };
-
-          shimmering-fonts = pkgs.callPackage ./nix/fonts.nix {
-            # Pass custom-packaged fonts
-            inherit (spkgs) exo kazesawa geosans-light;
-          };
-          # }}}
-          # {{{ Shimmeringmoon
-          cc-data = pkgs.callPackage ./nix/cc-data.nix { };
-          default = spkgs.shimmeringmoon;
-          shimmeringmoon = pkgs.callPackage ./nix/shimmeringmoon.nix {
-            inherit (spkgs)
-              shimmering-fonts
-              cc-data
-              private-config
-              ;
-          };
-          # }}}
+          inherit (pkgs) shimmeringmoon;
+          default = pkgs.shimmeringmoon;
         };
 
         #  {{{ Devshell
@@ -74,10 +48,10 @@
             openssl
           ];
 
-          LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
-          SHIMMERING_FONT_DIR = spkgs.shimmering-fonts;
-          SHIMMERING_CC_DIR = spkgs.cc-data;
-          SHIMMERING_PRIVATE_CONFIG_DIR = spkgs.private-config;
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs;
+          SHIMMERING_FONT_DIR = pkgs.shimmering-fonts;
+          SHIMMERING_CC_DIR = pkgs.cc-data;
+          SHIMMERING_PRIVATE_CONFIG_DIR = pkgs.private-config;
         };
         #  }}}
       }

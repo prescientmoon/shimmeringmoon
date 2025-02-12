@@ -8,11 +8,20 @@ pub mod stats;
 pub mod user;
 pub mod utils;
 
-#[derive(Clone, Copy, Default, poise::ChoiceParameter)]
+#[derive(Clone, Copy, poise::ChoiceParameter)]
 pub enum DataSource {
-	#[default]
 	Local,
 	Server,
+}
+
+impl Default for DataSource {
+	fn default() -> Self {
+		if std::env::var("SHIMMERING_DEFAULT_SOURCE").unwrap_or_default() == "server" {
+			Self::Server
+		} else {
+			Self::Local
+		}
+	}
 }
 
 // {{{ Help

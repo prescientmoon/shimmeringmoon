@@ -61,6 +61,7 @@ async fn register(
 	mut ctx: PoiseContext<'_>,
 	user: poise::serenity_prelude::User,
 ) -> Result<(), Error> {
+    ctx.defer().await?;
 	let res = register_impl(&mut ctx, user).await;
 	ctx.handle_error(res).await?;
 	Ok(())
@@ -103,6 +104,7 @@ pub async fn pookify(
 	mut ctx: PoiseContext<'_>,
 	user: poise::serenity_prelude::User,
 ) -> Result<(), Error> {
+    ctx.defer().await?;
 	let res = pookify_impl(&mut ctx, user).await;
 	ctx.handle_error(res).await?;
 	Ok(())

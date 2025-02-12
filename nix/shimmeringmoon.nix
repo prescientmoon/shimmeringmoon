@@ -10,7 +10,7 @@
   rustPlatform,
 
   shimmering-fonts,
-  cc-data,
+  arcaea-ptt-data,
   private-config,
 }:
 rustPlatform.buildRustPackage rec {
@@ -27,7 +27,7 @@ rustPlatform.buildRustPackage rec {
   };
 
   SHIMMERING_FONT_DIR = shimmering-fonts;
-  SHIMMERING_CC_DIR = cc-data;
+  SHIMMERING_CC_DIR = arcaea-ptt-data;
   SHIMMERING_PRIVATE_CONFIG_DIR = private-config;
 
   nativeBuildInputs = [
@@ -58,7 +58,7 @@ rustPlatform.buildRustPackage rec {
   postFixup = ''
     for file in $out/bin/*; do
       wrapProgram $file \
-        --set SHIMMERING_CC_DIR "${cc-data}" \
+        --set SHIMMERING_CC_DIR "${arcaea-ptt-data}" \
         --set SHIMMERING_PRIVATE_CONFIG_DIR ${private-config}
     done
   '';

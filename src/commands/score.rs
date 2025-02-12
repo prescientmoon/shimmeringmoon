@@ -221,6 +221,7 @@ pub async fn magic(
 	mut ctx: PoiseContext<'_>,
 	#[description = "Images containing scores"] files: Vec<serenity::Attachment>,
 ) -> Result<(), Error> {
+	ctx.defer().await?;
 	let res = magic_impl(&mut ctx, &files).await;
 	ctx.handle_error(res).await?;
 
