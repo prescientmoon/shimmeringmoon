@@ -1,8 +1,9 @@
 { inputs }:
 final: prev: {
+  shimmeringvoid = inputs.shimmeringvoid.outPath;
   shimmeringdarkness = inputs.shimmeringdarkness.outPath;
   glass-bundler = final.callPackage ./glass-bundler.nix { };
-  debundled-darkness = final.callPackage ./debundled-darkness.nix { };
+  debundled-void = final.callPackage ./debundled-void.nix { };
   private-config = final.callPackage ./private-config.nix { };
 
   kazesawa = final.callPackage ./kazesawa.nix { };

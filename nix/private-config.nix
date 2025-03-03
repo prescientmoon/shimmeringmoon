@@ -1,6 +1,5 @@
 {
-  debundled-darkness,
-  shimmeringdarkness,
+  debundled-void,
   runCommand,
 }:
 let
@@ -11,7 +10,7 @@ runCommand "shimmering-private-config" { } ''
   mkdir $out
   mkdir $out/jackets
 
-  source=${debundled-darkness}/${jacketVersion}/songs
+  source=${debundled-void}/${jacketVersion}/songs
   for dir in $source/*; do
     out_dir=$(basename $dir)
     out_dir=''${out_dir#dl_}
@@ -25,6 +24,5 @@ runCommand "shimmering-private-config" { } ''
     fi
   done
 
-  cp ${debundled-darkness}/${songlistVersion}/songs/songlist $out/songlist.json
-  cp ${shimmeringdarkness}/b30_background.jpg $out
+  cp ${debundled-void}/${songlistVersion}/songs/songlist $out/songlist.json
 ''

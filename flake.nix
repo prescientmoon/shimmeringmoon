@@ -5,6 +5,9 @@
 
     shimmeringdarkness.url = "git+ssh://forgejo@ssh.git.moonythm.dev/prescientmoon/shimmeringdarkness.git";
     shimmeringdarkness.flake = false;
+
+    shimmeringvoid.url = "git+ssh://forgejo@ssh.git.moonythm.dev/prescientmoon/shimmeringvoid.git";
+    shimmeringvoid.flake = false;
   };
 
   outputs =
@@ -52,6 +55,7 @@
           SHIMMERING_FONT_DIR = pkgs.shimmering-fonts;
           SHIMMERING_CC_DIR = pkgs.arcaea-ptt-data;
           SHIMMERING_PRIVATE_CONFIG_DIR = pkgs.private-config;
+          SHIMMERING_PRIVATE_COMPTIME_CONFIG_DIR = inputs.shimmeringdarkness;
         };
         #  }}}
       }

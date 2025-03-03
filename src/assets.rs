@@ -71,7 +71,7 @@ get_asset!(PTT_EMBLEM, "ptt_emblem.png");
 get_asset!(
 	B30_BACKGROUND,
 	"b30_background.jpg",
-	env!("SHIMMERING_PRIVATE_CONFIG_DIR"),
+	env!("SHIMMERING_COMPTIME_PRIVATE_CONFIG_DIR"),
 	|image: DynamicImage| image.blur(7.0)
 );
 

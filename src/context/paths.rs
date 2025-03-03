@@ -83,7 +83,9 @@ impl ShimmeringPaths {
 	}
 
 	pub fn cc_data_path(&self) -> PathBuf {
-		PathBuf::from_str(concat!(env!("SHIMMERING_CC_DIR"), "/ptt.json")).unwrap()
+		get_env_dir_path("SHIMMERING_CC_DIR", None)
+			.unwrap()
+			.join("ptt.json")
 	}
 }
 

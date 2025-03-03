@@ -2,6 +2,6 @@
 pkgs.fetchFromGitHub {
   owner = "OllyDoge";
   repo = "ASCPSongConstant";
-  rev = "2f396d13d5a9804ee3a45d46ff2e4a57cca482ad";
-  sha256 = "032nvi5iia0crlafvq8zv8k2pj2kbxjdg4r6j990calhqm8xgljp";
+  rev = "19e727711938239a42371d231d6fcd0d40a5f6b1";
+  sha256 = "12jxfbbkra5x7vqar615qq9l55vr7rd1bnzc2csp6l7rzz8x4930";
 }
