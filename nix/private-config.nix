@@ -6,7 +6,9 @@ runCommand "shimmering-private-config" { } ''
   mkdir $out
   mkdir $out/jackets
 
-  for source in ${debundled-void}/*/songs; do
+  for version in $(ls ${debundled-void} | sort -V); do
+    source=${debundled-void}/$version/songs
+
     for dir in $source/*; do
       out_dir=$(basename $dir)
       out_dir=''${out_dir#dl_}
