@@ -4,7 +4,7 @@
 }:
 let
   jacketVersion = "6.2.3";
-  songlistVersion = "6.2.3.13";
+  songlistVersion = "6.2.3.12";
 in
 runCommand "shimmering-private-config" { } ''
   mkdir $out
