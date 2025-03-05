@@ -22,7 +22,7 @@ runCommand "shimmering-private-config" { } ''
       fi
     done
 
-    if [ -f $out ]; then
+    if [ -f $source/songlist ]; then
       rm -rf $out/songlist.json
       cp $source/songlist $out/songlist.json
     fi

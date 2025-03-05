@@ -25,7 +25,7 @@
       in
       {
         packages = {
-          inherit (pkgs) shimmeringmoon;
+          inherit (pkgs) shimmeringmoon private-config;
           default = pkgs.shimmeringmoon;
         };
 
