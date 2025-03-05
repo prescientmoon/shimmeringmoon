@@ -13,13 +13,12 @@ runCommand "shimmering-private-config" { } ''
       out_dir=$(basename $dir)
       out_dir=''${out_dir#dl_}
       if [ -d $dir ] && [ $out_dir != "pack" ]; then
-        jacket_dir=$out/jackets/$out_dir
-        rm -rf $jacket_dir
-        mkdir $jacket_dir
+        mkdir -p $out/jackets/$out_dir
 
         for file in $dir/*_256.jpg; do
-          filename=$(basename $file)
-          cp $file $out/jackets/$out_dir/$filename
+          jacket_path=$out/jackets/$out_dir/$(basename $file)
+          rm -rf $jacket_path
+          cp $file $jacket_path
         done
       fi
     done
