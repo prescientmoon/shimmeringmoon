@@ -19,6 +19,7 @@ pub fn connect_db(paths: &ShimmeringPaths) -> anyhow::Result<SqlitePool> {
 	let mut conn = rusqlite::Connection::open(&db_path)
 		.with_context(|| "Could not connect to sqlite database")?;
 	conn.pragma_update(None, "journal_mode", "WAL")?;
+	conn.pragma_update(None, "foreign_keys", "ON")?;
 
 	// {{{ Run migrations
 	static MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/migrations");

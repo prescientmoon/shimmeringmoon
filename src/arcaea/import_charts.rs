@@ -171,12 +171,21 @@ pub fn import_songlist(
 	let ptt_entries = get_ptt_entries(paths).context("Failed to read ptt entries")?;
 
 	let transaction = conn.transaction()?;
-	transaction.execute("DELETE FROM charts", ())?;
-	transaction.execute("DELETE FROM songs", ())?;
+	transaction.pragma_update(None, "defer_foreign_keys", "ON")?;
+
+	transaction
+		.execute("DELETE FROM charts", ())
+		.with_context(|| anyhow!("Failed to delete all charts"))?;
+
+	transaction
+		.execute("DELETE FROM songs", ())
+		.with_context(|| anyhow!("Failed to delete all songs"))?;
 
 	let songlist: Songlist = serde_json::from_reader(std::io::BufReader::new(
-		std::fs::File::open(paths.songlist_path())?,
-	))?;
+		std::fs::File::open(paths.songlist_path())
+			.with_context(|| anyhow!("Failed to read songlist file"))?,
+	))
+	.with_context(|| anyhow!("Failed to parse songlist file"))?;
 
 	let mut song_count = 0;
 	let mut chart_count = 0;
@@ -218,7 +227,7 @@ pub fn import_songlist(
 			chart_count += 1;
 
 			let difficulty = crate::private_server::decode_difficulty(chart.difficulty)
-				.ok_or_else(|| anyhow!("Invalid difficulty"))?;
+				.ok_or_else(|| anyhow!("Invalid difficulty {}", chart.difficulty))?;
 
 			let level = format!(
 				"{}{}",
