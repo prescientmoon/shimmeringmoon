@@ -25,7 +25,12 @@
       in
       {
         packages = {
-          inherit (pkgs) shimmeringmoon glass-bundler private-config;
+          inherit (pkgs)
+            shimmeringmoon
+            glass-bundler
+            private-config
+            glass-server-db-updater
+            ;
           default = pkgs.shimmeringmoon;
         };
 
@@ -55,7 +60,7 @@
           SHIMMERING_FONT_DIR = pkgs.shimmering-fonts;
           SHIMMERING_CC_DIR = pkgs.arcaea-ptt-data;
           SHIMMERING_PRIVATE_CONFIG_DIR = pkgs.private-config;
-          SHIMMERING_PRIVATE_COMPTIME_CONFIG_DIR = inputs.shimmeringdarkness;
+          SHIMMERING_COMPTIME_PRIVATE_CONFIG_DIR = inputs.shimmeringdarkness;
         };
         #  }}}
       }

@@ -188,20 +188,27 @@ pub fn import_songlist(
 		};
 
 		song_count += 1;
-		transaction.execute(
-			"
+		transaction
+			.execute(
+				"
         INSERT INTO songs(id,title,shorthand,artist,side,bpm)
         VALUES (?,?,?,?,?,?)
       ",
-			(
-				song.id,
-				song.title.get(),
-				&song.shorthand,
-				&song.artist,
-				Side::SIDES[song.side as usize],
-				song.bpm,
-			),
-		)?;
+				(
+					song.id,
+					song.title.get(),
+					&song.shorthand,
+					&song.artist,
+					Side::SIDES[song.side as usize],
+					song.bpm,
+				),
+			)
+			.with_context(|| {
+				anyhow!(
+					"Failed to create song \"{}\" from songlist file",
+					song.title.get(),
+				)
+			})?;
 
 		for chart in song.difficulties {
 			if chart.rating == 0 {
@@ -251,24 +258,36 @@ pub fn import_songlist(
 					anyhow!("Cannot find PTT data for song '{}' [{}]", name, difficulty)
 				})?;
 
-			transaction.execute(
-				"
+			transaction
+				.execute(
+					"
           INSERT INTO charts(
             song_id, title, difficulty,
             level, note_count, chart_constant,
             note_design
           ) VALUES(?,?,?,?,?,?,?)
         ",
-				(
-					song.id,
-					chart.title.as_ref().map(|t| t.get()),
-					difficulty,
-					level,
-					notecount,
-					rating_as_fixed(cc),
-					chart.chart_designer,
-				),
-			)?;
+					(
+						song.id,
+						chart.title.as_ref().map(|t| t.get()),
+						difficulty,
+						level,
+						notecount,
+						rating_as_fixed(cc),
+						chart.chart_designer,
+					),
+				)
+				.with_context(|| {
+					anyhow!(
+						"Failed to create chart \"{}\" [{}] from songlist file",
+						chart
+							.title
+							.as_ref()
+							.map(|t| t.get())
+							.unwrap_or(song.title.get()),
+						difficulty,
+					)
+				})?;
 		}
 	}
 

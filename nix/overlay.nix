@@ -14,4 +14,5 @@ final: prev: {
 
   arcaea-ptt-data = final.callPackage ./cc-data.nix { };
   shimmeringmoon = final.callPackage ./shimmeringmoon.nix { };
+  glass-server-db-updater = final.callPackage ./glass-server-db-updater.nix { };
 }
