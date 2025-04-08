@@ -1,12 +1,12 @@
 {
-  shimmeringvoid,
+  shimmeringextra,
   glass-bundler,
   runCommand,
 }:
 runCommand "debundled-void" { } ''
   mkdir $out
 
-  for file in ${shimmeringvoid}/bundles/*.cb; do
+  for file in ${shimmeringextra}/bundles/*.cb; do
     no_ext="''${file%.cb}"
     meta_file="$no_ext.json"
     ${glass-bundler}/bin/glass-bundler debundle \

@@ -7,7 +7,6 @@
 }:
 stdenvNoCC.mkDerivation {
   name = "shimmering-fonts";
-
   dontUnpack = true;
 
   installPhase = ''
@@ -19,7 +18,5 @@ stdenvNoCC.mkDerivation {
     cp "${geosans-light}/share/fonts/truetype/GeosansLight.ttf" $out
   '';
 
-  meta = {
-    description = "Collection of fonts required by `shimmeringmoon` at runtime";
-  };
+  meta.description = "Collection of fonts required by `shimmeringmoon` at runtime";
 }

@@ -3,8 +3,7 @@
   runCommand,
 }:
 runCommand "shimmering-private-config" { } ''
-  mkdir $out
-  mkdir $out/jackets
+  mkdir -p $out/jackets
 
   for version in $(ls ${debundled-void} | sort -V); do
     source=${debundled-void}/$version/songs

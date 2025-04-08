@@ -2,6 +2,7 @@
 final: prev: {
   shimmeringvoid = inputs.shimmeringvoid.outPath;
   shimmeringdarkness = inputs.shimmeringdarkness.outPath;
+  shimmeringextra = final.callPackage ./shimmeringextra.nix { };
   glass-bundler = final.callPackage ./glass-bundler.nix { };
   debundled-void = final.callPackage ./debundled-void.nix { };
   private-config = final.callPackage ./private-config.nix { };

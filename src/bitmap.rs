@@ -380,7 +380,6 @@ impl BitmapCanvas {
 			pen_x += face.glyph().advance().x >> 6;
 			previous = Some((face_index, glyph_index));
 		}
-
 		// }}}
 		// {{{ Find bounding box
 		let mut x_min = 32000;
@@ -689,7 +688,6 @@ impl LayoutManager {
 	pub fn height(&self, id: LayoutBoxId) -> u32 {
 		self.boxes[id.0].height
 	}
-
 	// }}}
 	// {{{ Alignment
 	#[inline]
