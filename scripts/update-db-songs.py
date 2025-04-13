@@ -64,7 +64,7 @@ for song_id, ratings in json_data.items():
                 SET {rating_column}=?
                 WHERE song_id=?
             """,
-            (rating_value, song_id),
+            (rating_value * 10, song_id),
         )
 
 conn.commit()
