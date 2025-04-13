@@ -14,8 +14,6 @@ let
       fileset = lib.fileset.unions [ ../scripts/update-db-songs.py ];
     };
 
-    nativeBuildInputs = [ makeWrapper ];
-
     buildPhase = ''
       runHook preBuild
       echo "#!${python3}/bin/python" > glass-server-db-updater
@@ -29,6 +27,11 @@ let
       install -Dm755 glass-server-db-updater -t $out/bin/
       runHook postInstall
     '';
+
+    meta = {
+      description = "Arcaea private server database chart constant updater.";
+      mainProgram = "glass-server-db-updater";
+    };
   };
 in
 symlinkJoin {
