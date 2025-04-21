@@ -401,15 +401,15 @@ async fn best_plays<C: MessageContext>(
 
 	debug_image_log(&image);
 
-	if image.height() > 4096 {
-		image = image.resize(4096, 4096, image::imageops::FilterType::Nearest);
+	if image.height() > 2048 {
+		image = image.resize(2048, 2048, image::imageops::FilterType::Lanczos3);
 	}
 
 	let mut cursor = Cursor::new(&mut out_buffer);
 	image.write_to(&mut cursor, image::ImageFormat::WebP)?;
 
 	let reply = CreateReply::default()
-		.attachment(CreateAttachment::bytes(out_buffer, "b30.png"))
+		.attachment(CreateAttachment::bytes(out_buffer, "b30.webp"))
 		.content(format!(
 			"Your ptt is {:.2}",
 			rating_as_float(compute_b30_ptt(scoring_system, &plays))
