@@ -118,14 +118,14 @@ async fn best_plays<C: MessageContext>(
 			.layout
 			.edit_to_relative(item_with_margin, item_grid, origin.0, origin.1);
 
-		let top_bg = &*TOP_BACKGROUND;
-		drawer.blit_rbga(top_area, (0, 0), top_bg);
-
 		let (play, song, chart) = if let Some(item) = plays.get(i) {
 			item
 		} else {
 			break;
 		};
+
+		let top_bg = &*TOP_BACKGROUND;
+		drawer.blit_rbga(top_area, (0, 0), top_bg);
 
 		// {{{ Display index
 		let bg = &*COUNT_BACKGROUND;
