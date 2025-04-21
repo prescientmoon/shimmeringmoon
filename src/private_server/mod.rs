@@ -13,14 +13,14 @@ use crate::{
 };
 
 // {{{ Generic response types
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(untagged)]
 enum MaybeData<T> {
 	SomeData(T),
 	NoData {},
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct PrivateServerResult<T> {
 	code: i32,
 	msg: String,
@@ -29,7 +29,7 @@ struct PrivateServerResult<T> {
 
 // }}}
 // {{{ User query types
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Debug)]
 pub struct UsersQuery<'a> {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub name: Option<&'a str>,
@@ -37,14 +37,14 @@ pub struct UsersQuery<'a> {
 	pub user_id: Option<u32>,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Debug)]
 pub struct UsersQueryOptions<'a> {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub query: Option<UsersQuery<'a>>,
 }
 // }}}
 // {{{ User response types
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct RawUser {
 	pub user_id: u32,
 	pub user_code: String,
@@ -53,7 +53,7 @@ pub struct RawUser {
 
 // }}}
 // {{{ Best score query types
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct BestScoreQuery<'a> {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub song_id: Option<&'a str>,
@@ -61,7 +61,7 @@ pub struct BestScoreQuery<'a> {
 	pub difficulty: Option<u8>,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Default, Debug)]
 pub struct BestOptions<'a> {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub query: Option<BestScoreQuery<'a>>,
@@ -73,7 +73,7 @@ pub struct BestOptions<'a> {
 // }}}
 // {{{ Best score response types
 #[allow(dead_code)]
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct RawBestScore {
 	best_clear_type: u8,
 	clear_type: u8,
@@ -92,7 +92,7 @@ struct RawBestScore {
 	time_played: i64,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct RawBestScores {
 	data: Vec<RawBestScore>,
 
@@ -165,7 +165,7 @@ pub async fn best(
 		inner
 	} else {
 		return Err(
-			anyhow!("The server return an error: \"{}\"", decoded.msg).tag(ErrorKind::Internal)
+			anyhow!("The server returned an error: \"{}\"", decoded.msg).tag(ErrorKind::Internal)
 		);
 	};
 
@@ -233,14 +233,17 @@ pub async fn users(
 		.await
 		.context("Failed to decode response")?;
 
-	let decoded = if let (true, MaybeData::SomeData(inner)) = (decoded.code == 0, decoded.data) {
+	let decoded = if let (true, MaybeData::SomeData(inner)) = (decoded.code == 0, &decoded.data) {
 		inner
 	} else {
-		return Err(
-			anyhow!("The server return an error: \"{}\"", decoded.msg).tag(ErrorKind::Internal)
-		);
+		return Err(anyhow!(
+			"The server returned an error: \"{}\". Full response:\n```\n{:?}\n```",
+			&decoded.msg,
+			&decoded
+		)
+		.tag(ErrorKind::Internal));
 	};
 
-	Ok(decoded)
+	Ok(decoded.clone()) // TODO: remove this .clone
 }
 // }}}
