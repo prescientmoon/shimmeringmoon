@@ -147,7 +147,7 @@ pub async fn best(
 	let mut query_param = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_string(&options)?);
 	query_param.push_str("=="); // Maximum padding, as otherwise python screams at me
 
-	let decoded = ctx
+	let bytes = ctx
 		.http_client
 		.get(format!("{url}/api/v1/users/{}/best", private_user_id))
 		.query(&[("query", query_param)])
@@ -157,17 +157,21 @@ pub async fn best(
 		.context("Failed to send request")?
 		.error_for_status()
 		.context("Request has non-ok status")?
-		.json::<PrivateServerResult<RawBestScores>>()
+		.bytes()
 		.await
+		.context("Failed to get body bytes")?;
+
+	let decoded = serde_json::from_slice::<PrivateServerResult<RawBestScores>>(&bytes)
 		.context("Failed to decode response")?;
 
 	let decoded = if let (true, MaybeData::SomeData(inner)) = (decoded.code == 0, &decoded.data) {
 		inner
 	} else {
 		return Err(anyhow!(
-			"The server returned an error: \"{}\". Full response:\n```\n{:?}\n```",
+			"The server returned an error: \"{}\". Full response:\n```\n{:?}\n``` \nRaw response:\n```\n{}\n```",
 			&decoded.msg,
-			&decoded
+			&decoded,
+      String::from_utf8_lossy(&bytes)
 		)
 		.tag(ErrorKind::Internal));
 	};
@@ -222,7 +226,7 @@ pub async fn users(
 	let mut query_param = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_string(&options)?);
 	query_param.push_str("=="); // Maximum padding, as otherwise python screams at me
 
-	let decoded = ctx
+	let bytes = ctx
 		.http_client
 		.get(format!("{url}/api/v1/users"))
 		.query(&[("query", query_param)])
@@ -232,17 +236,21 @@ pub async fn users(
 		.context("Failed to send request")?
 		.error_for_status()
 		.context("Request has non-ok status")?
-		.json::<PrivateServerResult<Vec<RawUser>>>()
+		.bytes()
 		.await
+		.context("Failed to get body bytes")?;
+
+	let decoded = serde_json::from_slice::<PrivateServerResult<Vec<RawUser>>>(&bytes)
 		.context("Failed to decode response")?;
 
 	let decoded = if let (true, MaybeData::SomeData(inner)) = (decoded.code == 0, &decoded.data) {
 		inner
 	} else {
 		return Err(anyhow!(
-			"The server returned an error: \"{}\". Full response:\n```\n{:?}\n```",
+			"The server returned an error: \"{}\". Full response:\n```\n{:?}\n``` \nRaw response:\n```\n{}\n```",
 			&decoded.msg,
-			&decoded
+			&decoded,
+      String::from_utf8_lossy(&bytes)
 		)
 		.tag(ErrorKind::Internal));
 	};
