@@ -167,11 +167,11 @@ pub async fn best(
 	let decoded = if let (true, MaybeData::SomeData(inner)) = (decoded.code == 0, &decoded.data) {
 		inner
 	} else {
+		println!("Raw error response: {}", String::from_utf8_lossy(&bytes));
 		return Err(anyhow!(
-			"The server returned an error: \"{}\". Full response:\n```\n{:?}\n``` \nRaw response:\n```\n{}\n```",
+			"The server returned an error: \"{}\". Full response:\n```\n{:?}\n```",
 			&decoded.msg,
-			&decoded,
-      String::from_utf8_lossy(&bytes)
+			&decoded
 		)
 		.tag(ErrorKind::Internal));
 	};
@@ -246,11 +246,11 @@ pub async fn users(
 	let decoded = if let (true, MaybeData::SomeData(inner)) = (decoded.code == 0, &decoded.data) {
 		inner
 	} else {
+		println!("Raw error response: {}", String::from_utf8_lossy(&bytes));
 		return Err(anyhow!(
-			"The server returned an error: \"{}\". Full response:\n```\n{:?}\n``` \nRaw response:\n```\n{}\n```",
+			"The server returned an error: \"{}\". Full response:\n```\n{:?}\n```",
 			&decoded.msg,
-			&decoded,
-      String::from_utf8_lossy(&bytes)
+			&decoded
 		)
 		.tag(ErrorKind::Internal));
 	};
