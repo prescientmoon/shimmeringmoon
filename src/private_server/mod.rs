@@ -78,7 +78,7 @@ struct RawBestScore {
 	best_clear_type: u8,
 	clear_type: u8,
 	difficulty: u8,
-	health: i8,
+	health: i16,
 	modifier: u8, // wtf is this?
 
 	miss_count: u16,
