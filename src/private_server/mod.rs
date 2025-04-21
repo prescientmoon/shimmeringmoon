@@ -161,12 +161,15 @@ pub async fn best(
 		.await
 		.context("Failed to decode response")?;
 
-	let decoded = if let (true, MaybeData::SomeData(inner)) = (decoded.code == 0, decoded.data) {
+	let decoded = if let (true, MaybeData::SomeData(inner)) = (decoded.code == 0, &decoded.data) {
 		inner
 	} else {
-		return Err(
-			anyhow!("The server returned an error: \"{}\"", decoded.msg).tag(ErrorKind::Internal)
-		);
+		return Err(anyhow!(
+			"The server returned an error: \"{}\". Full response:\n```\n{:?}\n```",
+			&decoded.msg,
+			&decoded
+		)
+		.tag(ErrorKind::Internal));
 	};
 
 	let plays = decoded
