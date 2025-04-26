@@ -61,11 +61,11 @@
     "shimmeringvoid": {
       "flake": false,
       "locked": {
-        "lastModified": 1744146722,
-        "narHash": "sha256-qvh6UxyLbbaSrrpAJwW3fzA1YqrwnTUT8qj17poi0aY=",
+        "lastModified": 1745708706,
+        "narHash": "sha256-MkkCqtqKZUfntPTE6xSDjrYf5kqE0fcxxI+5Tt75qTo=",
         "ref": "refs/heads/main",
-        "rev": "b6ab7c08daac587a1da5649cfdbc082ef2a01a20",
-        "revCount": 13,
+        "rev": "578ee286c3789b9b9301b020f394b27bab6e46fa",
+        "revCount": 14,
         "type": "git",
         "url": "ssh://forgejo@ssh.git.moonythm.dev/prescientmoon/shimmeringvoid.git"
       },
