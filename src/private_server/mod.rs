@@ -1,5 +1,8 @@
+use std::fmt::Debug;
+
 use anyhow::{anyhow, Context};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -13,20 +16,22 @@ use crate::{
 };
 
 // {{{ Generic response types
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
 enum MaybeData<T> {
 	SomeData(T),
 	NoData {},
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct PrivateServerResult<T> {
 	code: i32,
 	msg: String,
 	data: MaybeData<T>,
 }
 
+#[derive(Deserialize, Default, Debug, Clone, Copy)]
+pub struct EmptyResponse {}
 // }}}
 // {{{ User query types
 #[derive(Serialize, Default, Debug)]
@@ -43,14 +48,30 @@ pub struct UsersQueryOptions<'a> {
 	pub query: Option<UsersQuery<'a>>,
 }
 // }}}
-// {{{ User response types
+// {{{ User query response types
 #[derive(Deserialize, Debug, Clone)]
 pub struct RawUser {
 	pub user_id: u32,
 	pub user_code: String,
 	pub name: String,
+
+	#[serde(rename = "ticket")]
+	pub memories: Option<u32>,
 }
 
+// }}}
+// {{{ User put requests
+#[derive(Serialize, Default, Debug)]
+pub struct UserPutOptions<'a> {
+	#[serde(skip_serializing_if = "Option::is_none", rename = "ticket")]
+	pub memories: Option<u32>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub name: Option<&'a str>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub email: Option<&'a str>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub password: Option<&'a str>,
+}
 // }}}
 // {{{ Best score query types
 #[derive(Serialize, Debug)]
@@ -73,7 +94,7 @@ pub struct BestOptions<'a> {
 // }}}
 // {{{ Best score response types
 #[allow(dead_code)]
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct RawBestScore {
 	best_clear_type: u8,
 	clear_type: u8,
@@ -92,7 +113,7 @@ struct RawBestScore {
 	time_played: i64,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 struct RawBestScores {
 	data: Vec<RawBestScore>,
 
@@ -130,27 +151,30 @@ pub fn decode_difficulty(difficulty: u8) -> Option<Difficulty> {
 }
 
 // }}}
-// {{{ Perform best score request
-pub async fn best(
+// {{{ Request helper
+async fn mk_request<R: serde::de::DeserializeOwned + Debug + Clone>(
 	ctx: &UserContext,
-	user: &User,
-	options: BestOptions<'_>,
-) -> Result<Vec<Play>, TaggedError> {
+	method: reqwest::Method,
+	path: &str,
+	options: impl serde::Serialize,
+) -> Result<R, TaggedError> {
 	let url = api_url()?;
 	let token = std::env::var("SHIMMERING_PRIVATE_SERVER_TOKEN")
 		.map_err(|_| anyhow!("No api token found"))?;
 
-	let private_user_id = user.private_server_id.ok_or_else(|| {
-		anyhow!("This account is not bound to any private server account").tag(ErrorKind::User)
-	})?;
-
-	let mut query_param = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_string(&options)?);
-	query_param.push_str("=="); // Maximum padding, as otherwise python screams at me
-
-	let bytes = ctx
+	let mut req = ctx
 		.http_client
-		.get(format!("{url}/api/v1/users/{}/best", private_user_id))
-		.query(&[("query", query_param)])
+		.request(method.clone(), format!("{url}/api/v1/{path}"));
+
+	if method == reqwest::Method::GET {
+		let mut query_param = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_string(&options)?);
+		query_param.push_str("=="); // Maximum padding, as otherwise python screams at me
+		req = req.query(&[("query", query_param)]);
+	} else {
+		req = req.json(&options)
+	}
+
+	let bytes = req
 		.header("Token", token)
 		.send()
 		.await
@@ -161,20 +185,37 @@ pub async fn best(
 		.await
 		.context("Failed to get body bytes")?;
 
-	let decoded = serde_json::from_slice::<PrivateServerResult<RawBestScores>>(&bytes)
+	let decoded = serde_json::from_slice::<PrivateServerResult<R>>(&bytes)
 		.context("Failed to decode response")?;
 
-	let decoded = if let (true, MaybeData::SomeData(inner)) = (decoded.code == 0, &decoded.data) {
-		inner
-	} else {
-		println!("Raw error response: {}", String::from_utf8_lossy(&bytes));
-		return Err(anyhow!(
-			"The server returned an error: \"{}\". Full response:\n```\n{:?}\n```",
-			&decoded.msg,
-			&decoded
-		)
-		.tag(ErrorKind::Internal));
-	};
+	// TODO: get rid of this .clone
+	if let (true, MaybeData::SomeData(inner)) = (decoded.code == 0, decoded.data.clone()) {
+		return Ok(inner);
+	}
+
+	println!("Raw error response: {}", String::from_utf8_lossy(&bytes));
+	Err(anyhow!(
+		"The server returned an error: \"{}\". Full response:\n```\n{:?}\n```",
+		&decoded.msg,
+		&decoded
+	)
+	.tag(ErrorKind::Internal))
+}
+// }}}
+// {{{ Perform best score request
+pub async fn best(
+	ctx: &UserContext,
+	user: &User,
+	options: BestOptions<'_>,
+) -> Result<Vec<Play>, TaggedError> {
+	let private_user_id = user.private_server_id()?;
+	let decoded: RawBestScores = mk_request(
+		ctx,
+		Method::GET,
+		&format!("users/{}/best", private_user_id),
+		options,
+	)
+	.await?;
 
 	let plays = decoded
 		.data
@@ -219,42 +260,27 @@ pub async fn users(
 	ctx: &UserContext,
 	options: UsersQueryOptions<'_>,
 ) -> Result<Vec<RawUser>, TaggedError> {
-	let url = api_url()?;
-	let token = std::env::var("SHIMMERING_PRIVATE_SERVER_TOKEN")
-		.map_err(|_| anyhow!("No api token found"))?;
+	mk_request(ctx, Method::GET, "users", options).await
+}
 
-	let mut query_param = BASE64_URL_SAFE_NO_PAD.encode(serde_json::to_string(&options)?);
-	query_param.push_str("=="); // Maximum padding, as otherwise python screams at me
-
-	let bytes = ctx
-		.http_client
-		.get(format!("{url}/api/v1/users"))
-		.query(&[("query", query_param)])
-		.header("Token", token)
-		.send()
-		.await
-		.context("Failed to send request")?
-		.error_for_status()
-		.context("Request has non-ok status")?
-		.bytes()
-		.await
-		.context("Failed to get body bytes")?;
-
-	let decoded = serde_json::from_slice::<PrivateServerResult<Vec<RawUser>>>(&bytes)
-		.context("Failed to decode response")?;
-
-	let decoded = if let (true, MaybeData::SomeData(inner)) = (decoded.code == 0, &decoded.data) {
-		inner
-	} else {
-		println!("Raw error response: {}", String::from_utf8_lossy(&bytes));
-		return Err(anyhow!(
-			"The server returned an error: \"{}\". Full response:\n```\n{:?}\n```",
-			&decoded.msg,
-			&decoded
-		)
-		.tag(ErrorKind::Internal));
-	};
-
-	Ok(decoded.clone()) // TODO: remove this .clone
+pub async fn get_user(ctx: &UserContext, user: &User) -> Result<RawUser, TaggedError> {
+	let private_server_id = user.private_server_id()?;
+	mk_request(ctx, Method::GET, &format!("users/{private_server_id}"), ()).await
+}
+// }}}
+// {{{ Update user
+pub async fn update_user(
+	ctx: &UserContext,
+	user: &User,
+	options: UserPutOptions<'_>,
+) -> Result<EmptyResponse, TaggedError> {
+	let private_server_id = user.private_server_id()?;
+	mk_request(
+		ctx,
+		Method::PUT,
+		&format!("users/{private_server_id}"),
+		options,
+	)
+	.await
 }
 // }}}

@@ -118,4 +118,11 @@ impl User {
 
 		Ok(())
 	}
+
+	#[inline]
+	pub fn private_server_id(&self) -> Result<u32, TaggedError> {
+		self.private_server_id.ok_or_else(|| {
+			anyhow!("This account is not bound to any private server account. ;-; Try `!!user bind <yourusername>`").tag(ErrorKind::User)
+		})
+	}
 }

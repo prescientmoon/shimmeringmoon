@@ -2,6 +2,7 @@ use anyhow::anyhow;
 
 use crate::{
 	context::{Error, ErrorKind, PoiseContext, TagError, TaggedError},
+	private_server,
 	user::User,
 };
 
@@ -12,7 +13,7 @@ use super::discord::MessageContext;
 #[poise::command(
 	prefix_command,
 	slash_command,
-	subcommands("register", "pookify", "bind", "unbind", "friend"),
+	subcommands("register", "pookify", "bind", "unbind", "friend", "memories"),
 	subcommand_required
 )]
 pub async fn user(_ctx: PoiseContext<'_>) -> Result<(), Error> {
@@ -61,7 +62,7 @@ async fn register(
 	mut ctx: PoiseContext<'_>,
 	user: poise::serenity_prelude::User,
 ) -> Result<(), Error> {
-    ctx.defer().await?;
+	ctx.defer().await?;
 	let res = register_impl(&mut ctx, user).await;
 	ctx.handle_error(res).await?;
 	Ok(())
@@ -104,7 +105,7 @@ pub async fn pookify(
 	mut ctx: PoiseContext<'_>,
 	user: poise::serenity_prelude::User,
 ) -> Result<(), Error> {
-    ctx.defer().await?;
+	ctx.defer().await?;
 	let res = pookify_impl(&mut ctx, user).await;
 	ctx.handle_error(res).await?;
 	Ok(())
@@ -126,7 +127,7 @@ async fn bind_impl<C: MessageContext>(ctx: &mut C, username: String) -> Result<(
 	.await?
 	.into_iter()
 	.next()
-	.unwrap();
+	.ok_or_else(|| anyhow!("Private server user `{username}` not found"))?;
 
 	ctx.data()
 		.db
@@ -217,6 +218,52 @@ async fn unbind_impl<C: MessageContext>(ctx: &mut C) -> Result<(), TaggedError> 
 #[poise::command(prefix_command, slash_command)]
 async fn unbind(mut ctx: PoiseContext<'_>) -> Result<(), Error> {
 	let res = unbind_impl(&mut ctx).await;
+	ctx.handle_error(res).await?;
+	Ok(())
+}
+// }}}
+// {{{ Memories
+async fn memories_impl<C: MessageContext>(
+	ctx: &mut C,
+	amount: Option<u32>,
+) -> Result<(), TaggedError> {
+	let user = User::from_context(ctx)?;
+
+	if let Some(amount) = amount {
+		private_server::update_user(
+			ctx.data(),
+			&user,
+			private_server::UserPutOptions {
+				memories: Some(amount),
+				..Default::default()
+			},
+		)
+		.await?;
+
+		ctx.reply(
+        "Succesfully set memory balance! (you might need to restart the app for it to reflect the change)",
+    )
+    .await?;
+	} else {
+		let user = private_server::get_user(ctx.data(), &user).await?;
+		if let Some(memories) = user.memories {
+			ctx.reply(&format!("You have {memories} memories")).await?;
+		} else {
+			ctx.reply("Unable to query memory balance ;-;").await?;
+		}
+	}
+
+	Ok(())
+}
+
+/// Set your current memory amount on the private server.
+#[poise::command(prefix_command, slash_command)]
+async fn memories(
+	mut ctx: PoiseContext<'_>,
+	#[description = "The amount of memories to set. When unset, prints the current memory amount."]
+	amount: Option<u32>,
+) -> Result<(), Error> {
+	let res = memories_impl(&mut ctx, amount).await;
 	ctx.handle_error(res).await?;
 	Ok(())
 }
