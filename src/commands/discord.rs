@@ -60,6 +60,7 @@ pub trait MessageContext {
 			Err(e) => match e.kind {
 				ErrorKind::Internal => Err(e.error),
 				ErrorKind::User => {
+					println!("User error: {:?}", e.error);
 					self.reply(&format!("{}", e.error)).await?;
 					Ok(None)
 				}
