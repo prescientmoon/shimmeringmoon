@@ -58,7 +58,10 @@ pub trait MessageContext {
 		match res {
 			Ok(v) => Ok(Some(v)),
 			Err(e) => match e.kind {
-				ErrorKind::Internal => Err(e.error),
+				ErrorKind::Internal => {
+					println!("Internal error: {:?}", e.error);
+					Err(e.error)
+				}
 				ErrorKind::User => {
 					println!("User error: {:?}", e.error);
 					self.reply(&format!("{}", e.error)).await?;
