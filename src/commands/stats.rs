@@ -409,7 +409,10 @@ async fn best_plays<C: MessageContext>(
 	image.write_to(&mut cursor, image::ImageFormat::WebP)?;
 
 	let reply = CreateReply::default()
-		.attachment(CreateAttachment::bytes(out_buffer, "b30.webp"))
+		.attachment(CreateAttachment::bytes(
+			out_buffer,
+			format!("{}.webp", plays.len()),
+		))
 		.content(format!(
 			"Your ptt is {:.2}",
 			rating_as_float(compute_b30_ptt(scoring_system, &plays))
