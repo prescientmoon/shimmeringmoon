@@ -18,7 +18,7 @@ use crate::assets::{
 	TOP_BACKGROUND,
 };
 use crate::bitmap::{Align, BitmapCanvas, Color, LayoutDrawer, LayoutManager, Rect};
-use crate::context::{Error, PoiseContext, TaggedError};
+use crate::context::{Error, ErrorKind, PoiseContext, TagError, TaggedError};
 use crate::logs::debug_image_log;
 use crate::user::User;
 
@@ -47,6 +47,14 @@ async fn best_plays<C: MessageContext>(
 	grid_size: (u32, u32),
 	require_full: bool,
 ) -> Result<(), TaggedError> {
+	if grid_size.0 * grid_size.1 > 1000 {
+		return Err(anyhow!("The provided dimensions are too large ;-;").tag(ErrorKind::User));
+	}
+
+	if grid_size.0 == 0 || grid_size.1 == 0 {
+		return Err(anyhow!("The given dimensions must be non-zero :3").tag(ErrorKind::User));
+	}
+
 	let user_ctx = ctx.data();
 	let plays = get_best_plays(
 		user_ctx,
@@ -401,7 +409,7 @@ async fn best_plays<C: MessageContext>(
 
 	debug_image_log(&image);
 
-	if image.height() > 2048 {
+	if image.height() > 2048 || image.width() > 2048 {
 		image = image.resize(2048, 2048, image::imageops::FilterType::Lanczos3);
 	}
 
@@ -416,7 +424,8 @@ async fn best_plays<C: MessageContext>(
 		.content(format!(
 			"Your ptt is {:.2}",
 			rating_as_float(compute_b30_ptt(scoring_system, &plays))
-		));
+		))
+		.reply(true);
 	ctx.send(reply).await?;
 
 	Ok(())
