@@ -56,7 +56,7 @@ for song_id, ratings in json_data.items():
     )
 
     for rating_type, rating_value in ratings.items():
-        rating_column = ["prs", "pst", "ftr", "byn", "etr"][int(rating_type)]
+        rating_column = ["pst", "prs", "ftr", "byn", "etr"][int(rating_type)]
         rating_column = f"rating_{rating_column}"
         cursor.execute(
             f"""
