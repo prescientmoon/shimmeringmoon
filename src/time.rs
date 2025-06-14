@@ -1,3 +1,4 @@
+// TODO: disable based off env var / feature / idk
 #[macro_export]
 macro_rules! timed {
 	($label:expr, $code:block) => {{
