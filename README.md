@@ -12,29 +12,21 @@ This bot analyzes your Arcaea screenshots (both of your scores, and taken in the
 - Multiple scoring systems to choose from (including sdvx like EX-scoring)
 - Achievements (work in progress)
 - Graph plotting (work in progress)
+- Optional integration with private server implementations.
 
 ## How does it work
 
 - The bot uses [poise](https://github.com/serenity-rs/poise) in order to communicate with discord
 - The bot renders images using [my own custom bitmap renderer & layout system](./src/bitmap.rs)
 - The bot recognises images using [my own jacket recognition algorithm](./src/arcaea/jacket.rs)
-- The bot reads text using [my own OCR algorithm](./src/recognition/hyperglass.rs). The project started off by using [Tesseract](https://github.com/tesseract-ocr/tesseract), although it was unreliable, and had big issues reading fonts with a lot of kerning (like Arcaea's song font for the bigrams `74` and `24`). My implementation is much more accurate because it's much less general purpose, and uses knowledge of the font to achieve better results.
+- The bot reads text using [my own OCR algorithm](./src/recognition/hyperglass.rs). The project started off by using [Tesseract](https://github.com/tesseract-ocr/tesseract), although it was unreliable, and had big issues reading fonts with a lot of kerning (like Arcaea's song font for the bigrams `74` and `24`). My implementation is much more accurate, as it is much less general purpose, and uses knowledge of the font to achieve better results.
 
 No neural-networks/machine-learning is used by this project. All image analysis is done using classical algorithms I came up with by glueing basic concepts together.
 
 ## Running locally
 
-> WARNING: the instructions in this file are a bit outdated.
-
-The programs need (sometimes a subset of) the following environment variables in order to run:
-
-```
-SHIMMERING_DISCORD_TOKEN=yourtoken
-SHIMMERING_DATA_DIR=shimmering/data
-SHIMMERING_ASSET_DIR=shimmering/assets
-SHIMMERING_CONFIG_DIR=shimmering/config
-SHIMMERING_LOG_DIR=shimmering/logs
-```
+> [!WARNING]
+> The instructions that used to live in this file are a bit outdated. I'll one day write up to date instructions, but for now your best bet is checking out the [.nix](./nix) directory and hoping for the best. I have all the builds (and the deployment) automated, although the derivations depend on two private repos of mine containing assets and other data.
 
 ### Binaries
 
@@ -53,47 +45,32 @@ These binaries are unstable at best, and broken at worst.
 3. `shimmering-server` provides functionality over HTTP
 4. `shimmering-discord-presence` is a client application that talks to `shimmering-server` in order to update your discord "currently playing", showing off the scores you are getting.
 
-### Fonts
-
-The following fonts must be present in `$SHIMMERING_FONTS_DIR`:
-
-```
-Exo[wght].ttf
-GeosansLight.ttf
-Kazesawa-Bold.ttf
-Kazesawa-Regular.ttf
-unifont.otf
-```
-
-The `shimmering-fonts` derivation of the nix flake builds the aforementioned directory.
-
 ### Assets
 
-Most of the assets in this repo have been drawn by me. You need to bring in your own song jackets and place them at `$SHIMMERING_ASSET_DIR/songs`. This directory must contain a subdirectory for each song in the game, with each subdirectory containing a default jacket at `base_256.jpg`. Different files can be created to override the jacket for each difficulty. For more details, check out the implementation in [./src/arcaea/jacket.rs](./src/arcaea/jacket.rs).
+Most of the assets in this repo have been drawn by me. You need to bring in your own song jackets and place them in `$SHIMMERING_PRIVATE_CONFIG_DIR/jackets`. This directory must contain a subdirectory for each song in the game, with each subdirectory containing a default jacket at `base_256.jpg`. Different files can be created to override the jacket for each difficulty. For more details, check out the implementation in [./src/arcaea/jacket.rs](./src/arcaea/jacket.rs).
 
-Additionally, you must place a custom `b30` background at `$SHIMMERING_ASSET_DIR/b30_background.jpg`.
+Additionally, you must place a custom `b30` background at `$SHIMMERING_COMPTIME_PRIVATE_CONFIG_DIR/b30_background.jpg`. This file must be present at compile-time, and is embedded into the resulting binary.
 
 > [!CAUTION]
 > As far as I am concerned, the code in this repository does not violate the Arcaea terms of service in any way. Importing jackets that have been datamined/ripped out of the game is against the aforementioned TOS, and is highly discouraged.
 
 After everything has been placed in the right directory, run `shimmeringmoon-cli prepare-jackets` to prepare everything. This will:
 
-- Associate each asset with it's database ID
+- Associate each asset with its database ID
 - Build out a recognition matrix (about $30\text{K}$) for image recognition purposes. This file contains:
   - about $3$ pixels worth of information for each jacket, stored together with the respective database ID
-  - a projection matrix which transforms a $8 \times 8$ downscaled vectorized version of an image (that's $192$ dimensions — $64 \text{ pixels} \times 3 \text{ channels}$) and projects it to a $10$-dimensional space (the matrix is built using [truncated singular value decomposition](https://en.wikipedia.org/wiki/Singular_value_decomposition)).
+  - a projection matrix which transforms a $8 \times 8$ downscaled vectorized version of an image (that's $192$ dimensions — $64 \text{ pixels} \times 3 \text{ channels}$) and projects it to a $10$ dimensional space (the matrix is built using [truncated singular value decomposition](https://en.wikipedia.org/wiki/Singular_value_decomposition)).
 
 ### Importing charts
 
-The charts are stored in [$SHIMMERING_CONFIG_DIR/charts.csv](./shimmering/config/charts.csv). This is a csv-version of Lumine's [Arcaea song table](https://tinyurl.com/mwd5dkfw) ([with permission](https://discord.com/channels/399106149468733441/399106149917392899/1256043659355226163)). Importing song-data from any other source (such as datamined database files) will not only be more difficult for you (all the scripts I have written are built around the aforementioned spreadsheet), but is also against the Arcaea terms of service.
-
-To add charts that have just been added to the CSV file into the database, run [import-charts.py](./scripts/import-charts.py).
+> [!NOTE]
+> I need to write down some up to date instructions for how to do this. For now, note note count data is stored in [./src/arcaea/notecounts.csv](./src/arcaea/notecounts.csv). A CSV version of the song/chart info can be found in the [./info](./info) directory (this data has originally been extracted from community-run B30 spreadsheets, although many changes have since been manually made by me to standardize things). As to how to generate the db... it's... complicated. I need to take the time to standardize the process some day.
 
 ## Testing
 
-The project provides an always-growing automated test suite for it's core functionality. The command logic is written in terms of a generic `MessagingContext` trait, which allows running the commands in non-discord contexts. The technique employed is called "golden testing" (also known as "snapshot testing") — the output of each test is initially saved to disk (at [test/commands](./test/commands)). On subsequent runs, the output is compared to the existing files, with the test failing on mismatches. You can provide the `SHIMMERING_TEST_REGEN=1` environment variable to override the existing output (make sure the changes are intended).
+The project provides an always-growing automated test suite for its core functionality. The command logic is written in terms of a generic `MessagingContext` trait, which allows running the commands in non-discord contexts. The technique employed is called "golden testing" (also known as "snapshot testing") — the output of each test is initially saved to disk (at [test/commands](./test/commands)). On subsequent runs, the output is compared to the existing files, with the test failing on mismatches. You can provide the `SHIMMERING_TEST_REGEN=1` environment variable to override the existing output (make sure the changes are intended).
 
-Each test saves it's output in a directory. Each file tracks the contents of a single response the bot produced during testing. This file contains everything from whether the response was a reply or not, to every field of every embed, to the hash of every attachment.
+Each test saves its output in a directory. Each file tracks the contents of a single response the bot produced during testing. This file contains everything from whether the response was a reply or not, to every field of every embed, to the hash of every attachment.
 
 The screenshots used for testing are not available in this repository. Although thousands of Arcaea screenshots are posted to the internet on a daily basis, I do not want to risk any legal trouble. You need to therefore provide your own testing screenshots. The test suite expects the following files to be present in `test/screenshots`:
 
