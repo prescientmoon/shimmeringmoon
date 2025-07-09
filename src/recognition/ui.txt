@@ -65,3 +65,20 @@
  251  142    0    0 Song  select — PRS
  419  142    0    0 Song  select — FTR
  593  142    0    0 Song  select — ETR/BYD
+
+1920 1080 Silorcity
+  18   16  250   53 Play kind
+ 710  427  500   80 Score screen — score
+  45  401  565  565 Score screen — jacket
+ 140  304  138   35 Score screen — difficulty
+ 972  782   86   39 Score screen — pures
+ 972  837   86   39 Score screen — fars
+ 972  892   86   39 Score screen — losts
+ 323  345   85   35 Score screen — max recall
+ 346  112 1467   87 Score screen — title
+  10  233  275   51 Song  select — score
+ 216  290  669   56 Song  select — jacket
+  34  142    0    0 Song  select — PST
+ 202  142    0    0 Song  select — PRS
+ 370  142    0    0 Song  select — FTR
+ 542  142    0    0 Song  select — ETR/BYD
