@@ -53,8 +53,20 @@ else:
 # Some remote dl / deleted charts are still there fsr, oh well...
 extra_charts = sorted(list(charts - expected_charts))
 if extra_charts:
-    for e in extra_charts:
-        print(f"Unexpected chart {e}")
+    for e, diff in extra_charts:
+        for s in songlist["songs"]:
+            if "deleted" in s and s["deleted"]:
+                break
+            elif s["id"] == e:
+                for d in s["difficulties"]:
+                    if d["ratingClass"] == diff:
+                        break
+                else:
+                    print(f"I wasn't expecting {(e, diff)} to be here...")
+                    break
+
+        else:
+            print(f"Unexpected chart {(e, diff)}")
 else:
     print("No additional charts found.")
 # }}}

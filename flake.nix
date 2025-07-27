@@ -39,6 +39,8 @@
             glass-server-db-updater
             shimmering-private-config
             shimmeringmoon
+            shimmeringextra
+            debundled-void
             ;
           default = pkgs.shimmeringmoon;
         };
