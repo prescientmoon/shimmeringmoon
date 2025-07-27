@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "arcaea-ptt-data": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1753357578,
+        "narHash": "sha256-fVwzW0CHBgGqAIEmGndBnBBmR8gJp6wOZLf7f/tWTjE=",
+        "owner": "OllyDoge",
+        "repo": "ASCPSongConstant",
+        "rev": "014ccb499ef80775fd0e72b78467a073b3be0763",
+        "type": "github"
+      },
+      "original": {
+        "owner": "OllyDoge",
+        "repo": "ASCPSongConstant",
+        "type": "github"
+      }
+    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -68,6 +84,7 @@
     },
     "root": {
       "inputs": {
+        "arcaea-ptt-data": "arcaea-ptt-data",
         "flake-utils": "flake-utils",
         "glass-charts": "glass-charts",
         "glass-maps": "glass-maps",

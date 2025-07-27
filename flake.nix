@@ -14,6 +14,9 @@
 
     glass-charts.url = "git+ssh://forgejo@ssh.git.moonythm.dev/starlitcanopy/glass-charts.git";
     glass-charts.flake = false;
+
+    arcaea-ptt-data.url = "github:OllyDoge/ASCPSongConstant";
+    arcaea-ptt-data.flake = false;
   };
 
   outputs =
@@ -41,6 +44,7 @@
             shimmeringmoon
             shimmeringextra
             debundled-void
+            arcaea-ptt-data
             ;
           default = pkgs.shimmeringmoon;
         };

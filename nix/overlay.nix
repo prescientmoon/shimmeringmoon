@@ -4,6 +4,7 @@ final: prev: {
   shimmeringdarkness = inputs.shimmeringdarkness.outPath;
   glass-charts = inputs.glass-charts.outPath;
   glass-maps = inputs.glass-maps.outPath;
+  arcaea-ptt-data = inputs.arcaea-ptt-data.outPath;
 
   shimmeringextra = final.callPackage ./shimmeringextra.nix { };
   glass-bundler = final.callPackage ./glass-bundler.nix { };
@@ -15,7 +16,6 @@ final: prev: {
   geosans-light = final.callPackage ./geosans-light.nix { };
   shimmering-fonts = final.callPackage ./fonts.nix { };
 
-  arcaea-ptt-data = final.callPackage ./cc-data.nix { };
   shimmeringmoon = final.callPackage ./shimmeringmoon.nix { };
   glass-server-db-updater = final.callPackage ./glass-server-db-updater.nix { };
   chart-dir-checker = final.callPackage ./chart-dir-checker.nix { };
