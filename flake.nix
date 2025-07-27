@@ -8,6 +8,12 @@
 
     shimmeringvoid.url = "git+ssh://forgejo@ssh.git.moonythm.dev/prescientmoon/shimmeringvoid.git";
     shimmeringvoid.flake = false;
+
+    glass-maps.url = "git+ssh://forgejo@ssh.git.moonythm.dev/starlitcanopy/glass-maps.git";
+    glass-maps.flake = false;
+
+    glass-charts.url = "git+ssh://forgejo@ssh.git.moonythm.dev/starlitcanopy/glass-charts.git";
+    glass-charts.flake = false;
   };
 
   outputs =
@@ -26,10 +32,13 @@
       {
         packages = {
           inherit (pkgs)
-            shimmeringmoon
+            chart-dir-checker
             glass-bundler
-            private-config
+            glass-charts
+            glass-maps
             glass-server-db-updater
+            shimmering-private-config
+            shimmeringmoon
             ;
           default = pkgs.shimmeringmoon;
         };
@@ -53,13 +62,13 @@
             freetype
             fontconfig
             sqlite
-            openssl
+            # openssl
           ];
 
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs;
           SHIMMERING_FONT_DIR = pkgs.shimmering-fonts;
           SHIMMERING_CC_DIR = pkgs.arcaea-ptt-data;
-          SHIMMERING_PRIVATE_CONFIG_DIR = pkgs.private-config;
+          SHIMMERING_PRIVATE_CONFIG_DIR = pkgs.shimmering-private-config;
           SHIMMERING_COMPTIME_PRIVATE_CONFIG_DIR = inputs.shimmeringdarkness;
         };
         #  }}}

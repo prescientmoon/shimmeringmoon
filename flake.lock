@@ -18,6 +18,38 @@
         "type": "github"
       }
     },
+    "glass-charts": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1753624794,
+        "narHash": "sha256-5iqQ23r5uPUdAfaktJ0WRFu/mU5iSOTU9Iv0hCjVk6Q=",
+        "ref": "refs/heads/main",
+        "rev": "05600792c6196674e9acf91e6ef74b87e9269487",
+        "revCount": 7,
+        "type": "git",
+        "url": "ssh://forgejo@ssh.git.moonythm.dev/starlitcanopy/glass-charts.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://forgejo@ssh.git.moonythm.dev/starlitcanopy/glass-charts.git"
+      }
+    },
+    "glass-maps": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1741612482,
+        "narHash": "sha256-Izs5Q8gnjt0DjZgdCHQ3Cd8W0NZfxyxieTa5j4aD1tY=",
+        "ref": "refs/heads/publish",
+        "rev": "d75e79ec08fa1a484be1c977957968274a47c9dc",
+        "revCount": 20,
+        "type": "git",
+        "url": "ssh://forgejo@ssh.git.moonythm.dev/starlitcanopy/glass-maps.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://forgejo@ssh.git.moonythm.dev/starlitcanopy/glass-maps.git"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1739020877,
@@ -37,6 +69,8 @@
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
+        "glass-charts": "glass-charts",
+        "glass-maps": "glass-maps",
         "nixpkgs": "nixpkgs",
         "shimmeringdarkness": "shimmeringdarkness",
         "shimmeringvoid": "shimmeringvoid"

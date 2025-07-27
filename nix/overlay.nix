@@ -2,10 +2,13 @@
 final: prev: {
   shimmeringvoid = inputs.shimmeringvoid.outPath;
   shimmeringdarkness = inputs.shimmeringdarkness.outPath;
+  glass-charts = inputs.glass-charts.outPath;
+  glass-maps = inputs.glass-maps.outPath;
+
   shimmeringextra = final.callPackage ./shimmeringextra.nix { };
   glass-bundler = final.callPackage ./glass-bundler.nix { };
   debundled-void = final.callPackage ./debundled-void.nix { };
-  private-config = final.callPackage ./private-config.nix { };
+  shimmering-private-config = final.callPackage ./private-config.nix { };
 
   kazesawa = final.callPackage ./kazesawa.nix { };
   exo = final.callPackage ./exo.nix { };
@@ -15,4 +18,5 @@ final: prev: {
   arcaea-ptt-data = final.callPackage ./cc-data.nix { };
   shimmeringmoon = final.callPackage ./shimmeringmoon.nix { };
   glass-server-db-updater = final.callPackage ./glass-server-db-updater.nix { };
+  chart-dir-checker = final.callPackage ./chart-dir-checker.nix { };
 }

@@ -12,7 +12,7 @@
 
   shimmering-fonts,
   arcaea-ptt-data,
-  private-config,
+  shimmering-private-config,
   shimmeringdarkness,
 }:
 let
@@ -72,7 +72,7 @@ symlinkJoin {
     for file in $out/bin/*; do
       wrapProgram $file \
         --set SHIMMERING_CC_DIR "${arcaea-ptt-data}" \
-        --set SHIMMERING_PRIVATE_CONFIG_DIR ${private-config}
+        --set SHIMMERING_PRIVATE_CONFIG_DIR ${shimmering-private-config}
     done
   '';
 }
