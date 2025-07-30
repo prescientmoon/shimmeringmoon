@@ -37,11 +37,11 @@
     "glass-charts": {
       "flake": false,
       "locked": {
-        "lastModified": 1753814985,
-        "narHash": "sha256-HFqqG2Sckkvq6QdG/TsANKEIrbNDg07XMLQKAEQLkKg=",
+        "lastModified": 1753867972,
+        "narHash": "sha256-VH4PuSGxqrqRK4FBfA1ZLHMrUOomi2EV/wvkcQWCt5E=",
         "ref": "refs/heads/main",
-        "rev": "c34a4cb56ceec39a123d39db22d1d3e13966a133",
-        "revCount": 8,
+        "rev": "9f1714b2de4a8b3a650bfa7a4d09f14395d7bbe7",
+        "revCount": 11,
         "type": "git",
         "url": "ssh://forgejo@ssh.git.moonythm.dev/starlitcanopy/glass-charts.git"
       },
