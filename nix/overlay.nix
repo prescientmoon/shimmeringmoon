@@ -2,9 +2,10 @@
 final: prev: {
   shimmeringvoid = inputs.shimmeringvoid.outPath;
   shimmeringdarkness = inputs.shimmeringdarkness.outPath;
-  glass-charts = inputs.glass-charts.outPath;
   glass-maps = inputs.glass-maps.outPath;
   arcaea-ptt-data = inputs.arcaea-ptt-data.outPath;
+  # glass-charts = final.callPackage ./glass-charts.nix { };
+  # glass-charts = inputs.glass-charts.outPath;
 
   shimmeringextra = final.callPackage ./shimmeringextra.nix { };
   glass-bundler = final.callPackage ./glass-bundler.nix { };

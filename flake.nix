@@ -12,8 +12,8 @@
     glass-maps.url = "git+ssh://forgejo@ssh.git.moonythm.dev/starlitcanopy/glass-maps.git";
     glass-maps.flake = false;
 
-    glass-charts.url = "git+ssh://forgejo@ssh.git.moonythm.dev/starlitcanopy/glass-charts.git";
-    glass-charts.flake = false;
+    # glass-charts.url = "git+ssh://forgejo@ssh.git.moonythm.dev/starlitcanopy/glass-charts.git";
+    # glass-charts.flake = false;
 
     arcaea-ptt-data.url = "github:OllyDoge/ASCPSongConstant";
     arcaea-ptt-data.flake = false;
