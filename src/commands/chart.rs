@@ -130,7 +130,7 @@ mod info_tests {
 }
 // }}}
 // {{{ Discord wrapper
-/// Show a chart given it's name
+/// Show a chart given its name
 #[poise::command(prefix_command, slash_command, user_cooldown = 1)]
 async fn info(
 	mut ctx: PoiseContext<'_>,

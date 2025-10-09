@@ -172,7 +172,7 @@ impl Score {
 		let mut buffer = String::with_capacity(14);
 
 		let play_rating = rating_as_float(self.play_rating(chart.chart_constant));
-		write!(buffer, "{:.2}", play_rating)?;
+		write!(buffer, "{play_rating:.2}")?;
 
 		if let Some(prev) = prev {
 			let prev_play_rating = rating_as_float(prev.play_rating(chart.chart_constant));
