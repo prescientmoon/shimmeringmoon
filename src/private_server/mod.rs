@@ -212,7 +212,7 @@ pub async fn best(
 	let decoded: RawBestScores = mk_request(
 		ctx,
 		Method::GET,
-		&format!("users/{}/best", private_user_id),
+		&format!("users/{private_user_id}/best"),
 		options,
 	)
 	.await?;

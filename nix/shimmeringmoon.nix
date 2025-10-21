@@ -43,7 +43,6 @@ let
       openssl
     ];
 
-    useFetchCargoVendor = true;
     cargoLock = {
       lockFile = ../Cargo.lock;
       outputHashes = {
