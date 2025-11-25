@@ -70,7 +70,7 @@ symlinkJoin {
   postBuild = ''
     for file in $out/bin/*; do
       wrapProgram $file \
-        --set SHIMMERING_CC_DIR "${arcaea-ptt-data}" \
+        --set SHIMMERING_CC_FILE "${arcaea-ptt-data}/ptt.json" \
         --set SHIMMERING_PRIVATE_CONFIG_DIR ${shimmering-private-config}
     done
   '';

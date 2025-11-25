@@ -40,6 +40,6 @@ symlinkJoin {
   nativeBuildInputs = [ makeWrapper ];
   postBuild = ''
     wrapProgram $out/bin/glass-server-db-updater \
-      --set SHIMMERING_CC_DIR "${arcaea-ptt-data}"
+      --set SHIMMERING_CC_FILE "${arcaea-ptt-data}/ptt.json"
   '';
 }

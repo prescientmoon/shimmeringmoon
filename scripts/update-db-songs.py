@@ -9,7 +9,7 @@ if len(sys.argv) != 2:
     sys.exit(1)
 
 # {{{ Collect data
-json_file_path = f"{os.environ.get('SHIMMERING_CC_DIR')}/ptt.json"
+json_file_path = os.environ.get("SHIMMERING_CC_FILE")
 db_file_path = sys.argv[1]
 
 try:

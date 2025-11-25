@@ -21,7 +21,9 @@ pub fn get_env_dir_path(name: &str, default_to: Option<&str>) -> anyhow::Result<
 
 	let path = PathBuf::from_str(&var).with_context(|| format!("${name} is not a valid path"))?;
 
-	std::fs::create_dir_all(&path).with_context(|| format!("Could not create ${name}"))?;
+	if !path.exists() {
+		std::fs::create_dir_all(&path).with_context(|| format!("Could not create ${name}"))?;
+	}
 
 	Ok(path)
 }
@@ -83,9 +85,7 @@ impl ShimmeringPaths {
 	}
 
 	pub fn cc_data_path(&self) -> PathBuf {
-		get_env_dir_path("SHIMMERING_CC_DIR", None)
-			.unwrap()
-			.join("ptt.json")
+		get_env_dir_path("SHIMMERING_CC_FILE", None).unwrap()
 	}
 }
 

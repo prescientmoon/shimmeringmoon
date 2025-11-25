@@ -71,7 +71,7 @@
 
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs;
           SHIMMERING_FONT_DIR = pkgs.shimmering-fonts;
-          SHIMMERING_CC_DIR = pkgs.arcaea-ptt-data;
+          # SHIMMERING_CC_FILE = "${pkgs.arcaea-ptt-data}/ptt.json";
           SHIMMERING_PRIVATE_CONFIG_DIR = pkgs.shimmering-private-config;
           SHIMMERING_COMPTIME_PRIVATE_CONFIG_DIR = inputs.shimmeringdarkness;
         };
