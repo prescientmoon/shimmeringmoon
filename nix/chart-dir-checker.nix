@@ -5,7 +5,6 @@
   stdenvNoCC,
   symlinkJoin,
   shimmering-private-config,
-  glass-charts,
 }:
 let
   unpatched = stdenvNoCC.mkDerivation {
@@ -41,7 +40,6 @@ symlinkJoin {
   nativeBuildInputs = [ makeWrapper ];
   postBuild = ''
     wrapProgram $out/bin/chart-dir-checker \
-      --set SHIMMERING_PRIVATE_CONFIG_DIR ${shimmering-private-config} \
-      --set SHIMMERING_PRIVATE_CHART_DIR ${glass-charts}
+      --set SHIMMERING_PRIVATE_CONFIG_DIR ${shimmering-private-config}
   '';
 }

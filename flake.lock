@@ -3,11 +3,11 @@
     "arcaea-ptt-data": {
       "flake": false,
       "locked": {
-        "lastModified": 1753357578,
-        "narHash": "sha256-fVwzW0CHBgGqAIEmGndBnBBmR8gJp6wOZLf7f/tWTjE=",
+        "lastModified": 1763813977,
+        "narHash": "sha256-C/0myI3YgLwo0wRSnXn0s5ck5L5yBTpcGiKKCnGzHZY=",
         "owner": "OllyDoge",
         "repo": "ASCPSongConstant",
-        "rev": "014ccb499ef80775fd0e72b78467a073b3be0763",
+        "rev": "54bb2ac02ee2d132eac1b198f970066ec07aa6b7",
         "type": "github"
       },
       "original": {
@@ -37,11 +37,11 @@
     "glass-maps": {
       "flake": false,
       "locked": {
-        "lastModified": 1741612482,
-        "narHash": "sha256-Izs5Q8gnjt0DjZgdCHQ3Cd8W0NZfxyxieTa5j4aD1tY=",
+        "lastModified": 1759837422,
+        "narHash": "sha256-qPJwLud5ujDXbR8+2odZk5aZr5F96i/MDzdtibDXML8=",
         "ref": "refs/heads/publish",
-        "rev": "d75e79ec08fa1a484be1c977957968274a47c9dc",
-        "revCount": 20,
+        "rev": "018006e6598afef8e9313d0cd87eb14d1066b96b",
+        "revCount": 22,
         "type": "git",
         "url": "ssh://forgejo@ssh.git.moonythm.dev/starlitcanopy/glass-maps.git"
       },
@@ -52,11 +52,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1754214453,
-        "narHash": "sha256-Q/I2xJn/j1wpkGhWkQnm20nShYnG7TI99foDBpXm1SY=",
+        "lastModified": 1762363567,
+        "narHash": "sha256-YRqMDEtSMbitIMj+JLpheSz0pwEr0Rmy5mC7myl17xs=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "5b09dc45f24cf32316283e62aec81ffee3c3e376",
+        "rev": "ae814fd3904b621d8ab97418f1d0f2eb0d3716f4",
         "type": "github"
       },
       "original": {
@@ -95,11 +95,11 @@
     "shimmeringvoid": {
       "flake": false,
       "locked": {
-        "lastModified": 1753698903,
-        "narHash": "sha256-HkXtqvJYFVzhTECrAmZy42Rc5HU2F9mJ9UqFnuLrfb4=",
+        "lastModified": 1764065275,
+        "narHash": "sha256-54B8aliZX6KMWHGcx+WhC19a38TYX1I78CV5NbBeuwU=",
         "ref": "refs/heads/main",
-        "rev": "9fb883fb729f4ee2267fc7a6f19041a54e9790da",
-        "revCount": 18,
+        "rev": "16c7fa1e485a3115358a8418a49bbcc74157673c",
+        "revCount": 22,
         "type": "git",
         "url": "ssh://forgejo@ssh.git.moonythm.dev/prescientmoon/shimmeringvoid.git"
       },

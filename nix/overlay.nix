@@ -4,8 +4,6 @@ final: prev: {
   shimmeringdarkness = inputs.shimmeringdarkness.outPath;
   glass-maps = inputs.glass-maps.outPath;
   arcaea-ptt-data = inputs.arcaea-ptt-data.outPath;
-  # glass-charts = final.callPackage ./glass-charts.nix { };
-  # glass-charts = inputs.glass-charts.outPath;
 
   shimmeringextra = final.callPackage ./shimmeringextra.nix { };
   glass-bundler = final.callPackage ./glass-bundler.nix { };

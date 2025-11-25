@@ -12,9 +12,6 @@
     glass-maps.url = "git+ssh://forgejo@ssh.git.moonythm.dev/starlitcanopy/glass-maps.git";
     glass-maps.flake = false;
 
-    # glass-charts.url = "git+ssh://forgejo@ssh.git.moonythm.dev/starlitcanopy/glass-charts.git";
-    # glass-charts.flake = false;
-
     arcaea-ptt-data.url = "github:OllyDoge/ASCPSongConstant";
     arcaea-ptt-data.flake = false;
   };
@@ -37,7 +34,6 @@
           inherit (pkgs)
             chart-dir-checker
             glass-bundler
-            glass-charts
             glass-maps
             glass-server-db-updater
             shimmering-private-config
@@ -61,6 +57,8 @@
             pkgs.ruff
             pkgs.imagemagick
             pkgs.pkg-config
+            pkgs.glass-bundler
+            pkgs.chart-dir-checker
           ];
 
           buildInputs = with pkgs; [
