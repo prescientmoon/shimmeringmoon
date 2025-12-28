@@ -237,31 +237,20 @@ impl Play {
 	// }}}
 	// {{{ Play => status
 	#[inline]
-	pub fn status(&self, scoring_system: ScoringSystem, chart: &Chart) -> Option<String> {
+	pub fn status(&self, scoring_system: ScoringSystem, chart: &Chart) -> String {
 		let score = self.score(scoring_system).0;
 		if score >= 10_000_000 {
-			if score > chart.note_count + 10_000_000 {
-				return None;
-			}
-
-			let non_max_pures = (chart.note_count + 10_000_000).checked_sub(score)?;
-			if non_max_pures == 0 {
-				Some("MPM".to_string())
-			} else {
-				Some(format!("PM (-{})", non_max_pures))
-			}
-		} else if let Some(distribution) = self.distribution(chart.note_count) {
-			// if no lost notes...
-			if distribution.3 == 0 {
-				Some(format!("FR (-{}/-{})", distribution.1, distribution.2))
-			} else {
-				Some(format!(
-					"C (-{}/-{}/-{})",
-					distribution.1, distribution.2, distribution.3
-				))
+			match (chart.note_count + 10_000_000).checked_sub(score) {
+				Some(0) => "MPM".to_string(),
+				Some(non_max_pures) => format!("PM (-{})", non_max_pures),
+				None => "?".to_string(),
 			}
 		} else {
-			None
+			match self.distribution(chart.note_count) {
+				Some((_, nmp, far, 0)) => format!("FR (-{}/-{})", nmp, far),
+				Some((_, nmp, far, lost)) => format!("C (-{}/-{}/-{})", nmp, far, lost),
+				None => format!("C (-{}/-?/-?)", Score(score).shinies(chart.note_count)),
+			}
 		}
 	}
 
@@ -289,18 +278,16 @@ impl Play {
 	pub fn to_embed(
 		&self,
 		ctx: &UserContext,
-		user: &User,
+		user: Option<&User>,
 		song: &Song,
 		chart: &Chart,
 		index: usize,
 		author: Option<&poise::serenity_prelude::User>,
 	) -> Result<(CreateEmbed, Option<CreateAttachment>), Error> {
 		// {{{ Get previously best score
-		let prev_play = ctx
-			.db
-			.get()?
-			.prepare_cached(
-				"
+		let db = ctx.db.get()?;
+		let mut prepared = db.prepare_cached(
+			"
           SELECT 
             p.id, p.chart_id, p.user_id, p.created_at,
             p.max_recall, p.far_notes, s.score
@@ -313,11 +300,15 @@ impl Play {
           ORDER BY s.score DESC
           LIMIT 1
         ",
-			)?
-			.query_row((user.id, chart.id, self.created_at), |row| {
-				Self::from_sql(chart, row)
-			})
-			.ok();
+		)?;
+
+		let prev_play = user.and_then(|user| {
+			prepared
+				.query_row((user.id, chart.id, self.created_at), |row| {
+					Self::from_sql(chart, row)
+				})
+				.ok()
+		});
 
 		let prev_score = prev_play.as_ref().map(|p| p.score(ScoringSystem::Standard));
 		let prev_zeta_score = prev_play.as_ref().map(|p| p.score(ScoringSystem::EX));
@@ -374,12 +365,7 @@ impl Play {
 				format!("{}", self.score(ScoringSystem::EX).grade()),
 				true,
 			)
-			.field(
-				"Status",
-				self.status(ScoringSystem::Standard, chart)
-					.unwrap_or("-".to_string()),
-				true,
-			)
+			.field("Status", self.status(ScoringSystem::Standard, chart), true)
 			.field(
 				"Max recall",
 				if let Some(max_recall) = self.max_recall {

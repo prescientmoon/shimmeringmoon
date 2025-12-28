@@ -3,7 +3,13 @@
 //! that keeps track of all the runtime-relevant paths.
 
 use anyhow::Context;
-use std::{path::Path, path::PathBuf, str::FromStr};
+use std::{
+	mem::ManuallyDrop,
+	path::{Path, PathBuf},
+	str::FromStr,
+	sync::Arc,
+};
+use tempfile::TempDir;
 
 /// Wrapper around [std::env::var] which adds [anyhow] context around errors.
 pub fn get_var(name: &str) -> anyhow::Result<String> {
@@ -41,6 +47,9 @@ pub struct ShimmeringPaths {
 
 	/// This directory contains logs and other debugging info.
 	log_dir: PathBuf,
+
+	/// Will delete the dir on [Drop]
+	_dir_guard: Option<Arc<TempDir>>,
 }
 
 impl ShimmeringPaths {
@@ -51,8 +60,27 @@ impl ShimmeringPaths {
 			data_dir: get_env_dir_path("SHIMMERING_DATA_DIR", Some("STATE_DIRECTORY"))?,
 			log_dir: get_env_dir_path("SHIMMERING_LOG_DIR", Some("LOGS_DIRECTORY"))?,
 			private_config_dir: get_env_dir_path("SHIMMERING_PRIVATE_CONFIG_DIR", None)?,
+			_dir_guard: None,
 		};
 
+		Ok(res)
+	}
+
+	pub fn as_temp(&self) -> anyhow::Result<Self> {
+		let dir = tempfile::tempdir()?;
+		let path = dir.path();
+		let res = Self {
+			data_dir: path.join("data"),
+			log_dir: path.join("logs"),
+			private_config_dir: self.private_config_dir.clone(),
+			// _dir_guard: Some(Arc::new(dir)),
+			_dir_guard: None,
+		};
+
+		create_empty_directory(&res.data_dir)?;
+		create_empty_directory(&res.log_dir)?;
+
+		let _dir_guard = ManuallyDrop::new(dir);
 		Ok(res)
 	}
 

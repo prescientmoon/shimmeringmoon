@@ -130,21 +130,20 @@ impl UserContext {
 // {{{ Testing helpers
 #[cfg(test)]
 pub mod testing {
-	use std::cell::OnceCell;
-	use tempfile::TempDir;
+	use std::sync::OnceLock;
 
 	use super::*;
 	use crate::commands::discord::mock::MockContext;
 
 	pub fn get_shared_context() -> &'static UserContext {
-		static CELL: OnceCell<UserContext> = OnceCell::new();
+		static CELL: OnceLock<UserContext> = OnceLock::new();
 		CELL.get_or_init(|| UserContext::new().unwrap())
 	}
 
-	pub fn import_songs_and_jackets_from(paths: &ShimmeringPaths, to: &Path) {
+	pub fn import_songs_and_jackets_from(paths: &ShimmeringPaths, to: &ShimmeringPaths) {
 		let out = std::process::Command::new("scripts/copy-chart-info.sh")
 			.arg(paths.data_dir())
-			.arg(to)
+			.arg(to.data_dir())
 			.output()
 			.expect("Could not run sh chart info copy script");
 
@@ -154,14 +153,14 @@ pub mod testing {
 		);
 	}
 
-	pub fn get_mock_context() -> Result<(MockContext, TempDir), Error> {
+	pub fn get_mock_context() -> Result<MockContext, Error> {
 		let mut data = (*get_shared_context()).clone();
-		let dir = tempfile::tempdir()?;
-		data.db = connect_db(dir.path());
-		import_songs_and_jackets_from(&data.paths, dir.path());
 
-		let ctx = MockContext::new(data);
-		Ok((ctx, dir))
+		let og_paths = data.paths.clone();
+		data.paths = data.paths.as_temp()?;
+		data.db = connect_db(&data.paths)?;
+		import_songs_and_jackets_from(&og_paths, &data.paths);
+		Ok(MockContext::new(data))
 	}
 
 	// rustfmt fucks up the formatting here,
@@ -183,7 +182,7 @@ pub mod testing {
 		($test_path:expr, $f:expr) => {{
 			use std::str::FromStr;
 
-			let (mut ctx, _guard) = $crate::context::testing::get_mock_context()?;
+			let mut ctx = $crate::context::testing::get_mock_context()?;
 			let res = $crate::user::User::create_from_context(&ctx);
 			ctx.handle_error(res).await?;
 

@@ -82,7 +82,7 @@ mod expected_tests {
 
 	#[tokio::test]
 	async fn consistent_with_rating() -> Result<(), Error> {
-		let (mut ctx, _guard) = get_mock_context().await?;
+		let mut ctx = get_mock_context()?;
 		ctx.save_messages = false; // We don't want to waste time writing to a vec
 
 		for i in 0..1_000 {
@@ -202,3 +202,69 @@ async fn rating(
 }
 // }}}
 // }}}
+// // {{{ analyse
+// // {{{ Implementation
+// async fn analyse_impl(
+// 	ctx: &mut impl MessageContext,
+// 	system: ScoringSystem,
+// 	score: Score,
+// 	name: &str,
+// ) -> Result<Play, TaggedError> {
+// 	let (song, chart) = guess_song_and_chart(ctx.data(), name)?;
+//
+// 	let play = Play {
+// 		id: 0, // External
+// 		created_at: Utc::now().naive_utc(),
+// 		scores: ScoreCollection::from_standard_score(score, chart),
+// 		chart_id: chart.id,
+// 		user_id: 0,
+// 		far_notes: None,
+// 		max_recall: None,
+// 	};
+//
+// 	let (embed, attachment) = play.to_embed(ctx.data(), None, song, chart, 0, None)?;
+//
+// 	ctx.send(
+// 		CreateReply::default()
+// 			.reply(true)
+// 			.embed(embed)
+// 			.attachments(attachment),
+// 	)
+// 	.await?;
+//
+// 	Ok(play)
+// }
+// // }}}
+// // {{{ Tests
+// #[cfg(test)]
+// mod ex_tests {
+// 	use crate::{commands::discord::mock::MockContext, golden_test};
+//
+// 	use super::*;
+//
+// 	golden_test!(basic_usage, "commands/calc/ex/basic_usage");
+// 	async fn basic_usage(ctx: &mut MockContext) -> Result<(), TaggedError> {
+// 		ex_impl(ctx, Score(9_349_070), "Arcana Eden [PRS]").await?;
+//
+// 		Ok(())
+// 	}
+// }
+// // }}}
+// // {{{ Discord wrapper
+// /// Analyse the given score on the given chart
+// #[poise::command(prefix_command, slash_command, user_cooldown = 1)]
+// async fn analyse(
+// 	mut ctx: PoiseContext<'_>,
+// 	system: Option<ScoringSystem>,
+// 	score: u32,
+// 	#[rest]
+// 	#[description = "Name of chart (difficulty at the end)"]
+// 	name: String,
+// ) -> Result<(), Error> {
+// 	let res = analyse_impl(&mut ctx, system.unwrap_or_default(), Score(score), &name).await;
+// 	ctx.handle_error(res).await?;
+//
+// 	Ok(())
+// }
+// // }}}
+// // }}}

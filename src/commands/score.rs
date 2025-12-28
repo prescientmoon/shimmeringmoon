@@ -93,7 +93,7 @@ async fn magic_detect_one<C: MessageContext>(
 	// }}}
 	// {{{ Deliver embed
 	let (embed, attachment) = timed!("to embed", {
-		play.to_embed(ctx.data(), user, song, chart, index, None)?
+		play.to_embed(ctx.data(), Some(user), song, chart, index, None)?
 	});
 
 	plays.push(play);
@@ -284,7 +284,7 @@ pub async fn show_impl<C: MessageContext>(
 		let user = User::by_id(ctx.data(), play.user_id)?;
 
 		let (embed, attachment) =
-			play.to_embed(ctx.data(), &user, song, chart, i, Some(&author))?;
+			play.to_embed(ctx.data(), Some(&user), song, chart, i, Some(&author))?;
 
 		embeds.push(embed);
 		attachments.extend(attachment);

@@ -214,7 +214,7 @@ async fn best_impl<C: MessageContext>(
 
 	let (embed, attachment) = play.to_embed(
 		ctx.data(),
-		&user,
+		Some(&user),
 		song,
 		chart,
 		0,
